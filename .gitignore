@@ -1,0 +1,10 @@
+third_party
+dataloader
+tutorials
+logdir
+tmp
+Manifold
+database
+__pycache__/
+*.pyc
+.nfs*

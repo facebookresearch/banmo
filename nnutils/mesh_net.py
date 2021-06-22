@@ -16,6 +16,7 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 import trimesh, pytorch3d, pytorch3d.loss, pdb
+
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from ext_nnutils.nerf import Embedding, NeRF
@@ -35,7 +36,7 @@ flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
 flags.DEFINE_string('name', 'exp_name', 'Experiment Name')
 flags.DEFINE_integer('num_epochs', 1000, 'Number of epochs to train')
 flags.DEFINE_integer('num_pretrain_epochs', 0, 'If >0, we will pretain from an existing saved model.')
-flags.DEFINE_float('learning_rate', 5e-4, 'learning rate')
+flags.DEFINE_float('learning_rate', 1e-3, 'learning rate')
 flags.DEFINE_boolean('use_sgd', False, 'if true uses sgd instead of adam, beta1 is used as mmomentu')
 flags.DEFINE_integer('batch_size', 8, 'Size of minibatches')
 flags.DEFINE_string('checkpoint_dir', 'logdir/', 'Root directory for output files')
@@ -159,40 +160,39 @@ class v2s_net(nn.Module):
         return results, rand_inds
 
     def set_input(self, batch):
-        opts = self.opts
-        batch_size,_,_,h,w = batch['img'].shape
-        bs = 2*batch_size
+        bs,_,_,h,w = batch['img'].shape
 
         # convert to float
         for k,v in batch.items():
             batch[k] = batch[k].float()
+            if not self.training:
+                batch[k] = batch[k][:,:1]
 
-        img_tensor = batch['img'].view(batch_size,2, 3, h,w).permute(1,0,2,3,4).reshape(batch_size*2,3,h,w)
+        img_tensor = batch['img'].view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w)
         input_img_tensor = img_tensor.clone()
         for b in range(input_img_tensor.size(0)):
             input_img_tensor[b] = self.resnet_transform(input_img_tensor[b])
+
         self.input_imgs   = input_img_tensor.cuda()
         self.imgs         = img_tensor.cuda()
-        self.flow         = batch['flow']        .view(batch_size,2,3,h,w).permute(1,0,2,3,4).reshape(batch_size*2,3,h,w).cuda()
-        self.masks        = batch['mask']        .view(batch_size,2,h,w).permute(1,0,2,3).reshape(batch_size*2,h,w).cuda()
-        self.depth        = batch['depth']       .view(batch_size,2,h,w).permute(1,0,2,3).reshape(batch_size*2,h,w).cuda()
-        self.occ          = batch['occ']         .view(batch_size,2,h,w).permute(1,0,2,3).reshape(batch_size*2,h,w).cuda()
-        self.cams         = batch['cam']         .view(batch_size,2,-1).permute(1,0,2).reshape(batch_size*2,-1).cuda()
-        self.pp           = batch['pps']         .view(batch_size,2,-1).permute(1,0,2).reshape(batch_size*2,-1).cuda()
-        self.rtk          = batch['rtk']         .view(batch_size,2,4,4).permute(1,0,2,3).reshape(batch_size*2,4,4).cuda()
-        self.kaug         = batch['kaug']        .view(batch_size,2,4).permute(1,0,2).reshape(batch_size*2,4).cuda()
-        self.frameid      = batch['frameid']     .view(batch_size,2).permute(1,0).reshape(-1)
-        self.is_canonical = batch['is_canonical'].view(batch_size,2).permute(1,0).reshape(-1)
-        self.dataid       = torch.cat([    batch['dataid'][:batch_size], batch['dataid'][:batch_size]],0)
+        self.flow         = batch['flow']        .view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(self.device)    
+        self.masks        = batch['mask']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)    
+        self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)    
+        self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)    
+        self.cams         = batch['cam']         .view(bs,-1,7).permute(1,0,2).reshape(-1,7)          .to(self.device)    
+        self.pp           = batch['pps']         .view(bs,-1,2).permute(1,0,2).reshape(-1,2)          .to(self.device)    
+        self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)      .to(self.device)    
+        self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)            .to(self.device)    
+        self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1)
+        self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
+        self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)
+        
+        bs = 2*bs
         return bs
 
-    def forward(self, batch_input):
+    def forward(self, batch):
         opts = self.opts
-        if self.training:
-            bs = self.set_input(batch_input)
-        else:
-            bs = len(batch_input)
-            self.input_imgs = batch_input
+        bs = self.set_input(batch)
     
         # Render
         rendered, rand_inds = self.nerf_render()
@@ -207,40 +207,10 @@ class v2s_net(nn.Module):
         #total_loss = img_loss + sil_loss
         total_loss = sil_loss
         
-        aux_out = {}
+        aux_out={}
         aux_out['total_loss'] = total_loss
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
         
-        # evaluation
-        if self.iters==0:
-            with torch.no_grad():
-                rendered, rand_inds = self.nerf_render(is_eval=True)
-                aux_out['rendered_img'] = rendered['rgb_coarse']
-                aux_out['rendered_sil'] = rendered['opacity_coarse']
-                
-                # run marching cubes
-                import mcubes
-                grid_size = 100
-                threshold = 0.2
-                pts = np.linspace(-1.2, 1.2, grid_size).astype(np.float32)
-                query_xyz = np.stack(np.meshgrid(pts, pts, pts), -1)
-                query_xyz = torch.Tensor(query_xyz).to(self.device).view(-1, 3)
-                query_dir = torch.zeros_like(query_xyz)
-
-                bs_pts = query_xyz.shape[0]
-                out_chunks = []
-                for i in range(0, bs_pts, opts.chunk):
-                    xyz_embedded = self.embedding_xyz(query_xyz[i:i+opts.chunk]) # (N, embed_xyz_channels)
-                    dir_embedded = self.embedding_dir(query_dir[i:i+opts.chunk]) # (N, embed_dir_channels)
-                    xyzdir_embedded = torch.cat([xyz_embedded, dir_embedded], 1)
-                    out_chunks += [self.nerf_coarse(xyzdir_embedded)]
-                vol_rgbo = torch.cat(out_chunks, 0)
-
-                vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
-                print('fraction occupied:', (vol_o > threshold).float().mean())
-                vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
-                vertices = (vertices - grid_size/2)/grid_size*2
-                mesh = trimesh.Trimesh(vertices, triangles)
-                mesh.export('/private/home/gengshany/dropbox/output/0.obj')
         return total_loss, aux_out
+

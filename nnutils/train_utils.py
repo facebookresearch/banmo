@@ -17,6 +17,7 @@ import numpy as np
 from absl import flags
 import cv2
 
+import mcubes
 import soft_renderer as sr
 from nnutils import mesh_net
 import subprocess
@@ -28,9 +29,11 @@ import trimesh
 import chamfer3D.dist_chamfer_3D
 import torchvision
 from torch.autograd import Variable
-from dataloader import frameloader as mvid_data
+from collections import defaultdict
 
 from ext_nnutils.train_utils import Trainer
+from nnutils.vis_utils import image_grid
+from dataloader import frameloader
 
 
 class v2s_trainer(Trainer):
@@ -45,8 +48,8 @@ class v2s_trainer(Trainer):
 
         # ddp
         self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
-        device = torch.device('cuda:{}'.format(opts.local_rank))
-        self.model = self.model.to(device)
+        self.device = torch.device('cuda:{}'.format(opts.local_rank))
+        self.model = self.model.to(self.device)
 
         self.model = torch.nn.parallel.DistributedDataParallel(
                 self.model,
@@ -55,6 +58,10 @@ class v2s_trainer(Trainer):
                 find_unused_parameters=True,
         )
         return
+    
+    def init_dataset(self):
+        self.dataloader = frameloader.data_loader(self.opts)
+        self.evalloader = frameloader.eval_loader(self.opts)
     
     def init_training(self):
         opts = self.opts
@@ -74,21 +81,6 @@ class v2s_trainer(Trainer):
             final_div_factor=1./25, div_factor = 25,
             )
     
-    @staticmethod
-    def add_image(log,tag,data,step,scale=True):
-        if tag in data.keys():
-            timg = data[tag][0].detach().cpu().numpy()
-            if scale:
-                timg = (timg-timg.min())/(timg.max()-timg.min())
-    
-            if len(timg.shape)==2:
-                formats='HW'
-            elif timg.shape[0]==3:
-                formats='CHW'
-            else:
-                formats='HWC'
-            log.add_image(tag,timg,step,dataformats=formats)
-
     
     def train(self):
         opts = self.opts
@@ -105,7 +97,32 @@ class v2s_trainer(Trainer):
             epoch_iter = 0
             self.model.module.epoch = epoch
             self.model.module.ep_iters = len(self.dataloader)
+            
+            # evaluation
+            with torch.no_grad():
+                # run marching cubes
+                self.extract_mesh(opts, self.model.module)
 
+                # render a video
+                self.model.eval()
+                num_eval = 9
+                skip_int = len(self.evalloader)//num_eval
+                rendered_seq = defaultdict(list)
+                for i,batch in enumerate(self.evalloader):
+                    if i%skip_int==0:
+                        rendered = self.render_vid(self.model.module, batch)
+                        for k, v in rendered.items():
+                            rendered_seq[k] += [v]
+
+                rgb_coarse = torch.cat(rendered_seq['rgb_coarse'],0)
+                sil_coarse = torch.cat(rendered_seq['opacity_coarse'],0)
+                rgb_coarse = image_grid(rgb_coarse, 3,3)
+                sil_coarse = image_grid(sil_coarse, 3,3)
+                self.add_image(log, 'rendered_img', rgb_coarse, epoch, scale=False)
+                self.add_image(log, 'rendered_sil', sil_coarse, epoch, scale=False)
+                
+
+            self.model.train()
             for i, batch in enumerate(self.dataloader):
                 print(i)
                 self.model.module.iters=i
@@ -116,7 +133,7 @@ class v2s_trainer(Trainer):
                     start_time = time.time()
 
                 self.optimizer.zero_grad()
-                total_loss,aux_output = self.model(batch)
+                total_loss,aux_out = self.model(batch)
                 total_loss.mean().backward()
                 
                 if self.opts.debug:
@@ -125,26 +142,77 @@ class v2s_trainer(Trainer):
 
                 ## gradient clipping
 
-                #if opts.local_rank==0 and torch.isnan(self.model.module.total_loss):
-                #    pdb.set_trace()
                 self.optimizer.step()
                 self.scheduler.step()
 
                 total_steps += 1
                 epoch_iter += 1
 
-                if opts.local_rank==0:
-                    if 'total_loss' in aux_output.keys():
-                        log.add_scalar('train/total_loss',  aux_output['total_loss'].mean(), total_steps)
-                    if 'sil_loss' in aux_output.keys():
-                        log.add_scalar('train/sil_loss',  aux_output['sil_loss'].mean(), total_steps)
-                    if 'img_loss' in aux_output.keys():
-                        log.add_scalar('train/img_loss',  aux_output['img_loss'].mean(), total_steps)
-                    if i==0:
-                        self.add_image(log, 'rendered_img', aux_output, epoch,scale=True)
-                        self.add_image(log, 'rendered_sil', aux_output, epoch,scale=True)
+                if opts.local_rank==0: 
+                    self.save_logs(log, aux_out, total_steps, epoch)
 
             #if (epoch+1) % opts.save_epoch_freq == 0:
             #    print('saving the model at the end of epoch {:d}, iters {:d}'.format(epoch, total_steps))
             #    self.save('latest')
             #    self.save(epoch+1)
+   
+    @staticmethod 
+    def render_vid(model, batch):
+        model.set_input(batch)
+        rendered, _ = model.nerf_render(is_eval=True)
+        return rendered  
+
+    @staticmethod
+    def extract_mesh(opts, model, grid_size=100, threshold=0.2, bound=1.2):
+        pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
+        query_xyz = np.stack(np.meshgrid(pts, pts, pts), -1)
+        query_xyz = torch.Tensor(query_xyz).to(model.device).view(-1, 3)
+        query_dir = torch.zeros_like(query_xyz)
+
+        bs_pts = query_xyz.shape[0]
+        out_chunks = []
+        for i in range(0, bs_pts, opts.chunk):
+            xyz_embedded = model.embedding_xyz(query_xyz[i:i+opts.chunk]) # (N, embed_xyz_channels)
+            dir_embedded = model.embedding_dir(query_dir[i:i+opts.chunk]) # (N, embed_dir_channels)
+            xyzdir_embedded = torch.cat([xyz_embedded, dir_embedded], 1)
+            out_chunks += [model.nerf_coarse(xyzdir_embedded)]
+        vol_rgbo = torch.cat(out_chunks, 0)
+
+        vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
+        print('fraction occupied:', (vol_o > threshold).float().mean())
+        vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
+        vertices = (vertices - grid_size/2)/grid_size*2
+        mesh = trimesh.Trimesh(vertices, triangles)
+        mesh.export('/private/home/gengshany/dropbox/output/0.obj')
+
+    def save_logs(self, log, aux_output, total_steps, epoch):
+        self.add_scalar(log,'total_loss', aux_output,total_steps)
+        self.add_scalar(log,'sil_loss', aux_output,total_steps)
+        self.add_scalar(log,'img_loss', aux_output,total_steps)
+    
+    @staticmethod
+    def add_image_from_dict(log,tag,data,step,scale=True):
+        if tag in data.keys():
+            timg = data[tag][0].detach().cpu().numpy()
+            add_image(log, tag, timg, step, scale)
+
+    @staticmethod
+    def add_image(log,tag,timg,step,scale=True):
+        """
+        timg, h,w,x
+        """
+        if scale:
+            timg = (timg-timg.min())/(timg.max()-timg.min())
+    
+        if len(timg.shape)==2:
+            formats='HW'
+        elif timg.shape[0]==3:
+            formats='CHW'
+        else:
+            formats='HWC'
+        log.add_image(tag,timg,step,dataformats=formats)
+
+    @staticmethod
+    def add_scalar(log,tag,data,step):
+        if tag in data.keys():
+            log.add_scalar(tag,  data[tag], step)

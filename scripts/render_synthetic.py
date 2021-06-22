@@ -28,31 +28,25 @@ parser.add_argument('--init_a', default=0.75,type=float,
                     help='0-1, percentage of a full cycle for initial pose')
 args = parser.parse_args()
 ## io
-img_size = 128
-#bgcolor = None
-bgcolor = np.asarray([0,0,0])
+img_size = 512
+bgcolor = None
+#bgcolor = np.asarray([0,0,0])
 xtime=1
-d_obj = 10
-focal = 5
+d_obj = 3
+focal = 2
 filedir='database'
 
 overts_list = []
 for i in range(args.nframes):
     if args.model=='spot':
         mesh = sr.Mesh.from_obj('database/misc/spot/spot_triangulated.obj', load_texture=True, texture_res=5, texture_type='surface')
-        overts = mesh.vertices
-        center = overts.mean(1)[:,None]
-        scale = max((overts - center)[0].abs().max(0)[0])
-        overts -= center
-        overts *= 1.0 / float(scale)
-
     elif args.model=='eagle':
         mesh = sr.Mesh.from_obj('database/misc/eagle/eagle.obj', load_texture=True, texture_res=5, texture_type='surface')
-        overts = mesh.vertices
-        overts[:,:,1]*= -1
-        overts[:,:,2]*= -1
-        overts[:,:,1]+=2.5; overts /= 6;
-
+    overts = mesh.vertices
+    center = overts.mean(1)[:,None]
+    scale = max((overts - center)[0].abs().max(0)[0])
+    overts -= center
+    overts *= 1.0 / float(scale)
     overts_list.append(overts)
 colors=mesh.textures
 faces = mesh.faces

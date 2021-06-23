@@ -23,5 +23,8 @@ To optimize
 ```
 python -m torch.distributed.launch --master_port 19957 --nproc_per_node=1 main.py --batch_size 3 --img_size 128
 ```
-
+To re-render meshes
+```
+python extract.py --img_size 256 --seqname syn-eagle-100
+```
 ## Additional Notes

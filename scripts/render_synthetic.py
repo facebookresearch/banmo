@@ -42,6 +42,8 @@ for i in range(args.nframes):
         mesh = sr.Mesh.from_obj('database/misc/spot/spot_triangulated.obj', load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='eagle':
         mesh = sr.Mesh.from_obj('database/misc/eagle/eagle.obj', load_texture=True, texture_res=5, texture_type='surface')
+    elif args.model=='water':
+        mesh = sr.Mesh.from_obj('database/misc/water/water.obj', load_texture=True, texture_res=5, texture_type='surface')
     overts = mesh.vertices
     center = overts.mean(1)[:,None]
     scale = max((overts - center)[0].abs().max(0)[0])

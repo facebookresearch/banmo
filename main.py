@@ -14,8 +14,6 @@ cudnn.benchmark = True
 
 from nnutils.train_utils import v2s_trainer
 
-flags.DEFINE_integer('local_rank', 0, 'for distributed training')
-flags.DEFINE_integer('ngpu', 1, 'number of gpus to use')
 opts = flags.FLAGS
 
 def main(_):
@@ -36,7 +34,6 @@ def main(_):
     trainer = v2s_trainer(opts)
     trainer.init_dataset()    
     trainer.define_model()
-    #trainer.define_criterion_ddp()
     trainer.init_training()
     trainer.train()
 

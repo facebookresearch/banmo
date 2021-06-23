@@ -112,7 +112,7 @@ def force_type(varlist):
         varlist[i] = varlist[i].type(varlist[0].dtype)
     return varlist
 
-def raycast(xys, Rmat, Tmat, Kinv):
+def raycast(xys, Rmat, Tmat, Kinv, bound=1.5):
     """
     xys: bs, N, 3
     Rmat:bs, ...,3,3 
@@ -129,8 +129,8 @@ def raycast(xys, Rmat, Tmat, Kinv):
     xyz3d = xy1s.matmul(Kinv.permute(0,2,1))
     ray_directions = xyz3d.matmul(Rmat)  # transpose -> right multiply
     ray_origins = -Tmat.matmul(Rmat) # transpose -> right multiply
-    znear =Tmat[:,:,-1:].repeat(1,nsamples,1)-2
-    zfar = Tmat[:,:,-1:].repeat(1,nsamples,1)+2
+    znear =Tmat[:,:,-1:].repeat(1,nsamples,1)-bound
+    zfar = Tmat[:,:,-1:].repeat(1,nsamples,1)+bound
     ray_origins = ray_origins.repeat(1,nsamples,1)
 
     rays = torch.cat([ray_origins, ray_directions, znear, zfar],-1)
@@ -151,5 +151,4 @@ def sample_xy(img_size, bs, nsample, device, return_all=False):
         rand_inds = torch.LongTensor(rand_inds).to(device) # bs, ns
         xys = torch.stack([xygrid[i][rand_inds[i]] for i in range(bs)],0) # bs,ns,2
     
-    #xys = xys/(img_size-1)*2-1 # v: (-1,1)
     return rand_inds, xys

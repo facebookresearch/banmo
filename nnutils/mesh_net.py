@@ -24,6 +24,8 @@ from ext_nnutils.rendering import render_rays
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy
 
+flags.DEFINE_integer('local_rank', 0, 'for distributed training')
+flags.DEFINE_integer('ngpu', 1, 'number of gpus to use')
 flags.DEFINE_float('random_geo', 1, 'Random geometric augmentation')
 flags.DEFINE_string('config_name', 'template', 'name of the test data config file')
 flags.DEFINE_string('seqname', 'syn-spot-40', 'name of the sequence')
@@ -38,7 +40,7 @@ flags.DEFINE_integer('num_epochs', 1000, 'Number of epochs to train')
 flags.DEFINE_integer('num_pretrain_epochs', 0, 'If >0, we will pretain from an existing saved model.')
 flags.DEFINE_float('learning_rate', 1e-3, 'learning rate')
 flags.DEFINE_boolean('use_sgd', False, 'if true uses sgd instead of adam, beta1 is used as mmomentu')
-flags.DEFINE_integer('batch_size', 8, 'Size of minibatches')
+flags.DEFINE_integer('batch_size', 1, 'size of minibatches')
 flags.DEFINE_string('checkpoint_dir', 'logdir/', 'Root directory for output files')
 flags.DEFINE_string('model_path', '', 'load model path')
 flags.DEFINE_boolean('freeze_shape', False, 'whether to load an initial shape and freeze it')
@@ -118,7 +120,7 @@ class v2s_net(nn.Module):
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225])
         
-    def nerf_render(self, nsample=256, ndepth=64, is_eval=False):
+    def nerf_render(self, nsample=256, ndepth=128):
         opts=self.opts
         Rmat = self.rtk[:,:3,:3]
         Tmat = self.rtk[:,:3,3]
@@ -127,9 +129,10 @@ class v2s_net(nn.Module):
         Kinv = Kmatinv(Kaug.matmul(Kmat))
         bs = Kinv.shape[0]
 
-        rand_inds, xys = sample_xy(opts.img_size, bs, nsample, self.device, return_all=is_eval)
+        rand_inds, xys = sample_xy(opts.img_size, bs, nsample, self.device, 
+                                   return_all= not(self.training))
 
-        rays = raycast(xys, Rmat, Tmat, Kinv)
+        rays = raycast(xys, Rmat, Tmat, Kinv, bound=1.5)
 
         # render rays
         rays = rays.view(-1,8)
@@ -151,10 +154,10 @@ class v2s_net(nn.Module):
         
         for k, v in results.items():
             v = torch.cat(v, 0)
-            if is_eval:
-                v = v.view(bs,opts.img_size, opts.img_size, -1)
-            else:
+            if self.training:
                 v = v.view(bs,nsample,-1)
+            else:
+                v = v.view(bs,opts.img_size, opts.img_size, -1)
             results[k] = v
         
         return results, rand_inds
@@ -204,8 +207,8 @@ class v2s_net(nn.Module):
         # loss
         img_loss = F.mse_loss(rendered_img, img_at_samp)
         sil_loss = F.mse_loss(rendered_sil, sil_at_samp)
-        #total_loss = img_loss + sil_loss
-        total_loss = sil_loss
+        total_loss = img_loss + sil_loss
+        #total_loss = sil_loss
         
         aux_out={}
         aux_out['total_loss'] = total_loss

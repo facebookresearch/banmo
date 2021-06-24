@@ -9,9 +9,9 @@ import cv2
 import kornia
 import pdb
 
-from nnutils.geom_utils import obj_to_cam, pinhole_cam, render_color
-import ext_utils.flowlib as flowlib
-from ext_utils.pfm import write_pfm
+from nnutils.geom_utils import obj_to_cam, pinhole_cam, render_color, render_flow
+from ext_utils.flowlib import flow_to_image
+from ext_utils.util_flow import write_pfm
 from ext_utils.io import mkdir_p
 import soft_renderer as sr
 import argparse
@@ -49,6 +49,7 @@ for i in range(args.nframes):
     scale = max((overts - center)[0].abs().max(0)[0])
     overts -= center
     overts *= 1.0 / float(scale)
+    overts[:,:,1]*= -1  # aligh with camera coordinate
     overts_list.append(overts)
 colors=mesh.textures
 faces = mesh.faces
@@ -59,8 +60,6 @@ mkdir_p( '%s/DAVIS/FlowFW/Full-Resolution/%s/'       %(filedir,args.outdir))
 mkdir_p( '%s/DAVIS/FlowBW/Full-Resolution/%s/'       %(filedir,args.outdir))
 mkdir_p( '%s/DAVIS/Cameras/Full-Resolution/%s/'       %(filedir,args.outdir))
 
-verts_list = []
-verts_pos_list = []
 
 # soft renderer
 renderer = sr.SoftRenderer(image_size=img_size, sigma_val=1e-12, 
@@ -69,7 +68,7 @@ renderer = sr.SoftRenderer(image_size=img_size, sigma_val=1e-12,
                #light_intensity_ambient=0.,light_intensity_directionals=1., light_directions=[-1.,-0.5,1.])
 
     
-occ = -np.ones((img_size, img_size)).astype(np.float32)
+verts_ndc_list = []
 for i in range(0,args.nframes):
     verts = overts_list[i]
 
@@ -96,6 +95,7 @@ for i in range(0,args.nframes):
     
     # pespective projection
     verts = pinhole_cam(verts, K)
+    verts_ndc_list.append(verts.clone())
     
     # render sil+rgb
     rendered = render_color(renderer, verts, faces, colors, texture_type='surface')
@@ -109,13 +109,23 @@ for i in range(0,args.nframes):
     cv2.imwrite('%s/DAVIS/Annotations/Full-Resolution/%s/%05d.png'    %(filedir,args.outdir,i),rendered_sil)
     np.savetxt('%s/DAVIS/Cameras/Full-Resolution/%s/%05d.txt'         %(filedir,args.outdir,i),rtk)
 
-#    # render flow
-#    rendered = render_color(renderer, verts, faces, flow, texture_type='vertex')
-#    rendered_img = rendered[0,:3].permute(1,2,0).cpu().numpy()*255
-#    rendered_sil = rendered[0,-1].cpu().numpy()*128
-#    write_pfm( '%s/DAVIS/FlowFW/Full-Resolution/%s/flo-%05d.pfm'%(filedir,args.outdir,i-dframe),flow_fw)
-#    write_pfm( '%s/DAVIS/FlowBW/Full-Resolution/%s/flo-%05d.pfm'%(filedir,args.outdir,i),flow_bw)
-#    write_pfm( '%s/DAVIS/FlowFW/Full-Resolution/%s/occ-%05d.pfm'%(filedir,args.outdir,i-dframe),occ_fw)
-#    write_pfm( '%s/DAVIS/FlowBW/Full-Resolution/%s/occ-%05d.pfm'%(filedir,args.outdir,i),occ_bw)
-#    cv2.imwrite(     '%s/DAVIS/FlowFW/Full-Resolution/%s/col-%05d.jpg'%(filedir,args.outdir,i-dframe),flowlib.flow_to_image(flow_fw)[:,:,::-1])
-#    cv2.imwrite(     '%s/DAVIS/FlowBW/Full-Resolution/%s/col-%05d.jpg'%(filedir,args.outdir,i),       flowlib.flow_to_image(flow_bw)[:,:,::-1])
+
+# render flow
+occ = -np.ones((img_size, img_size)).astype(np.float32)
+for i in range(1,args.nframes):
+    verts_ndc = verts_ndc_list[i-1]
+    verts_ndc_n = verts_ndc_list[i]
+    flow_fw = render_flow(renderer, verts_ndc, faces, verts_ndc_n)
+    flow_bw = render_flow(renderer, verts_ndc_n, faces, verts_ndc)
+    # to pixels
+    flow_fw = flow_fw*(img_size-1)/2
+    flow_bw = flow_bw*(img_size-1)/2
+    flow_fw = flow_fw.cpu().numpy()[0]
+    flow_bw = flow_bw.cpu().numpy()[0]
+    
+    write_pfm(  '%s/DAVIS/FlowFW/Full-Resolution/%s/flo-%05d.pfm'%(filedir,args.outdir,i-1),flow_fw)
+    write_pfm(  '%s/DAVIS/FlowBW/Full-Resolution/%s/flo-%05d.pfm'%(filedir,args.outdir,i),  flow_bw)
+    write_pfm(  '%s/DAVIS/FlowFW/Full-Resolution/%s/occ-%05d.pfm'%(filedir,args.outdir,i-1),occ)
+    write_pfm(  '%s/DAVIS/FlowBW/Full-Resolution/%s/occ-%05d.pfm'%(filedir,args.outdir,i),  occ)
+    cv2.imwrite('%s/DAVIS/FlowFW/Full-Resolution/%s/col-%05d.jpg'%(filedir,args.outdir,i-1),flow_to_image(flow_fw)[:,:,::-1])
+    cv2.imwrite('%s/DAVIS/FlowBW/Full-Resolution/%s/col-%05d.jpg'%(filedir,args.outdir,i),  flow_to_image(flow_bw)[:,:,::-1])

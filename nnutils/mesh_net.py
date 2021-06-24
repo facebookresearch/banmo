@@ -35,7 +35,7 @@ flags.DEFINE_float('jitter_frac', 0.05, 'bbox is jittered by this fraction of ma
 flags.DEFINE_enum('split', 'train', ['train', 'val', 'all', 'test'], 'eval split')
 flags.DEFINE_integer('num_kps', 15, 'The dataloader should override these.')
 flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
-flags.DEFINE_string('name', 'exp_name', 'Experiment Name')
+flags.DEFINE_string('logname', 'exp_name', 'Experiment Name')
 flags.DEFINE_integer('num_epochs', 1000, 'Number of epochs to train')
 flags.DEFINE_integer('num_pretrain_epochs', 0, 'If >0, we will pretain from an existing saved model.')
 flags.DEFINE_float('learning_rate', 1e-3, 'learning rate')
@@ -115,21 +115,24 @@ class v2s_net(nn.Module):
         self.embedding_dir = Embedding(3, 4) # 4 is the default number
         self.embeddings = [self.embedding_xyz, self.embedding_dir]
         self.nerf_models = [self.nerf_coarse]
+        if opts.N_importance>0:
+            self.nerf_fine = NeRF()
+            self.nerf_models += [self.nerf_fine]
         
         self.resnet_transform = torchvision.transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225])
         
-    def nerf_render(self, nsample=256, ndepth=128):
+    def nerf_render(self, rtk, kaug, img_size, nsample=256, ndepth=128):
         opts=self.opts
-        Rmat = self.rtk[:,:3,:3]
-        Tmat = self.rtk[:,:3,3]
-        Kmat = K2mat(self.rtk[:,3,:])
-        Kaug = K2inv(self.kaug) # p = Kaug Kmat P
+        Rmat = rtk[:,:3,:3]
+        Tmat = rtk[:,:3,3]
+        Kmat = K2mat(rtk[:,3,:])
+        Kaug = K2inv(kaug) # p = Kaug Kmat P
         Kinv = Kmatinv(Kaug.matmul(Kmat))
         bs = Kinv.shape[0]
 
-        rand_inds, xys = sample_xy(opts.img_size, bs, nsample, self.device, 
+        rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
 
         rays = raycast(xys, Rmat, Tmat, Kinv, bound=1.5)
@@ -148,7 +151,7 @@ class v2s_net(nn.Module):
                         noise_std=opts.noise_std,
                         N_importance=opts.N_importance,
                         chunk=opts.chunk, # chunk size is effective in val mode
-                        white_back=False)
+                        white_back=False) # never turn on white_back
             for k, v in rendered_chunks.items():
                 results[k] += [v]
         
@@ -157,7 +160,7 @@ class v2s_net(nn.Module):
             if self.training:
                 v = v.view(bs,nsample,-1)
             else:
-                v = v.view(bs,opts.img_size, opts.img_size, -1)
+                v = v.view(bs,img_size, img_size, -1)
             results[k] = v
         
         return results, rand_inds
@@ -196,19 +199,21 @@ class v2s_net(nn.Module):
     def forward(self, batch):
         opts = self.opts
         bs = self.set_input(batch)
+        rtk = self.rtk
+        kaug= self.kaug
     
         # Render
-        rendered, rand_inds = self.nerf_render()
+        rendered, rand_inds = self.nerf_render(rtk, kaug, opts.img_size)
         rendered_img = rendered['rgb_coarse']
         rendered_sil = rendered['opacity_coarse']
         img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3
         sil_at_samp = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
            
         # loss
-        img_loss = F.mse_loss(rendered_img, img_at_samp)
+        img_loss = (rendered_img - img_at_samp).norm(2,-1)
+        img_loss = 0.5*img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss = F.mse_loss(rendered_sil, sil_at_samp)
-        total_loss = img_loss + sil_loss
-        #total_loss = sil_loss
+        total_loss = sil_loss+img_loss
         
         aux_out={}
         aux_out['total_loss'] = total_loss

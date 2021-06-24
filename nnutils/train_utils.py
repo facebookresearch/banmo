@@ -37,6 +37,17 @@ from dataloader import frameloader
 
 
 class v2s_trainer(Trainer):
+    def __init__(self, opts):
+        self.opts = opts
+        self.local_rank = opts.local_rank
+        self.save_dir = os.path.join(opts.checkpoint_dir, opts.logname)
+        # write logs
+        if opts.local_rank==0:
+            if not os.path.exists(self.save_dir): os.makedirs(self.save_dir)
+            log_file = os.path.join(self.save_dir, 'opts.log')
+            with open(log_file, 'w') as f:
+                for k in dir(opts): f.write('{}: {}\n'.format(k, opts.__getattr__(k)))
+
     def define_model(self, is_eval=False):
         opts = self.opts
         img_size = (opts.img_size, opts.img_size)
@@ -123,7 +134,7 @@ class v2s_trainer(Trainer):
     def train(self):
         opts = self.opts
         if opts.local_rank==0:
-            log = SummaryWriter('%s/%s'%(opts.checkpoint_dir,opts.name), comment=opts.name)
+            log = SummaryWriter('%s/%s'%(opts.checkpoint_dir,opts.logname), comment=opts.logname)
         total_steps = 0
         dataset_size = len(self.dataloader)
         torch.manual_seed(8)  # do it again
@@ -138,7 +149,8 @@ class v2s_trainer(Trainer):
             
             # evaluation
             rendered_seq, mesh_seq, rtk_seq = self.eval()                
-            mesh_seq[0].export('/private/home/gengshany/dropbox/output/0.obj')
+            mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
+            mesh_seq[0].export(mesh_file)
             rgb_coarse = image_grid(rendered_seq['rgb_coarse'], 3,3)
             sil_coarse = image_grid(rendered_seq['opacity_coarse'], 3,3)
             self.add_image(log, 'rendered_img', rgb_coarse, epoch, scale=False)
@@ -180,8 +192,14 @@ class v2s_trainer(Trainer):
    
     @staticmethod 
     def render_vid(model, batch):
+        opts=model.opts
         model.set_input(batch)
-        rendered, _ = model.nerf_render()
+        rtk = model.rtk
+        kaug=model.kaug
+        render_size=64
+        kaug[:,:2] *= opts.img_size/render_size
+
+        rendered, _ = model.nerf_render(rtk, kaug, render_size)
         return rendered  
 
     @staticmethod

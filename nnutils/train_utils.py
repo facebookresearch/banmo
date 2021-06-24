@@ -48,19 +48,18 @@ class v2s_trainer(Trainer):
             with open(log_file, 'w') as f:
                 for k in dir(opts): f.write('{}: {}\n'.format(k, opts.__getattr__(k)))
 
-    def define_model(self, is_eval=False):
+    def define_model(self, no_ddp=False):
         opts = self.opts
         img_size = (opts.img_size, opts.img_size)
         self.device = torch.device('cuda:{}'.format(opts.local_rank))
         self.model = mesh_net.v2s_net(
             img_size, opts, nz_feat=opts.nz_feat, num_kps=opts.num_kps, sfm_mean_shape=None)
-        
-        if opts.model_path!='':
-            self.load_network(self.model, 'pred', opts.num_pretrain_epochs,model_path = opts.model_path, freeze_shape=opts.freeze_shape, finetune=opts.finetune)
 
-        if is_eval:
+        if opts.model_path!='':
+            self.load_network(opts.model_path)
+
+        if no_ddp:
             self.model = self.model.to(self.device)
-            
         else:
             # ddp
             self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
@@ -104,6 +103,11 @@ class v2s_trainer(Trainer):
             save_dict = self.model.state_dict()
             torch.save(save_dict, save_path)
             return
+    
+    def load_network(self,model_path=None):
+        states = torch.load(model_path,map_location='cpu')
+        self.model.load_state_dict(states, strict=False)
+        return
    
     def eval(self, num_eval=9, dynamic=False): 
         """
@@ -116,10 +120,14 @@ class v2s_trainer(Trainer):
             mesh_mc = self.extract_mesh(self.model, self.opts.chunk)
 
             # render a video
-            idx_render = np.linspace(0,len(self.evalloader)-1,num_eval, dtype=int)
+            if num_eval>0:
+                idx_render = np.linspace(0,len(self.evalloader)-1,num_eval, dtype=int)
+            else:
+                idx_render = np.asarray(range(len(self.evalloader)))
             rendered_seq = defaultdict(list)
             mesh_seq=[]
             rtk_seq=[]
+            id_seq=[]
             for i,batch in enumerate(self.evalloader):
                 if i in idx_render:
                     rendered = self.render_vid(self.model, batch)
@@ -136,12 +144,15 @@ class v2s_trainer(Trainer):
                     mesh_seq.append(mesh_mc)
 
                     # save cams
-                    rtk_seq.append(self.model.rtk)
+                    rtk_seq.append(self.model.rtk[0].cpu().numpy())
+                    
+                    # save image list
+                    id_seq.append(self.model.frameid)
 
             for k,v in rendered_seq.items():
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)
 
-        return rendered_seq, mesh_seq, rtk_seq
+        return rendered_seq, mesh_seq, rtk_seq, id_seq
     
     def train(self):
         opts = self.opts
@@ -160,7 +171,7 @@ class v2s_trainer(Trainer):
             self.model.ep_iters = len(self.dataloader)
             
             # evaluation
-            rendered_seq, mesh_seq, rtk_seq = self.eval()                
+            rendered_seq, mesh_seq, rtk_seq, _ = self.eval()                
             mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
             mesh_seq[0].export(mesh_file)
             for k,v in rendered_seq.items():
@@ -221,8 +232,9 @@ class v2s_trainer(Trainer):
     @staticmethod
     def extract_mesh(model,chunk, grid_size=256, threshold=0.5, bound=1.2):
         pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
-        query_xyz = np.stack(np.meshgrid(pts, pts, pts), -1)
-        query_xyz = torch.Tensor(query_xyz).to(model.device).view(-1, 3)
+        query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)
+        query_yxz = torch.Tensor(query_yxz).to(model.device).view(-1, 3)
+        query_xyz = torch.cat([query_yxz[:,1:2], query_yxz[:,0:1], query_yxz[:,2:3]],-1)
         query_dir = torch.zeros_like(query_xyz)
 
         bs_pts = query_xyz.shape[0]
@@ -238,6 +250,7 @@ class v2s_trainer(Trainer):
         print('fraction occupied:', (vol_o > threshold).float().mean())
         vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
         vertices = (vertices - grid_size/2)/grid_size*2
+
         mesh = trimesh.Trimesh(vertices, triangles)
         if len(mesh.vertices)>0:
             mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)

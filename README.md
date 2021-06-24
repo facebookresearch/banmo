@@ -25,6 +25,7 @@ bash scripts/template.sh logname dataname
 ```
 To re-render meshes
 ```
-python extract.py --img_size 512 --seqname syn-eagle-100
+python extract.py --seqname syn-eagle-15q --model_path logdir/syn-eagle-15q/params_latest.pth
+python render_vis.py --testdir logdir/syn-eagle-15q/ --outpath ./test-sta.mp4 --seqname syn-eagle-15q --freeze yes
 ```
 ## Additional Notes

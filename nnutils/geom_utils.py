@@ -10,6 +10,7 @@ def obj_to_cam(in_verts, Rmat, Tmat):
     Tmat:  ...,3 
     """
     verts = in_verts.clone()
+    if verts.dim()==2: verts=verts[None]
     verts = verts.view(-1,verts.shape[1],3)
     Rmat = Rmat.view(-1,3,3).permute(0,2,1) # left multiply
     Tmat = Tmat.view(-1,1,3)

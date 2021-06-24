@@ -167,7 +167,11 @@ class v2s_net(nn.Module):
         return results, rand_inds
 
     def set_input(self, batch):
-        bs,_,_,h,w = batch['img'].shape
+        if len(batch['img'].shape)==5:
+            bs,_,_,h,w = batch['img'].shape
+        else:
+            bs=1
+            _,_,h,w = batch['img'].shape
 
         # convert to float
         for k,v in batch.items():

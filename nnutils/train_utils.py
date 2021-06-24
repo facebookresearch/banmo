@@ -96,6 +96,14 @@ class v2s_trainer(Trainer):
             cycle_momentum=False, anneal_strategy='linear',
             final_div_factor=1./25, div_factor = 25,
             )
+    
+    def save_network(self, epoch_label):
+        if self.opts.local_rank==0:
+            save_filename = 'params_{}.pth'.format(epoch_label)
+            save_path = os.path.join(self.save_dir, save_filename)
+            save_dict = self.model.state_dict()
+            torch.save(save_dict, save_path)
+            return
    
     def eval(self, num_eval=9, dynamic=False): 
         """
@@ -108,15 +116,19 @@ class v2s_trainer(Trainer):
             mesh_mc = self.extract_mesh(self.model, self.opts.chunk)
 
             # render a video
-            skip_int = len(self.evalloader)//num_eval
+            idx_render = np.linspace(0,len(self.evalloader)-1,num_eval, dtype=int)
             rendered_seq = defaultdict(list)
             mesh_seq=[]
             rtk_seq=[]
             for i,batch in enumerate(self.evalloader):
-                if i%skip_int==0:
+                if i in idx_render:
                     rendered = self.render_vid(self.model, batch)
                     for k, v in rendered.items():
                         rendered_seq[k] += [v]
+
+                    # save images
+                    rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)]
+                    rendered_seq['sil'] += [self.model.masks[...,None]]
 
                     # run marching cubes
                     if dynamic:
@@ -139,7 +151,7 @@ class v2s_trainer(Trainer):
         dataset_size = len(self.dataloader)
         torch.manual_seed(8)  # do it again
         torch.cuda.manual_seed(1)
-        #if opts.local_rank==0:        self.save('0')
+        self.save_network('0')
 
         # start training
         for epoch in range(0, opts.num_epochs):
@@ -151,10 +163,14 @@ class v2s_trainer(Trainer):
             rendered_seq, mesh_seq, rtk_seq = self.eval()                
             mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
             mesh_seq[0].export(mesh_file)
-            rgb_coarse = image_grid(rendered_seq['rgb_coarse'], 3,3)
-            sil_coarse = image_grid(rendered_seq['opacity_coarse'], 3,3)
-            self.add_image(log, 'rendered_img', rgb_coarse, epoch, scale=False)
-            self.add_image(log, 'rendered_sil', sil_coarse, epoch, scale=False)
+            for k,v in rendered_seq.items():
+                grid_img = image_grid(rendered_seq[k],3,3)
+                self.add_image(log, k, grid_img, epoch, scale=False)
+                
+#            rgb_coarse = image_grid(rendered_seq['rgb_coarse'], 3,3)
+#            sil_coarse = image_grid(rendered_seq['opacity_coarse'], 3,3)
+#            self.add_image(log, 'rendered_img', rgb_coarse, epoch, scale=False)
+#            self.add_image(log, 'rendered_sil', sil_coarse, epoch, scale=False)
 
             self.model.train()
             for i, batch in enumerate(self.dataloader):
@@ -185,10 +201,10 @@ class v2s_trainer(Trainer):
                 if opts.local_rank==0: 
                     self.save_logs(log, aux_out, total_steps, epoch)
 
-            #if (epoch+1) % opts.save_epoch_freq == 0:
-            #    print('saving the model at the end of epoch {:d}, iters {:d}'.format(epoch, total_steps))
-            #    self.save('latest')
-            #    self.save(epoch+1)
+            if (epoch+1) % opts.save_epoch_freq == 0:
+                print('saving the model at the end of epoch {:d}, iters {:d}'.format(epoch, total_steps))
+                self.save_network('latest')
+                self.save_network(epoch+1)
    
     @staticmethod 
     def render_vid(model, batch):

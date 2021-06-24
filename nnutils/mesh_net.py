@@ -24,6 +24,7 @@ from ext_nnutils.rendering import render_rays
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy
 
+flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
 flags.DEFINE_integer('ngpu', 1, 'number of gpus to use')
 flags.DEFINE_float('random_geo', 1, 'Random geometric augmentation')
@@ -204,14 +205,14 @@ class v2s_net(nn.Module):
     
         # Render
         rendered, rand_inds = self.nerf_render(rtk, kaug, opts.img_size)
-        rendered_img = rendered['rgb_coarse']
-        rendered_sil = rendered['opacity_coarse']
+        rendered_img = rendered['img_coarse']
+        rendered_sil = rendered['sil_coarse']
         img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3
         sil_at_samp = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
            
         # loss
-        img_loss = (rendered_img - img_at_samp).norm(2,-1)
-        img_loss = 0.5*img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
+        img_loss = (rendered_img - img_at_samp).pow(2)
+        img_loss = img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss = F.mse_loss(rendered_sil, sil_at_samp)
         total_loss = sil_loss+img_loss
         

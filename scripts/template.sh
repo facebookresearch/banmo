@@ -1,14 +1,14 @@
 export MKL_SERVICE_FORCE_INTEL=1
 dev=0
 ngpu=1
-address=1258
 nepoch=20
 bs=4
 img_size=512
 
 logname=$1
 seqname=$2
-add_args=${*: 3:$#-1}
+address=$3
+add_args=${*: 4:$#-1}
 
 CUDA_VISIBLE_DEVICES=$dev python -m torch.distributed.launch\
                     --master_port $address \
@@ -18,3 +18,4 @@ CUDA_VISIBLE_DEVICES=$dev python -m torch.distributed.launch\
                     --img_size $img_size \
                     --seqname $seqname \
                     --logname $logname \
+                    $add_args

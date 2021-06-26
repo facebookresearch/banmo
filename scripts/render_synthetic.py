@@ -24,14 +24,15 @@ parser.add_argument('--nframes', default=3,type=int,
                     help='number of frames to render')
 parser.add_argument('--alpha', default=1.,type=float,
                     help='0-1, percentage of a full cycle')
-parser.add_argument('--init_a', default=0.75,type=float,
+parser.add_argument('--init_a', default=0.25,type=float,
                     help='0-1, percentage of a full cycle for initial pose')
+parser.add_argument('--xspeed', default=0,type=float,
+                    help='times speed up')
 args = parser.parse_args()
 ## io
 img_size = 512
 bgcolor = None
 #bgcolor = np.asarray([0,0,0])
-xtime=1
 d_obj = 3
 focal = 2
 filedir='database'
@@ -41,7 +42,7 @@ for i in range(args.nframes):
     if args.model=='spot':
         mesh = sr.Mesh.from_obj('database/misc/spot/spot_triangulated.obj', load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='eagle':
-        mesh = sr.Mesh.from_obj('database/misc/eagle/eagle.obj', load_texture=True, texture_res=5, texture_type='surface')
+        mesh = sr.Mesh.from_obj('database/misc/eagle/Eagle-original_%06d.obj'%int(i*args.xspeed), load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='water':
         mesh = sr.Mesh.from_obj('database/misc/water/water.obj', load_texture=True, texture_res=5, texture_type='surface')
     overts = mesh.vertices

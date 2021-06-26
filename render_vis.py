@@ -96,7 +96,8 @@ def main():
     dframe = int(config.get('data', 'dframe'))
     for name in sorted(glob.glob('%s/*'%datapath))[init_frame:end_frame][::dframe]:
         rgb_img = cv2.imread(name)
-        sil_img = cv2.imread(name.replace('JPEGImages', 'Annotations').replace('.jpg', '.png'),0)[:,:,None]
+        try: sil_img = cv2.imread(name.replace('JPEGImages', 'Annotations').replace('.jpg', '.png'),0)[:,:,None]
+        except: sil_img = np.zeros(rgb_img.shape)[:,:,0]
         all_anno.append([rgb_img,sil_img,0,0,name])
         seqname = name.split('/')[-2]
         fr = int(name.split('/')[-1].split('.')[-2])
@@ -348,6 +349,7 @@ def main():
         color = cv2.resize(color, output_size[::-1])
 
         frames.append(color)
-    imageio.mimsave('%s'%args.outpath, frames, fps=1./(5./len(frames)))
+    imageio.mimsave('%s.gif'%args.outpath, frames, fps=1./(5./len(frames)))
+    imageio.mimsave('%s.mp4'%args.outpath, frames, fps=1./(5./len(frames)))
 if __name__ == '__main__':
     main()

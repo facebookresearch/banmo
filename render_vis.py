@@ -117,7 +117,7 @@ def main():
                 cam = np.loadtxt('%s/cam%d.txt'%(args.testdir,fr))
             ## skinning weights
             #mesh = trimesh.load('%s/clusters.obj'%(args.testdir),process=False)
-            trimesh.repair.fix_inversion(mesh)
+            #trimesh.repair.fix_inversion(mesh)
             all_mesh.append(mesh)
             all_cam.append(cam)
             all_bone.append(trimesh.load('%s/%s-gauss%d.ply'%(args.testdir, args.seqname,fr),process=False))
@@ -232,7 +232,7 @@ def main():
     if args.freeze=='yes':
         size = 150
     else:
-        size = len(all_anno)
+        size = len(all_mesh)
     for i in range(size):
         if args.append_render=='no':break
         # render flow between mesh 1 and 2
@@ -246,15 +246,10 @@ def main():
             refcam = all_cam[0].copy()
             refcam[:3,:3] = refcam[:3,:3].dot(cv2.Rodrigues(np.asarray([0.,-i*2*np.pi/size,0.]))[0])
             refcam[:2,3] = 0  # trans xy
-            refcam[2,3] = 20 # depth
-            if args.cam_type=='perspective':
-                refcam[3,2] = refimg.shape[1]/2 # px py
-                refcam[3,3] = refimg.shape[0]/2 # px py
-                refcam[3,:2] = 8*img_size/2 # fl
-            else:
-                refcam[3,2] = refimg.shape[1]/2 # px py
-                refcam[3,3] = refimg.shape[0]/2 # px py
-                refcam[3,:2] =0.5 * img_size/2 # fl
+            refcam[2,3] = 10 # depth
+            refcam[3,2] = refimg.shape[1]/2 # px py
+            refcam[3,3] = refimg.shape[0]/2 # px py
+            refcam[3,:2] = 8*img_size/2 # fl
         else:
             refimg, refsil, refkp, refvis, refname = all_anno[i]
             print('%s'%(refname))

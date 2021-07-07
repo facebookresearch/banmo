@@ -28,13 +28,14 @@ parser.add_argument('--init_a', default=0.25,type=float,
                     help='0-1, percentage of a full cycle for initial pose')
 parser.add_argument('--xspeed', default=0,type=float,
                     help='times speed up')
+parser.add_argument('--focal', default=2,type=float,
+                    help='focal length')
 args = parser.parse_args()
 ## io
 img_size = 512
 bgcolor = None
 #bgcolor = np.asarray([0,0,0])
 d_obj = 3
-focal = 2
 filedir='database'
 
 overts_list = []
@@ -75,14 +76,14 @@ for i in range(0,args.nframes):
 
     # set cameras
     rotx = np.random.rand()
-    rotx=0.
-    #if i==0: rotx=0.
+    #rotx=0.
+    if i==0: rotx=0.
     roty = args.init_a*6.28+args.alpha*6.28*i/args.nframes
     rotz = 0.
     Rmat = torch.Tensor(cv2.Rodrigues(np.asarray([rotx, roty, rotz]))[0]).cuda()
     Tmat = torch.Tensor([0,0,d_obj]                                        ).cuda()
-    K =    torch.Tensor([focal,focal,0,0]  ).cuda() 
-    Kimg = torch.Tensor([focal*img_size/2.,focal*img_size/2.,img_size/2.,img_size/2.]  ).cuda() 
+    K =    torch.Tensor([args.focal,args.focal,0,0]  ).cuda() 
+    Kimg = torch.Tensor([args.focal*img_size/2.,args.focal*img_size/2.,img_size/2.,img_size/2.]  ).cuda() 
 
     # add RTK: [R_3x3|T_3x1]
     #          [fx,fy,px,py], to the ndc space

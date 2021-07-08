@@ -103,6 +103,8 @@ flags.DEFINE_integer('chunk', 32*1024, 'chunk size to split the input to avoid O
 flags.DEFINE_integer('N_importance', 0, 'number of additional fine samples')
 flags.DEFINE_float('perturb',   1.0, 'factor to perturb depth sampling points')
 flags.DEFINE_float('noise_std', 1.0, 'std dev of noise added to regularize sigma')
+flags.DEFINE_bool('flowbw', False, 'use backward warping 3d flow')
+flags.DEFINE_integer('sample_grid3d', 128, 'resolution for mesh extraction from nerf')
 
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, nz_feat=100, num_kps=15, sfm_mean_shape=None):
@@ -112,19 +114,26 @@ class v2s_net(nn.Module):
 
         # set nerf model
         self.nerf_coarse = NeRF()
+        self.nerf_flowbw = NeRF(in_channels_xyz=71, in_channels_dir=0)
         self.embedding_xyz = Embedding(3, 10) # 10 is the default number
         self.embedding_dir = Embedding(3, 4) # 4 is the default number
-        self.embeddings = [self.embedding_xyz, self.embedding_dir]
-        self.nerf_models = [self.nerf_coarse]
+        self.embedding_time = nn.Embedding(15,8)
+        
+        self.embeddings = {'xyz':self.embedding_xyz, 'dir':self.embedding_dir}
+        self.nerf_models= {'coarse':self.nerf_coarse}
+        if opts.flowbw:
+            self.nerf_models['flowbw'] = self.nerf_flowbw
+            self.embeddings['time'] = self.embedding_time
+
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
-            self.nerf_models += [self.nerf_fine]
+            self.nerf_models['fine'] = self.nerf_fine
         
         self.resnet_transform = torchvision.transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225])
         
-    def nerf_render(self, rtk, kaug, img_size, nsample=256, ndepth=128):
+    def nerf_render(self, rtk, kaug, frameid, img_size, nsample=256, ndepth=128):
         opts=self.opts
         Rmat = rtk[:,:3,:3]
         Tmat = rtk[:,:3,3]
@@ -139,7 +148,9 @@ class v2s_net(nn.Module):
         rays = raycast(xys, Rmat, Tmat, Kinv, bound=1.5)
 
         # render rays
-        rays = rays.view(-1,8)
+        frameid = frameid[:,None,None].repeat(1,rays.shape[1],1).to(self.device)
+        rays = torch.cat([rays, frameid],-1)
+        rays = rays.view(-1,9)  # origin, unnormalized direction, near, far, frameid
         bs_rays = rays.shape[0]
         results=defaultdict(list)
         for i in range(0, bs_rays, opts.chunk):
@@ -206,9 +217,10 @@ class v2s_net(nn.Module):
         bs = self.set_input(batch)
         rtk = self.rtk
         kaug= self.kaug
+        frameid=self.frameid
     
         # Render
-        rendered, rand_inds = self.nerf_render(rtk, kaug, opts.img_size)
+        rendered, rand_inds = self.nerf_render(rtk, kaug, frameid, opts.img_size)
         rendered_img = rendered['img_coarse']
         rendered_sil = rendered['sil_coarse']
         img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3

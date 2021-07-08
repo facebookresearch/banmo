@@ -21,11 +21,10 @@ python scripts/render_synthetic.py --outdir syn-eagle-100 --model eagle --nframe
 ```
 To optimize
 ```
-bash scripts/template.sh logname dataname
+bash scripts/template.sh logname dataname address --flowbw
 ```
 To re-render meshes
 ```
-python extract.py --seqname syn-eagle-15q --model_path logdir/syn-eagle-15q/params_latest.pth
-python render_vis.py --testdir logdir/syn-eagle-15q/ --outpath ./test-sta.mp4 --seqname syn-eagle-15q --freeze yes
+bash scripts/render_result.sh syn-eagled-15h logdir/syn-eagled-15h-test3/params_20.pth --flowbw --sample_grid3d 256
 ```
 ## Additional Notes

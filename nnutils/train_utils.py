@@ -109,17 +109,18 @@ class v2s_trainer(Trainer):
         self.model.load_state_dict(states, strict=False)
         return
    
-    def eval(self, num_eval=9, dynamic=False): 
+    def eval(self, num_eval=9, dynamic_mesh=False): 
         """
-        dynamic: whether to render canonical shape, or dynamic shape
+        dynamic_mesh: whether to extract canonical shape, or dynamic shape
         """
         with torch.no_grad():
             self.model.eval()
 
             # run marching cubes
-            mesh_mc = self.extract_mesh(self.model, self.opts.chunk)
+            mesh_mc = self.extract_mesh(self.model, self.opts.chunk, \
+                                                    self.opts.sample_grid3d)
 
-            # render a video
+            # render a grid image or the whold video
             if num_eval>0:
                 idx_render = np.linspace(0,len(self.evalloader)-1,num_eval, dtype=int)
             else:
@@ -139,8 +140,9 @@ class v2s_trainer(Trainer):
                     rendered_seq['sil'] += [self.model.masks[...,None]]
 
                     # run marching cubes
-                    if dynamic:
-                        mesh_mc = self.extract_mesh(self.model, self.opts.chunk)
+                    if dynamic_mesh:
+                        mesh_mc = self.extract_mesh(self.model,self.opts.chunk,
+                                            self.opts.sample_grid3d, frameid=i)
                     mesh_seq.append(mesh_mc)
 
                     # save cams
@@ -185,7 +187,6 @@ class v2s_trainer(Trainer):
 
             self.model.train()
             for i, batch in enumerate(self.dataloader):
-                print(i)
                 self.model.iters=i
                 self.model.total_steps = total_steps
 
@@ -223,14 +224,15 @@ class v2s_trainer(Trainer):
         model.set_input(batch)
         rtk = model.rtk
         kaug=model.kaug
+        frameid=model.frameid
         render_size=64
         kaug[:,:2] *= opts.img_size/render_size
 
-        rendered, _ = model.nerf_render(rtk, kaug, render_size)
+        rendered, _ = model.nerf_render(rtk, kaug, frameid, render_size)
         return rendered  
 
     @staticmethod
-    def extract_mesh(model,chunk, grid_size=256, threshold=0.5, bound=1.2):
+    def extract_mesh(model,chunk,grid_size,frameid=None,threshold=0.5,bound=1.2):
         pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
         query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)
         query_yxz = torch.Tensor(query_yxz).to(model.device).view(-1, 3)
@@ -240,8 +242,19 @@ class v2s_trainer(Trainer):
         bs_pts = query_xyz.shape[0]
         out_chunks = []
         for i in range(0, bs_pts, chunk):
-            xyz_embedded = model.embedding_xyz(query_xyz[i:i+chunk]) # (N, embed_xyz_channels)
-            dir_embedded = model.embedding_dir(query_dir[i:i+chunk]) # (N, embed_dir_channels)
+            query_xyz_chunk = query_xyz[i:i+chunk]
+            query_dir_chunk = query_dir[i:i+chunk]
+            if frameid is not None:
+                query_time = torch.ones(chunk,1).long().to(model.device)*frameid
+                xyz_embedded = model.embedding_xyz(query_xyz_chunk)
+                time_embedded = model.embedding_time(query_time)[:,0]
+                xyztime_embedded = torch.cat([xyz_embedded, time_embedded],1)
+                flowbw_chunk = model.nerf_flowbw(xyztime_embedded)
+                flowbw_chunk =  flowbw_chunk[:,:3]
+                query_xyz_chunk += flowbw_chunk
+                
+            xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
+            dir_embedded = model.embedding_dir(query_dir_chunk) # (N, embed_dir_channels)
             xyzdir_embedded = torch.cat([xyz_embedded, dir_embedded], 1)
             out_chunks += [model.nerf_coarse(xyzdir_embedded)]
         vol_rgbo = torch.cat(out_chunks, 0)

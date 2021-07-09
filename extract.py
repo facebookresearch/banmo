@@ -36,8 +36,9 @@ def main(_):
     seqname=opts.seqname
     num_eval=0
 
+    dynamic_mesh = opts.flowbw or opts.lbs
     rendered_seq, mesh_seq, rtk_seq, id_seq = trainer.eval(num_eval=num_eval,
-                                                    dynamic_mesh=opts.flowbw) 
+                                                    dynamic_mesh=dynamic_mesh) 
     save_output(mesh_seq, rtk_seq, rendered_seq, id_seq, seqname)
 
 if __name__ == '__main__':

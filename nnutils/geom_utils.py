@@ -1,7 +1,122 @@
 import pdb
 import numpy as np
+from pytorch3d import transforms
 import torch
+import torch.nn.functional as F
 import soft_renderer as sr
+
+def bone_transform(bones_in, rts):
+    """ 
+    bones_in: 1,B,10  - B gaussian ellipsoids
+    rts: ...,B,3,4    - B ririd transforms
+    """
+    B = bones_in.shape[-2]
+    bones = bones_in.view(-1,B,10).clone()
+    rts = rts.view(-1,B,3,4)
+    bs = rts.shape[0] 
+
+    center = bones[:,:,:3]
+    orient = bones[:,:,3:7] # real first
+    scale =  bones[:,:,7:10]
+    Rmat = rts[:,:,:3,:3]   
+    Tmat = rts[:,:,:3,3:4]   
+
+    center = Rmat.matmul(center[...,None]) + Tmat
+    center = center[...,0]
+    Rquat = transforms.matrix_to_quaternion(Rmat)
+    orient = transforms.quaternion_multiply(Rquat, orient)
+    scale = scale.repeat(bs,1,1)
+
+    bones = torch.cat([center,orient,scale],-1)
+    return bones 
+
+def rts_invert(rts_in):
+    """
+    rts: ...,3,4   - B ririd transforms
+    """
+    rts = rts_in.view(-1,3,4).clone()
+    Rmat = rts[:,:3,:3] # bs, B, 3,3
+    Tmat = rts[:,:3,3:]
+    Rmat_i=Rmat.permute(0,2,1)
+    Tmat_i=-Rmat_i.matmul(Tmat)
+    rts_i = torch.cat([Rmat_i, Tmat_i],-1)
+    rts_i = rts_i.view(rts_in.shape)
+    return rts_i
+
+def skinning(bones, pts):
+    """
+    bone: bs,B,10  - B gaussian ellipsoids
+    pts: bs,N,3    - N 3d points
+    skin: bs,N,B   - skinning matrix
+    """
+    B = bones.shape[-2]
+    N = pts.shape[-2]
+    bones = bones.view(-1,B,10)
+    pts = pts.view(-1,N,3)
+    bs = pts.shape[0]
+    
+    center = bones[:,:,:3]
+    orient = bones[:,:,3:7] # real first
+    orient = F.normalize(orient, 2,-1)
+    orient = transforms.quaternion_to_matrix(orient) # real first
+    orient = orient.permute(0,1,3,2) # transpose R
+    scale =  bones[:,:,7:10].exp()
+
+    # mahalanobis distance [(p-v)^TR^T]S[R(p-v)]
+    # transform a vector to the local coordinate
+    mdis = center.view(bs,1,B,3) - pts.view(bs,N,1,3) # bs,N,B,3
+    mdis = orient.view(bs,1,B,3,3).matmul(mdis[...,None]) # bs,N,B,3,1
+    mdis = mdis[...,0]
+    mdis = scale.view(bs,1,B,3) * mdis.pow(2)
+    mdis = (-10 * mdis.sum(3)) # bs,N,B
+    
+    # truncated softmax
+    topk, indices = mdis.topk(3, 2, largest=True)
+    mdis = torch.zeros_like(mdis).fill_(-np.inf)
+    mdis = mdis.scatter(2, indices, topk)
+    skin = mdis.softmax(2)
+    return skin
+
+def blend_skinning_bw(bones, rts_fw, pts):
+    """
+    bone: bs,B,10   - B gaussian ellipsoids
+    rts: bs,B,3,4   - B ririd transforms
+    pts: bs,N,3     - N 3d points
+    """
+    B = rts_fw.shape[-3]
+    N = pts.shape[-2]
+    bones = bones.view(-1,B,10)
+    rts_fw = rts_fw.view(-1,B,3,4)
+    pts = pts.view(-1,N,3)
+    
+    bones_dfm = bone_transform(bones, rts_fw)
+    rts_bw = rts_invert(rts_fw)
+    pts, skin = blend_skinning(bones_dfm, rts_bw, pts)
+    return pts, skin
+
+def blend_skinning(bones, rts, pts):
+    """
+    bone: bs,B,10   - B gaussian ellipsoids
+    rts: bs,B,3,4   - B ririd transforms
+    pts: bs,N,3     - N 3d points
+    skin: bs,N,B   - skinning matrix
+    """
+    B = rts.shape[-3]
+    N = pts.shape[-2]
+    bones = bones.view(-1,B,10)
+    pts = pts.view(-1,N,3)
+    rts = rts.view(-1,B,3,4)
+    Rmat = rts[:,:,:3,:3] # bs, B, 3,3
+    Tmat = rts[:,:,:3,3]
+    
+    skin = skinning(bones, pts) # bs, N, B
+
+    # Gi=sum(wbGb), V=RV+T
+    Rmat_w = (skin[...,None,None] * Rmat[:,None]).sum(2) # bs,N,B,3
+    Tmat_w = (skin[...,None] * Tmat[:,None]).sum(2) # bs,N,B,3
+    pts = Rmat_w.matmul(pts[...,None]) + Tmat_w[...,None] 
+    pts = pts[...,0]
+    return pts, skin
 
 def obj_to_cam(in_verts, Rmat, Tmat):
     """

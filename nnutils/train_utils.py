@@ -30,7 +30,9 @@ import chamfer3D.dist_chamfer_3D
 import torchvision
 from torch.autograd import Variable
 from collections import defaultdict
+from pytorch3d import transforms
 
+from nnutils.geom_utils import blend_skinning_bw
 from ext_nnutils.train_utils import Trainer
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
@@ -80,16 +82,30 @@ class v2s_trainer(Trainer):
     
     def init_training(self):
         opts = self.opts
-        params=[]
+        params_nerf=[]
+        params_embed=[]
+        params_bones=[]
         for name,p in self.model.named_parameters():
-            params.append(p)
+            if 'nerf' in name:
+                params_nerf.append(p)
+            elif 'embedding_time' in name:
+                params_embed.append(p)
+            elif 'bones' == name:
+                params_bones.append(p)
+            else: continue
+            print(name)
+                
         self.optimizer = torch.optim.AdamW(
-            [{'params': params},
+            [{'params': params_nerf},
+             {'params': params_embed},
+             {'params': params_bones},
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer,\
-           [opts.learning_rate,
+           [opts.learning_rate, # params_nerf
+            opts.learning_rate*10, # params_embed
+            opts.learning_rate*10, # params_bones
             ],
             200*len(self.dataloader), pct_start=0.01, 
             cycle_momentum=False, anneal_strategy='linear',
@@ -207,6 +223,9 @@ class v2s_trainer(Trainer):
                 self.optimizer.step()
                 self.scheduler.step()
 
+                #for param_group in self.optimizer.param_groups:
+                #    print(param_group['lr'])
+
                 total_steps += 1
                 epoch_iter += 1
 
@@ -244,14 +263,40 @@ class v2s_trainer(Trainer):
         for i in range(0, bs_pts, chunk):
             query_xyz_chunk = query_xyz[i:i+chunk]
             query_dir_chunk = query_dir[i:i+chunk]
+           
             if frameid is not None:
-                query_time = torch.ones(chunk,1).long().to(model.device)*frameid
-                xyz_embedded = model.embedding_xyz(query_xyz_chunk)
-                time_embedded = model.embedding_time(query_time)[:,0]
-                xyztime_embedded = torch.cat([xyz_embedded, time_embedded],1)
-                flowbw_chunk = model.nerf_flowbw(xyztime_embedded)
-                flowbw_chunk =  flowbw_chunk[:,:3]
-                query_xyz_chunk += flowbw_chunk
+                if model.opts.flowbw:
+                    # flowbw
+                    query_time = torch.ones(chunk,1).long().to(model.device)*frameid
+                    xyz_embedded = model.embedding_xyz(query_xyz_chunk)
+                    time_embedded = model.embedding_time(query_time)[:,0]
+                    xyztime_embedded = torch.cat([xyz_embedded, time_embedded],1)
+                    flowbw_chunk = model.nerf_flowbw(xyztime_embedded)
+                    flowbw_chunk =  flowbw_chunk[:,:3]
+                    query_xyz_chunk += flowbw_chunk
+                elif model.opts.lbs:
+                    # backward skinning
+                    bones = model.bones
+                    B = bones.shape[-2]
+                    embedding_time = model.embedding_time
+                    query_time = torch.ones(chunk,1).long().to(model.device)*frameid
+                    time_embedded = embedding_time(query_time) 
+                    time_embedded = time_embedded.view(-1,B,7)# B,7            
+                    rquat=time_embedded[:,:,:4]
+                    tmat= time_embedded[:,:,4:7]*0.1
+
+                    rquat[:,:,0]+=10
+                    rquat=F.normalize(rquat,2,2)
+                    rmat=transforms.quaternion_to_matrix(rquat) 
+
+                    #bones=torch.cat([bones[:,:4], 
+                    #                torch.zeros(B,6).to(bones.device)],-1)
+                    #rmat=torch.eye(3).to(rquat.device).view(1,1,3,3).repeat(rquat.shape[0],B,1,1)
+                    rts_fw = torch.cat([rmat,tmat[...,None]],-1)
+    
+                    query_xyz_chunk = query_xyz_chunk[:,None]
+                    query_xyz_chunk,skin = blend_skinning_bw(bones, rts_fw, query_xyz_chunk)
+                    query_xyz_chunk = query_xyz_chunk[:,0]
                 
             xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
             dir_embedded = model.embedding_dir(query_dir_chunk) # (N, embed_dir_channels)

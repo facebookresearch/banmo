@@ -20,9 +20,9 @@ import trimesh, pytorch3d, pytorch3d.loss, pdb
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from ext_nnutils.nerf import Embedding, NeRF
-from ext_nnutils.rendering import render_rays
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy
+from nnutils.rendering import render_rays
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -104,6 +104,7 @@ flags.DEFINE_integer('N_importance', 0, 'number of additional fine samples')
 flags.DEFINE_float('perturb',   1.0, 'factor to perturb depth sampling points')
 flags.DEFINE_float('noise_std', 1.0, 'std dev of noise added to regularize sigma')
 flags.DEFINE_bool('flowbw', False, 'use backward warping 3d flow')
+flags.DEFINE_bool('lbs', False, 'use lbs for backward warping 3d flow')
 flags.DEFINE_integer('sample_grid3d', 128, 'resolution for mesh extraction from nerf')
 
 class v2s_net(nn.Module):
@@ -114,15 +115,30 @@ class v2s_net(nn.Module):
 
         # set nerf model
         self.nerf_coarse = NeRF()
-        self.nerf_flowbw = NeRF(in_channels_xyz=71, in_channels_dir=0)
         self.embedding_xyz = Embedding(3, 10) # 10 is the default number
         self.embedding_dir = Embedding(3, 4) # 4 is the default number
-        self.embedding_time = nn.Embedding(15,8)
+
+        # set dnerf model
+        num_bones = 35
+        self.num_t_feat = 7*num_bones
+        self.embedding_time = nn.Embedding(100, self.num_t_feat) ##TODO change 15
+        self.nerf_flowbw = NeRF(in_channels_xyz=63+self.num_t_feat, 
+                                in_channels_dir=0)
         
         self.embeddings = {'xyz':self.embedding_xyz, 'dir':self.embedding_dir}
         self.nerf_models= {'coarse':self.nerf_coarse}
         if opts.flowbw:
             self.nerf_models['flowbw'] = self.nerf_flowbw
+            self.embeddings['time'] = self.embedding_time
+        elif opts.lbs:
+            center =  torch.rand(num_bones,3).to(self.device)
+            center = center-0.5
+            orient =  torch.Tensor([[1,0,0,0]]).to(self.device)
+            orient = orient.repeat(num_bones,1)
+            scale = torch.zeros(num_bones,3).to(self.device)
+
+            self.bones = nn.Parameter(torch.cat([center, orient, scale],-1))
+            self.nerf_models['bones'] = self.bones
             self.embeddings['time'] = self.embedding_time
 
         if opts.N_importance>0:

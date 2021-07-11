@@ -46,12 +46,10 @@ parser.add_argument('--nosmooth', dest='smooth', action='store_false',
                     help='whether to smooth vertex colors and positions')
 parser.add_argument('--corresp', dest='corresp', action='store_true',
                     help='whether to render correspondence')
-parser.add_argument('--vp2', dest='vp2', action='store_true',
-                    help='whether to render second viewpoint')
-parser.add_argument('--vp3', dest='vp3', action='store_true',
-                    help='whether to render third viewpoint')
 parser.add_argument('--floor', dest='floor', action='store_true',
                     help='whether to add floor')
+parser.add_argument('--vp', default=0, type=int,
+                    help='which viewpoint to render 0,1,2')
 args = parser.parse_args()
 
 
@@ -85,8 +83,6 @@ def main():
 
     targetstr = ''
     if args.corresp or args.vis_traj=='yes':targetstr = 'skinpred'
-    if args.vp2:targetstr = 'predvp2'
-    if args.vp3:targetstr = 'predvp3'
     
     config = configparser.RawConfigParser()
     config.read('configs/template.config')
@@ -256,6 +252,13 @@ def main():
             img_size = max(refimg.shape)
             refmesh = all_mesh[i]
             refcam = all_cam[i]
+            if args.vp==1:
+                vp_rmat = cv2.Rodrigues(np.asarray([0,np.pi/2,0]))[0]
+            elif args.vp==2:
+                vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0]
+            else:
+                vp_rmat = cv2.Rodrigues(np.asarray([0.,0,0]))[0]
+            refcam[:3,:3] = vp_rmat.dot(refcam[:3,:3])
         currcam = np.concatenate([refcam[:3,:4],np.asarray([[0,0,0,1]])],0)
         if i==0:
             initcam = currcam.copy()
@@ -338,8 +341,6 @@ def main():
         prefix = (args.outpath).split('/')[-1].split('.')[0]
         color = color.copy(); color[0,0,:] = 0
         imoutpath = '%s/%s-mrender%03d.png'%(args.testdir, prefix,i)
-        if args.vp2: imoutpath = imoutpath.replace('mrender', 'vp2-mrender')
-        if args.vp3: imoutpath = imoutpath.replace('mrender', 'vp3-mrender')
         cv2.imwrite(imoutpath,color[:,:,::-1] )
         color = cv2.resize(color, output_size[::-1])
 

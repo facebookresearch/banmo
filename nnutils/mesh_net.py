@@ -119,7 +119,8 @@ class v2s_net(nn.Module):
         self.embedding_dir = Embedding(3, 4) # 4 is the default number
 
         # set dnerf model
-        num_bones = 35
+        num_bones_x = 4
+        num_bones = num_bones_x**3
         self.num_t_feat = 7*num_bones
         self.embedding_time = nn.Embedding(100, self.num_t_feat) ##TODO change 15
         self.nerf_flowbw = NeRF(in_channels_xyz=63+self.num_t_feat, 
@@ -131,8 +132,9 @@ class v2s_net(nn.Module):
             self.nerf_models['flowbw'] = self.nerf_flowbw
             self.embeddings['time'] = self.embedding_time
         elif opts.lbs:
-            center =  torch.rand(num_bones,3).to(self.device)
-            center = center-0.5
+            center =  torch.linspace(-0.5, 0.5, num_bones_x).to(self.device)
+            center =torch.meshgrid(center, center, center)
+            center = torch.stack(center,0).permute(1,2,3,0).reshape(-1,3)
             orient =  torch.Tensor([[1,0,0,0]]).to(self.device)
             orient = orient.repeat(num_bones,1)
             scale = torch.zeros(num_bones,3).to(self.device)

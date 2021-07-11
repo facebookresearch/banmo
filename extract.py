@@ -14,11 +14,13 @@ opts = flags.FLAGS
 def save_output(mesh_seq, rtk_seq, rendered_seq, id_seq, seqname):
     save_dir = '%s/%s'%(opts.model_path.rsplit('/',1)[0],seqname)
     for mesh,rtk,idx in zip(mesh_seq,rtk_seq,id_seq):
-        mesh, rtk = transform_shape(mesh, rtk)
         mesh.export('%s-%05d.obj'%(save_dir, idx))
         np.savetxt('%s-cam%d.txt'%(save_dir, idx), rtk)
     
 def transform_shape(mesh,rtk):
+    """
+    absorb rt into mesh vertices, not used
+    """
     vertices = torch.Tensor(mesh.vertices)
     Rmat = torch.Tensor(rtk[:3,:3])
     Tmat = torch.Tensor(rtk[:3,3])

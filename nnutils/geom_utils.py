@@ -92,7 +92,7 @@ def blend_skinning_bw(bones, rts_fw, pts):
     bones_dfm = bone_transform(bones, rts_fw)
     rts_bw = rts_invert(rts_fw)
     pts, skin = blend_skinning(bones_dfm, rts_bw, pts)
-    return pts, skin
+    return pts, skin, bones_dfm
 
 def blend_skinning(bones, rts, pts):
     """

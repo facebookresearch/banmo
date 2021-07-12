@@ -125,26 +125,30 @@ class v2s_trainer(Trainer):
         self.model.load_state_dict(states, strict=False)
         return
    
-    def eval(self, num_eval=9, dynamic_mesh=False): 
+    def eval(self, num_view=9, dynamic_mesh=False): 
         """
+        num_view: number of views to render
         dynamic_mesh: whether to extract canonical shape, or dynamic shape
         """
         with torch.no_grad():
             self.model.eval()
 
             # run marching cubes
-            mesh_mc = self.extract_mesh(self.model, self.opts.chunk, \
+            mesh_dict = self.extract_mesh(self.model, self.opts.chunk, \
                                                     self.opts.sample_grid3d)
 
             # render a grid image or the whold video
-            if num_eval>0:
-                idx_render = np.linspace(0,len(self.evalloader)-1,num_eval, dtype=int)
+            if num_view>0:
+                idx_render = np.linspace(0,len(self.evalloader)-1,num_view, dtype=int)
             else:
                 idx_render = np.asarray(range(len(self.evalloader)))
+
+            # render and save intermediate outputs
             rendered_seq = defaultdict(list)
-            mesh_seq=[]
-            rtk_seq=[]
-            id_seq=[]
+            aux_seq = {'mesh':[],
+                       'rtk':[],
+                       'idx':[],
+                       'bone':[],}
             for i,batch in enumerate(self.evalloader):
                 if i in idx_render:
                     rendered = self.render_vid(self.model, batch)
@@ -157,20 +161,24 @@ class v2s_trainer(Trainer):
 
                     # run marching cubes
                     if dynamic_mesh:
-                        mesh_mc = self.extract_mesh(self.model,self.opts.chunk,
+                        mesh_dict = self.extract_mesh(self.model,self.opts.chunk,
                                             self.opts.sample_grid3d, frameid=i)
-                    mesh_seq.append(mesh_mc)
+                    aux_seq['mesh'].append(mesh_dict['mesh'])
 
                     # save cams
-                    rtk_seq.append(self.model.rtk[0].cpu().numpy())
+                    aux_seq['rtk'].append(self.model.rtk[0].cpu().numpy())
                     
                     # save image list
-                    id_seq.append(self.model.frameid)
+                    aux_seq['idx'].append(self.model.frameid)
+
+                    # save bones
+                    if self.opts.lbs:
+                        aux_seq['bone'].append(mesh_dict['bones'][0].cpu().numpy())
 
             for k,v in rendered_seq.items():
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)
 
-        return rendered_seq, mesh_seq, rtk_seq, id_seq
+        return rendered_seq, aux_seq
     
     def train(self):
         opts = self.opts
@@ -189,9 +197,9 @@ class v2s_trainer(Trainer):
             self.model.ep_iters = len(self.dataloader)
             
             # evaluation
-            rendered_seq, mesh_seq, rtk_seq, _ = self.eval()                
+            rendered_seq, aux_seq = self.eval()                
             mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
-            mesh_seq[0].export(mesh_file)
+            aux_seq['mesh'][0].export(mesh_file)
             for k,v in rendered_seq.items():
                 grid_img = image_grid(rendered_seq[k],3,3)
                 self.add_image(log, k, grid_img, epoch, scale=False)
@@ -252,6 +260,7 @@ class v2s_trainer(Trainer):
 
     @staticmethod
     def extract_mesh(model,chunk,grid_size,frameid=None,threshold=0.5,bound=1.2):
+        rt_dict = {}
         pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
         query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)
         query_yxz = torch.Tensor(query_yxz).to(model.device).view(-1, 3)
@@ -295,8 +304,10 @@ class v2s_trainer(Trainer):
                     rts_fw = torch.cat([rmat,tmat[...,None]],-1)
     
                     query_xyz_chunk = query_xyz_chunk[:,None]
-                    query_xyz_chunk,skin = blend_skinning_bw(bones, rts_fw, query_xyz_chunk)
+                    query_xyz_chunk,skin,bones_dfm = blend_skinning_bw(bones, rts_fw, query_xyz_chunk)
                     query_xyz_chunk = query_xyz_chunk[:,0]
+                    
+                    rt_dict['bones'] = bones_dfm 
                 
             xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
             dir_embedded = model.embedding_dir(query_dir_chunk) # (N, embed_dir_channels)
@@ -312,7 +323,8 @@ class v2s_trainer(Trainer):
         mesh = trimesh.Trimesh(vertices, triangles)
         if len(mesh.vertices)>0:
             mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
-        return mesh
+        rt_dict['mesh'] = mesh
+        return rt_dict
 
     def save_logs(self, log, aux_output, total_steps, epoch):
         self.add_scalar(log,'total_loss', aux_output,total_steps)

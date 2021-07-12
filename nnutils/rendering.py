@@ -256,7 +256,7 @@ def render_rays(models,
         #rmat=torch.eye(3).to(rquat.device).view(1,1,3,3).repeat(rquat.shape[0],B,1,1)
         
         rts_fw = torch.cat([rmat,tmat[...,None]],-1)
-        xyz_coarse_sampled, skin = blend_skinning_bw(bones, rts_fw, xyz_coarse_sampled)
+        xyz_coarse_sampled, skin, bones_dfm = blend_skinning_bw(bones, rts_fw, xyz_coarse_sampled)
 
     if test_time:
         weights_coarse = \

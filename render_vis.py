@@ -34,7 +34,7 @@ parser.add_argument('--overlay', default='no',
                     help='whether to overlay with the input')
 parser.add_argument('--cam_type', default='perspective',
                     help='camera model, orthographic or perspective')
-parser.add_argument('--vis_bones', default='no',
+parser.add_argument('--vis_bones', dest='vis_bones',action='store_true',
                     help='whether show transparent surface and vis bones')
 parser.add_argument('--vis_traj', default='no',
                     help='whether show trajectory of vertices')
@@ -101,22 +101,14 @@ def main():
         print('%s/%d'%(seqname, fr))
 
         try:
-            try: 
-                if os.path.exists('%s/%s-%s%05d.obj'%(args.testdir, args.seqname, targetstr, fr)):
-                    mesh = trimesh.load('%s/%s-%s%05d.obj'%(args.testdir, args.seqname, targetstr, fr),process=False)
-                    cam = np.loadtxt('%s/%s-cam%d.txt'%(args.testdir,args.seqname,fr))
-                else:
-                    mesh = trimesh.load('%s/%s%d.ply'%(args.testdir, targetstr, fr),process=False)
-                    cam = np.loadtxt('%s/cam%d.txt'%(args.testdir,fr))
-            except: 
-                mesh = trimesh.load('%s/%s%d.obj'%(args.testdir, targetstr, fr),process=False)
-                cam = np.loadtxt('%s/cam%d.txt'%(args.testdir,fr))
-            ## skinning weights
-            #mesh = trimesh.load('%s/clusters.obj'%(args.testdir),process=False)
-            #trimesh.repair.fix_inversion(mesh)
+            mesh = trimesh.load('%s/%s-mesh-%05d.obj'%(args.testdir, seqname, fr),process=False)
             all_mesh.append(mesh)
+            
+            cam = np.loadtxt('%s/%s-cam-%05d.txt'%(args.testdir, seqname, fr))
             all_cam.append(cam)
-            all_bone.append(trimesh.load('%s/%s-gauss%d.ply'%(args.testdir, args.seqname,fr),process=False))
+
+            bone = trimesh.load('%s/%s-bone-%05d.obj'%(args.testdir, seqname,fr),process=False)
+            all_bone.append(bone)
         except: print('no mesh found')
 
     # add bones?
@@ -128,11 +120,6 @@ def main():
     col_trajs = []
     traj_len = 5
     traj_num = len(all_mesh[0].vertices)
-    #from random_colors import generate_new_color
-    #color_trajs = []
-    #for i in range(0,num_trajs+2):
-    #    color_trajs.append(generate_new_color(color_trajs,pastel_factor = 0.1))
-    #color_trajs = np.asarray(color_trajs) * 255
 
     if args.vis_traj=='yes':
         for i in range(len(all_mesh)):
@@ -148,24 +135,16 @@ def main():
             col_trajs.append(col_traj)
     
     for i in range(len(all_mesh)):
-        if args.vis_bones=='yes':
+        if args.vis_bones:
             all_mesh[i].visual.vertex_colors[:,-1]=192 # alpha
             num_original_verts.append( all_mesh[i].vertices.shape[0])
             num_original_faces.append( all_mesh[i].faces.shape[0]  )  
             all_mesh[i] = trimesh.util.concatenate([all_mesh[i], all_bone[i]])
         elif args.vis_traj=='yes':
-
             sphere = trimesh.creation.uv_sphere(radius=0.02,count=(3,3))
             sphere_traj = trimesh.Trimesh()
             ipts=0
             nverts = all_mesh[i].vertices.shape[0]
-            #for nb in range(0, nverts, nverts//num_trajs):
-            #    spherex = trimesh.Trimesh(vertices = sphere.vertices+all_mesh[i].vertices[nb:nb+1], faces=sphere.faces)
-            #    spherex.visual.vertex_colors[:,:3] = all_mesh[i].visual.vertex_colors[nb:nb+1,:3].copy()
-            #    tmp = np.concatenate([sphere_traj.visual.vertex_colors, spherex.visual.vertex_colors],0)
-            #    sphere_traj = trimesh.util.concatenate([sphere_traj, spherex])
-            #    sphere_traj.visual.vertex_colors = tmp
-            #    ipts+=1
 
             sphere_trajs.append(sphere_traj)
 
@@ -175,19 +154,6 @@ def main():
             num_original_faces.append( all_mesh[i].faces.shape[0]  )  
             all_mesh[i] = trimesh.util.concatenate([all_mesh[i], sphere_trajs[i]])
             #all_mesh[i] = trimesh.util.concatenate([all_mesh[i], all_bone[i]])
-
-            
-            
-        #sphere = trimesh.creation.uv_sphere(radius=0.03)
-        #for i in range(len(all_mesh)):
-        #    bone = all_bone[i]
-        #    all_mesh[i].visual.vertex_colors[:,-1]=192 # alpha
-        #    num_original_verts.append( all_mesh[i].vertices.shape[0])
-        #    num_original_faces.append( all_mesh[i].faces.shape[0]  )  
-        #    for nb in range(bone.vertices.shape[0]):
-        #        spherex = trimesh.Trimesh(vertices = sphere.vertices+bone.vertices[nb:nb+1], faces=sphere.faces)
-        #        spherex.visual.vertex_colors = np.tile(bone.visual.vertex_colors[nb:nb+1],(spherex.vertices.shape[0],1))
-        #        all_mesh[i] = trimesh.util.concatenate([all_mesh[i], spherex])
 
     # store all the results
     input_size = all_anno[0][0].shape[:2]
@@ -252,7 +218,10 @@ def main():
             img_size = max(refimg.shape)
             refmesh = all_mesh[i]
             refcam = all_cam[i]
-            if args.vp==1:
+            if args.vp==-1:
+                # static camera
+                vp_rmat = refcam[:3,:3].T
+            elif args.vp==1:
                 vp_rmat = cv2.Rodrigues(np.asarray([0,np.pi/2,0]))[0]
             elif args.vp==2:
                 vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0]
@@ -272,14 +241,10 @@ def main():
         verts = obj_to_cam(verts, Rmat, Tmat)
         r = OffscreenRenderer(img_size, img_size)
         colors = refmesh.visual.vertex_colors
-        if args.vis_traj: # shape  rendering
-            scene = Scene(ambient_light=0.4*np.asarray([1.,1.,1.,1.]))
-            direc_l = pyrender.DirectionalLight(color=np.ones(3), intensity=6.0)
-            colors= np.concatenate([0.6*colors[:,:3].astype(np.uint8), colors[:,3:]],-1)  # avoid overexposure
-        else:
-            scene = Scene(ambient_light=0.7*np.asarray([1.,1.,1.,1.]))
-            direc_l = pyrender.DirectionalLight(color=np.ones(3), intensity=0.0)
-            colors= np.concatenate([colors[:,:3].astype(np.uint8), colors[:,3:]],-1)  # avoid overexposure
+        
+        scene = Scene(ambient_light=0.4*np.asarray([1.,1.,1.,1.]))
+        direc_l = pyrender.DirectionalLight(color=np.ones(3), intensity=6.0)
+        colors= np.concatenate([0.6*colors[:,:3].astype(np.uint8), colors[:,3:]],-1)  # avoid overexposure
 
 
         smooth=args.smooth
@@ -287,7 +252,12 @@ def main():
             tbone = 0
         else:
             tbone = i
-        if args.vis_bones=='yes':
+        if args.vis_bones:
+            mesh = trimesh.Trimesh(vertices=np.asarray(verts[0,:num_original_verts[tbone],:3].cpu()), faces=np.asarray(refface[0,:num_original_faces[tbone]].cpu()),vertex_colors=colors)
+            meshr = Mesh.from_trimesh(mesh,smooth=smooth)
+            meshr._primitives[0].material.RoughnessFactor=.5
+            scene.add_node( Node(mesh=meshr ))
+            
             mesh2 = trimesh.Trimesh(vertices=np.asarray(verts[0,num_original_verts[tbone]:,:3].cpu()), faces=np.asarray(refface[0,num_original_faces[tbone]:].cpu()-num_original_verts[tbone]),vertex_colors=colors[num_original_verts[tbone]:])
             mesh2=Mesh.from_trimesh(mesh2,smooth=smooth)
             mesh2._primitives[0].material.RoughnessFactor=.5
@@ -330,7 +300,7 @@ def main():
         cam_node = scene.add(cam, pose=cam_pose)
         light_pose = init_light_pose
         direc_l_node = scene.add(direc_l, pose=light_pose)
-        if args.vis_bones=='yes' or args.vis_traj=='yes':
+        if args.vis_bones or args.vis_traj=='yes':
             color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL)
         else:
             color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL | pyrender.RenderFlags.SKIP_CULL_FACES)

@@ -241,8 +241,11 @@ def render_rays(models,
         bones = models['bones']
         B = bones.shape[-2]
         embedding_time = embeddings['time']
+        model_rts = models['rts']
+
         time_embedded = embedding_time(frameid.long()) 
         time_embedded = time_embedded.view(-1,B,7)# B,7
+        #time_embedded = model_rts(time_embedded)[:,:,:-1]
         rquat=time_embedded[:,:,:4]
         tmat= time_embedded[:,:,4:7] * 0.1
 

@@ -19,7 +19,7 @@ import trimesh, pytorch3d, pytorch3d.loss, pdb
 
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
-from ext_nnutils.nerf import Embedding, NeRF
+from nnutils.nerf import Embedding, NeRF
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy
 from nnutils.rendering import render_rays
@@ -119,7 +119,7 @@ class v2s_net(nn.Module):
         self.embedding_dir = Embedding(3, 4) # 4 is the default number
 
         # set dnerf model
-        num_bones_x = 4
+        num_bones_x = 3
         num_bones = num_bones_x**3
         self.num_t_feat = 7*num_bones
         self.embedding_time = nn.Embedding(100, self.num_t_feat) ##TODO change 15
@@ -142,6 +142,11 @@ class v2s_net(nn.Module):
             self.bones = nn.Parameter(torch.cat([center, orient, scale],-1))
             self.nerf_models['bones'] = self.bones
             self.embeddings['time'] = self.embedding_time
+
+            self.nerf_rts = NeRF(in_channels_xyz=self.num_t_feat, 
+                                in_channels_dir=0,
+                                out_channels=10)
+            self.nerf_models['rts'] = self.nerf_rts
 
         if opts.N_importance>0:
             self.nerf_fine = NeRF()

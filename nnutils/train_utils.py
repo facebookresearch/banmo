@@ -172,7 +172,7 @@ class v2s_trainer(Trainer):
                     aux_seq['idx'].append(self.model.frameid)
 
                     # save bones
-                    if self.opts.lbs:
+                    if 'bones' in mesh_dict.keys():
                         aux_seq['bone'].append(mesh_dict['bones'][0].cpu().numpy())
 
             for k,v in rendered_seq.items():

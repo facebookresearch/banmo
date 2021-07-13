@@ -32,7 +32,7 @@ from torch.autograd import Variable
 from collections import defaultdict
 from pytorch3d import transforms
 
-from nnutils.geom_utils import blend_skinning_bw
+from nnutils.geom_utils import lbs 
 from ext_nnutils.train_utils import Trainer
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
@@ -285,28 +285,15 @@ class v2s_trainer(Trainer):
                     query_xyz_chunk += flowbw_chunk
                 elif model.opts.lbs:
                     # backward skinning
-                    bones = model.bones
-                    B = bones.shape[-2]
-                    embedding_time = model.embedding_time
-                    query_time = torch.ones(chunk,1).long().to(model.device)*frameid
-                    time_embedded = embedding_time(query_time) 
-                    time_embedded = time_embedded.view(-1,B,7)# B,7            
-                    rquat=time_embedded[:,:,:4]
-                    tmat= time_embedded[:,:,4:7]*0.1
-
-                    rquat[:,:,0]+=10
-                    rquat=F.normalize(rquat,2,2)
-                    rmat=transforms.quaternion_to_matrix(rquat) 
-
-                    #bones=torch.cat([bones[:,:4], 
-                    #                torch.zeros(B,6).to(bones.device)],-1)
-                    #rmat=torch.eye(3).to(rquat.device).view(1,1,3,3).repeat(rquat.shape[0],B,1,1)
-                    rts_fw = torch.cat([rmat,tmat[...,None]],-1)
-    
                     query_xyz_chunk = query_xyz_chunk[:,None]
-                    query_xyz_chunk,skin,bones_dfm = blend_skinning_bw(bones, rts_fw, query_xyz_chunk)
+                    query_time = torch.ones(chunk,1).to(model.device)*frameid
+                    bones = model.bones
+                    embedding_time = model.embedding_time
+
+                    query_xyz_chunk,skin,bones_dfm = lbs(bones, embedding_time,
+                                                  query_xyz_chunk, query_time)
+
                     query_xyz_chunk = query_xyz_chunk[:,0]
-                    
                     rt_dict['bones'] = bones_dfm 
                 
             xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)

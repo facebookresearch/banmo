@@ -149,6 +149,28 @@ def blend_skinning_bw(bones, rts_fw, pts):
     return pts, skin, bones_dfm
 
 
+def lbs(bones, embedding_time, xyz, frameid):
+    B = bones.shape[-2]
+    time_embedded = embedding_time(frameid.long()) 
+    time_embedded = time_embedded.view(-1,B,7)# B,7
+    #time_embedded = model_rts(time_embedded)[:,:,:-1]
+    rquat=time_embedded[:,:,:4]
+    tmat= time_embedded[:,:,4:7] * 0.1
+
+    rquat[:,:,0]+=10
+    rquat=F.normalize(rquat,2,2)
+    rmat=transforms.quaternion_to_matrix(rquat) 
+
+    # original orientation
+    #bones=torch.cat([bones[:,:4], 
+    #                torch.zeros(B,6).to(bones.device)],-1)
+    # no bone rotation
+    #rmat=torch.eye(3).to(rquat.device).view(1,1,3,3).repeat(rquat.shape[0],B,1,1)
+
+    rts_fw = torch.cat([rmat,tmat[...,None]],-1)
+    xyz, skin, bones_dfm = blend_skinning_bw(bones, rts_fw, xyz)
+    return xyz, skin, bones_dfm
+
 def obj_to_cam(in_verts, Rmat, Tmat):
     """
     verts: ...,N,3

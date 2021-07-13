@@ -16,7 +16,7 @@ python render_vis.py --testdir $testdir \
                      --outpath $prefix-mov0 \
                      --seqname $seqname \
                      --freeze no \
-                     --vp -1 \
+                     --vp 0 \
                      --vis_bones
 #python render_vis.py --testdir $testdir \
 #                     --outpath $prefix-mov1 \

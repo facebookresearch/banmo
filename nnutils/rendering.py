@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from pytorch3d import transforms
 from torchsearchsorted import searchsorted
 
-from nnutils.geom_utils import blend_skinning_bw
+from nnutils.geom_utils import lbs
 
 __all__ = ['render_rays']
 
@@ -239,27 +239,11 @@ def render_rays(models,
     elif 'bones' in models.keys():
         # backward skinning
         bones = models['bones']
-        B = bones.shape[-2]
         embedding_time = embeddings['time']
-        model_rts = models['rts']
+        #model_rts = models['rts']
 
-        time_embedded = embedding_time(frameid.long()) 
-        time_embedded = time_embedded.view(-1,B,7)# B,7
-        #time_embedded = model_rts(time_embedded)[:,:,:-1]
-        rquat=time_embedded[:,:,:4]
-        tmat= time_embedded[:,:,4:7] * 0.1
-
-        rquat[:,:,0]+=10
-        rquat=F.normalize(rquat,2,2)
-        rmat=transforms.quaternion_to_matrix(rquat) 
-        # original orientation
-        #bones=torch.cat([bones[:,:4], 
-        #                torch.zeros(B,6).to(bones.device)],-1)
-        # no bone rotation
-        #rmat=torch.eye(3).to(rquat.device).view(1,1,3,3).repeat(rquat.shape[0],B,1,1)
-        
-        rts_fw = torch.cat([rmat,tmat[...,None]],-1)
-        xyz_coarse_sampled, skin, bones_dfm = blend_skinning_bw(bones, rts_fw, xyz_coarse_sampled)
+        xyz_coarse_sampled, skin, bones_dfm = lbs(bones, embedding_time, 
+                                                  xyz_coarse_sampled, frameid)
 
     if test_time:
         weights_coarse = \

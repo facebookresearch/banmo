@@ -151,11 +151,10 @@ def blend_skinning_bw(bones, rts_fw, pts):
 
 def lbs(bones, embedding_time, xyz, frameid):
     B = bones.shape[-2]
-    time_embedded = embedding_time(frameid.long()) 
+    time_embedded = embedding_time(frameid.long())[...,:-1]
     time_embedded = time_embedded.view(-1,B,7)# B,7
-    #time_embedded = model_rts(time_embedded)[:,:,:-1]
     rquat=time_embedded[:,:,:4]
-    tmat= time_embedded[:,:,4:7] * 0.1
+    tmat= time_embedded[:,:,4:7] *0.1
 
     rquat[:,:,0]+=10
     rquat=F.normalize(rquat,2,2)

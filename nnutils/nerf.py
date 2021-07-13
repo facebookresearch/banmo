@@ -42,7 +42,7 @@ class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
                  in_channels_xyz=63, in_channels_dir=27, out_channels=3, 
-                 skips=[4]):
+                 skips=[4], raw_feat=False):
         """
         D: number of layers for density (sigma) encoder
         W: number of hidden units in each layer
@@ -78,7 +78,9 @@ class NeRF(nn.Module):
         self.sigma = nn.Linear(W, 1)
         self.rgb = nn.Sequential(
                         nn.Linear(W//2, out_channels),
-                        nn.Sigmoid())
+                        )
+
+        self.raw_feat = raw_feat
 
     def forward(self, x, sigma_only=False):
         """
@@ -90,6 +92,7 @@ class NeRF(nn.Module):
                the embedded vector of position and direction
             sigma_only: whether to infer sigma only. If True,
                         x is of shape (B, self.in_channels_xyz)
+            raw_feat: does not apply sigmoid
 
         Outputs:
             if sigma_ony:
@@ -118,6 +121,8 @@ class NeRF(nn.Module):
         dir_encoding_input = torch.cat([xyz_encoding_final, input_dir], -1)
         dir_encoding = self.dir_encoding(dir_encoding_input)
         rgb = self.rgb(dir_encoding)
+        if not self.raw_feat:
+            rgb = rgb.sigmoid()
 
         out = torch.cat([rgb, sigma], -1)
 

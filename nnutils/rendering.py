@@ -240,7 +240,6 @@ def render_rays(models,
         # backward skinning
         bones = models['bones']
         embedding_time = embeddings['time']
-        #model_rts = models['rts']
 
         xyz_coarse_sampled, skin, bones_dfm = lbs(bones, embedding_time, 
                                                   xyz_coarse_sampled, frameid)

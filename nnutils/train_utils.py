@@ -288,7 +288,7 @@ class v2s_trainer(Trainer):
                     query_xyz_chunk = query_xyz_chunk[:,None]
                     query_time = torch.ones(chunk,1).to(model.device)*frameid
                     bones = model.bones
-                    embedding_time = model.embedding_time
+                    embedding_time = nn.Sequential(model.embedding_time, model.nerf_rts)
 
                     query_xyz_chunk,skin,bones_dfm = lbs(bones, embedding_time,
                                                   query_xyz_chunk, query_time)

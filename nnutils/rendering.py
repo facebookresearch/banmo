@@ -212,6 +212,7 @@ def render_rays(models,
         perturb_rand = perturb * torch.rand(z_vals.shape, device=rays_d.device)
         z_vals = lower + (upper - lower) * perturb_rand
 
+    # produce points in the root body space
     xyz_coarse_sampled = rays_o.unsqueeze(1) + \
                          rays_d.unsqueeze(1) * z_vals.unsqueeze(2) # (N_rays, N_samples, 3)
 
@@ -239,9 +240,17 @@ def render_rays(models,
     elif 'bones' in models.keys():
         # backward skinning
         bones = models['bones']
-        bone_rts = rays['bone_rts']
-        xyz_coarse_sampled, skin, bones_dfm = lbs(bones, bone_rts, 
+        bone_rts_fw = rays['bone_rts']
+        xyz_coarse_sampled, skin, bones_dfm = lbs(bones, 
+                                                  bone_rts_fw, 
                                                   xyz_coarse_sampled)
+            
+        if 'bone_rts_target' in models.keys():
+            pdb.set_trace()
+            bone_rts_target = rays['bone_rts_target']
+            xyz_coarse_target = lbs(bones, bone_rts_target, 
+                                    xyz_coarse_sampled,backward=False)
+            # blend in the root space with weights, return the blended point and transform to view space.
 
     if test_time:
         weights_coarse = \

@@ -181,12 +181,11 @@ class v2s_net(nn.Module):
             bone_rts = self.nerf_bone_rts(frameid)
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
-        #if opts.use_corresp and bs>1:
-        #    pdb.set_trace()
-        #    frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
-        #    bone_rts_target = self.nerf_bone_rts(frameid_target)
-        #    rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
-        #    
+        if opts.use_corresp and bs>1:
+            frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
+            bone_rts_target = self.nerf_bone_rts(frameid_target)
+            rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
+            
         
         # render rays
         bs_rays = rays['bs']

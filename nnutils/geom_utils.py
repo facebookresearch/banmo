@@ -131,44 +131,29 @@ def blend_skinning(bones, rts, pts):
     pts = pts[...,0]
     return pts, skin
 
-def blend_skinning_bw(bones, rts_fw, pts):
+def lbs(bones, rts_fw, xyz_in, backward=True):
     """
-    bone: bs,B,10   - B gaussian ellipsoids indicating bone coordinates
-    rts: bs,B,3,4   - B rigid transforms, applied to the bone coordinate
-    pts: bs,N,3     - N 3d points
-    """
-    B = rts_fw.shape[-3]
-    N = pts.shape[-2]
-    bones = bones.view(-1,B,10)
-    rts_fw = rts_fw.view(-1,B,3,4)
-    pts = pts.view(-1,N,3)
-    
-    bones_dfm = bone_transform(bones, rts_fw) # bone coordinates after deform
-    rts_bw = rts_invert(rts_fw)
-    pts, skin = blend_skinning(bones_dfm, rts_bw, pts)
-    return pts, skin, bones_dfm
-
-
-def lbs(bones, bone_rts, xyz_in):
-    """
-    bones: bs,B,10       - B gaussian ellipsoids indicating bone coordinates
-    bone_rts: bs,B,3,4   - B rigid transforms, applied to the bone coordinate
-    xyz_in: bs,N,3       - N 3d points in the root coordinates
+    bones: bs,B,10       - B gaussian ellipsoids indicating rest bone coordinates
+    rts_fw: bs,B,7       - B rigid transforms, applied to the rest bones
+    xyz_in: bs,N,3       - N 3d points after transforms in the root coordinates
     """
     B = bones.shape[-2]
-    bone_rts = bone_rts.view(-1,B,7)# B,7
-    rquat=bone_rts[:,:,:4]
+    N = xyz_in.shape[-2]
+    bones = bones.view(-1,B,10)
+    xyz_in = xyz_in.view(-1,N,3)
+    rts_fw = rts_fw.view(-1,B,7)# B,7
+    rquat=rts_fw[:,:,:4]
     rmat=transforms.quaternion_to_matrix(rquat) 
-    tmat= bone_rts[:,:,4:7]
-
-    # original orientation
-    #bones=torch.cat([bones[:,:4], 
-    #                torch.zeros(B,6).to(bones.device)],-1)
-    # no bone rotation
-    #rmat=torch.eye(3).to(rquat.device).view(1,1,3,3).repeat(rquat.shape[0],B,1,1)
-
+    tmat= rts_fw[:,:,4:7]
     rts_fw = torch.cat([rmat,tmat[...,None]],-1)
-    xyz, skin, bones_dfm = blend_skinning_bw(bones, rts_fw, xyz_in)
+    rts_fw = rts_fw.view(-1,B,3,4)
+
+    if backward:
+        bones_dfm = bone_transform(bones, rts_fw) # bone coordinates after deform
+        rts_bw = rts_invert(rts_fw)
+        xyz, skin = blend_skinning(bones_dfm, rts_bw, xyz_in)
+    else:
+        xyz, skin = blend_skinning(bones, rts_fw, xyz_in)
     return xyz, skin, bones_dfm
 
 def obj_to_cam(in_verts, Rmat, Tmat):

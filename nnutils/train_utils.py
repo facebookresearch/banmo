@@ -290,9 +290,10 @@ class v2s_trainer(Trainer):
                     query_xyz_chunk = query_xyz_chunk[:,None]
                     query_time = torch.ones(chunk,1).to(model.device)*frameid
                     query_time = query_time.long()
-                    bone_rts = model.nerf_bone_rts(query_time)
+                    bone_rts_fw = model.nerf_bone_rts(query_time)
 
-                    query_xyz_chunk,skin,bones_dfm = lbs(bones, bone_rts,
+                    query_xyz_chunk,skin,bones_dfm = lbs(bones, 
+                                                  bone_rts_fw,
                                                   query_xyz_chunk)
 
                     query_xyz_chunk = query_xyz_chunk[:,0]

@@ -149,7 +149,12 @@ def blend_skinning_bw(bones, rts_fw, pts):
     return pts, skin, bones_dfm
 
 
-def lbs(bones, bone_rts, xyz):
+def lbs(bones, bone_rts, xyz_in):
+    """
+    bones: bs,B,10       - B gaussian ellipsoids indicating bone coordinates
+    bone_rts: bs,B,3,4   - B rigid transforms, applied to the bone coordinate
+    xyz_in: bs,N,3       - N 3d points in the root coordinates
+    """
     B = bones.shape[-2]
     bone_rts = bone_rts.view(-1,B,7)# B,7
     rquat=bone_rts[:,:,:4]
@@ -163,7 +168,7 @@ def lbs(bones, bone_rts, xyz):
     #rmat=torch.eye(3).to(rquat.device).view(1,1,3,3).repeat(rquat.shape[0],B,1,1)
 
     rts_fw = torch.cat([rmat,tmat[...,None]],-1)
-    xyz, skin, bones_dfm = blend_skinning_bw(bones, rts_fw, xyz)
+    xyz, skin, bones_dfm = blend_skinning_bw(bones, rts_fw, xyz_in)
     return xyz, skin, bones_dfm
 
 def obj_to_cam(in_verts, Rmat, Tmat):

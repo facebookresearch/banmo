@@ -109,6 +109,7 @@ flags.DEFINE_bool('flowbw', False, 'use backward warping 3d flow')
 flags.DEFINE_bool('lbs', False, 'use lbs for backward warping 3d flow')
 flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')
 flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
+flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspondence')
 flags.DEFINE_integer('sample_grid3d', 128, 'resolution for mesh extraction from nerf')
 
 
@@ -170,10 +171,8 @@ class v2s_net(nn.Module):
 
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
-
         rays = raycast(xys, Rmat, Tmat, Kinv, bound=1.5)
 
-        # render rays
         frameid = frameid.long().to(self.device)[:,None]
         if opts.flowbw:
             time_embedded = self.embedding_time(frameid)
@@ -182,6 +181,14 @@ class v2s_net(nn.Module):
             bone_rts = self.nerf_bone_rts(frameid)
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
+        #if opts.use_corresp and bs>1:
+        #    pdb.set_trace()
+        #    frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
+        #    bone_rts_target = self.nerf_bone_rts(frameid_target)
+        #    rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
+        #    
+        
+        # render rays
         bs_rays = rays['bs']
         results=defaultdict(list)
         for i in range(0, bs_rays, opts.chunk):

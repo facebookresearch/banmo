@@ -1,5 +1,7 @@
+import pdb
 import torch
 from torch import nn
+import torch.nn.functional as F
 
 class Embedding(nn.Module):
     def __init__(self, in_channels, N_freqs, logscale=True):
@@ -127,3 +129,21 @@ class NeRF(nn.Module):
             rgb = rgb.sigmoid()
             out = torch.cat([rgb, sigma], -1)
         return out
+
+
+class RTHead(NeRF):
+    """
+    modify the output to be rigid transforms
+    """
+    def forward(self, x):
+        x = super(RTHead, self).forward(x)
+
+        rts = x.view(-1,7) 
+        rquat=rts[:,:4]
+        rquat[:,0]+=10
+        rquat=F.normalize(rquat,2,-1)
+        tmat= rts[:,4:7] *0.1
+
+        rts = torch.cat([rquat,tmat],-1)
+        x = rts.view(x.shape)
+        return x

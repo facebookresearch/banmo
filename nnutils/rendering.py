@@ -188,7 +188,6 @@ def render_rays(models,
     rays_d = rays['rays_d']  # both (N_rays, 3)
     near = rays['near']
     far = rays['far']  # both (N_rays, 1)
-    time_embedded = rays['time_embedded']
     N_rays = rays_d.shape[0]
 
     # Embed direction
@@ -231,6 +230,7 @@ def render_rays(models,
     # free deform
     if 'flowbw' in models.keys():
         model_flowbw = models['flowbw']
+        time_embedded = rays['time_embedded']
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
         flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, code=time_embedded)
         flow_bw = flow_bw[:,:,:3]
@@ -239,7 +239,8 @@ def render_rays(models,
     elif 'bones' in models.keys():
         # backward skinning
         bones = models['bones']
-        xyz_coarse_sampled, skin, bones_dfm = lbs(bones, time_embedded, 
+        bone_rts = rays['bone_rts']
+        xyz_coarse_sampled, skin, bones_dfm = lbs(bones, bone_rts, 
                                                   xyz_coarse_sampled)
 
     if test_time:

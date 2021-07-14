@@ -93,8 +93,6 @@ class v2s_trainer(Trainer):
                 params_embed.append(p)
             elif 'bones' == name:
                 params_bones.append(p)
-            elif 'root' == name:
-                params_root.append(p)
             else: continue
             print(name)
                 
@@ -102,7 +100,6 @@ class v2s_trainer(Trainer):
             [{'params': params_nerf},
              {'params': params_embed},
              {'params': params_bones},
-             {'params': params_root},
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
@@ -110,7 +107,6 @@ class v2s_trainer(Trainer):
            [opts.learning_rate, # params_nerf
             opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
-            opts.learning_rate, # params_root
             ],
             200*len(self.dataloader), pct_start=0.01, 
             cycle_momentum=False, anneal_strategy='linear',
@@ -294,9 +290,9 @@ class v2s_trainer(Trainer):
                     query_xyz_chunk = query_xyz_chunk[:,None]
                     query_time = torch.ones(chunk,1).to(model.device)*frameid
                     query_time = query_time.long()
-                    time_embedded = model.embedding_time(query_time)
+                    bone_rts = model.nerf_bone_rts(query_time)
 
-                    query_xyz_chunk,skin,bones_dfm = lbs(bones, time_embedded,
+                    query_xyz_chunk,skin,bones_dfm = lbs(bones, bone_rts,
                                                   query_xyz_chunk)
 
                     query_xyz_chunk = query_xyz_chunk[:,0]

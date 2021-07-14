@@ -20,7 +20,7 @@ from pytorch3d import transforms
 
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
-from nnutils.nerf import Embedding, NeRF
+from nnutils.nerf import Embedding, NeRF, RTHead
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones
@@ -111,6 +111,7 @@ flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')
 flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
 flags.DEFINE_integer('sample_grid3d', 128, 'resolution for mesh extraction from nerf')
 
+
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, nz_feat=100, num_kps=15, sfm_mean_shape=None):
         super(v2s_net, self).__init__()
@@ -138,16 +139,17 @@ class v2s_net(nn.Module):
             self.bones = nn.Parameter(bones)
             self.nerf_models['bones'] = self.bones
 
-            self.nerf_rts = NeRF(in_channels_xyz=max_t, D=4,
+            self.nerf_bone_rts = nn.Sequential(self.embedding_time,
+                                RTHead(in_channels_xyz=max_t, D=4,
                                 in_channels_dir=0,
-                                out_channels=7*num_bones, raw_feat=True)
-            self.embedding_time = nn.Sequential(nn.Embedding(max_t,max_t),
-                                                     self.nerf_rts)
+                                out_channels=7*num_bones, raw_feat=True))
 
         # optimize camera
         if opts.root_opt:
-            root =  torch.Tensor([0,0,0, 1,0,0,0]).to(self.device)
-            self.root = nn.Parameter(root)
+            self.nerf_root_rts = nn.Sequential(self.embedding_time,
+                                RTHead(in_channels_xyz=max_t, D=4,
+                                in_channels_dir=0,
+                                out_channels=7, raw_feat=True))
 
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
@@ -173,9 +175,12 @@ class v2s_net(nn.Module):
 
         # render rays
         frameid = frameid.long().to(self.device)[:,None]
-        time_embedded = self.embedding_time(frameid)
-        time_embedded = time_embedded.repeat(1,rays['nsample'],1)
-        rays['time_embedded'] = time_embedded
+        if opts.flowbw:
+            time_embedded = self.embedding_time(frameid)
+            rays['time_embedded'] = time_embedded.repeat(1,rays['nsample'],1)
+        elif opts.lbs:
+            bone_rts = self.nerf_bone_rts(frameid)
+            rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
         bs_rays = rays['bs']
         results=defaultdict(list)
@@ -242,11 +247,11 @@ class v2s_net(nn.Module):
             self.rtk[:,:2,3] = 0.
         
         if self.opts.root_opt:
-            root_tmat = self.root[:3]
-            root_tmat = root_tmat[None]
-            root_quat = self.root[3:7]
-            root_quat = F.normalize(root_quat, 2,-1)[None]
+            frameid = self.frameid.long().to(self.device)
+            root_rts = self.nerf_root_rts(frameid)
+            root_quat = root_rts[:,:4]
             root_rmat = transforms.quaternion_to_matrix(root_quat)
+            root_tmat = root_rts[:,4:7]
             
             rmat = self.rtk[:,:3,:3]
             tmat = self.rtk[:,:3,3]
@@ -254,7 +259,6 @@ class v2s_net(nn.Module):
             tmat = tmat + rmat.matmul(root_tmat[...,None])[...,0]
             self.rtk[:,:3,:3] = rmat
             self.rtk[:,:3,3] = tmat
-        
         return bs
 
     def forward(self, batch):

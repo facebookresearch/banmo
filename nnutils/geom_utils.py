@@ -149,15 +149,12 @@ def blend_skinning_bw(bones, rts_fw, pts):
     return pts, skin, bones_dfm
 
 
-def lbs(bones, time_embedded, xyz):
+def lbs(bones, bone_rts, xyz):
     B = bones.shape[-2]
-    time_embedded = time_embedded.view(-1,B,7)# B,7
-    rquat=time_embedded[:,:,:4]
-    tmat= time_embedded[:,:,4:7] *0.1
-
-    rquat[:,:,0]+=10
-    rquat=F.normalize(rquat,2,2)
+    bone_rts = bone_rts.view(-1,B,7)# B,7
+    rquat=bone_rts[:,:,:4]
     rmat=transforms.quaternion_to_matrix(rquat) 
+    tmat= bone_rts[:,:,4:7]
 
     # original orientation
     #bones=torch.cat([bones[:,:4], 

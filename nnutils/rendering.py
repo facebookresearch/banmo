@@ -184,17 +184,19 @@ def render_rays(models,
     embedding_dir = embeddings['dir']
 
     # Decompose the inputs
-    N_rays = rays.shape[0]
-    rays_o, rays_d = rays[:, 0:3], rays[:, 3:6] # both (N_rays, 3)
-    near, far = rays[:, 6:7], rays[:, 7:8] # both (N_rays, 1)
-    frameid = rays[:,8:9]
+    rays_o = rays['rays_o']
+    rays_d = rays['rays_d']  # both (N_rays, 3)
+    near = rays['near']
+    far = rays['far']  # both (N_rays, 1)
+    time_embedded = rays['time_embedded']
+    N_rays = rays_d.shape[0]
 
     # Embed direction
     rays_d_norm = rays_d / rays_d.norm(2,-1)[:,None]
     dir_embedded = embedding_dir(rays_d_norm) # (N_rays, embed_dir_channels)
 
     # Sample depth points
-    z_steps = torch.linspace(0, 1, N_samples, device=rays.device) # (N_samples)
+    z_steps = torch.linspace(0, 1, N_samples, device=rays_d.device) # (N_samples)
     if not use_disp: # use linear sampling in depth space
         z_vals = near * (1-z_steps) + far * z_steps
     else: # use linear sampling in disparity space
@@ -208,7 +210,7 @@ def render_rays(models,
         upper = torch.cat([z_vals_mid, z_vals[: ,-1:]], -1)
         lower = torch.cat([z_vals[: ,:1], z_vals_mid], -1)
         
-        perturb_rand = perturb * torch.rand(z_vals.shape, device=rays.device)
+        perturb_rand = perturb * torch.rand(z_vals.shape, device=rays_d.device)
         z_vals = lower + (upper - lower) * perturb_rand
 
     xyz_coarse_sampled = rays_o.unsqueeze(1) + \
@@ -229,9 +231,7 @@ def render_rays(models,
     # free deform
     if 'flowbw' in models.keys():
         model_flowbw = models['flowbw']
-        embedding_time = embeddings['time']
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-        time_embedded = embedding_time(frameid.long())
         flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, code=time_embedded)
         flow_bw = flow_bw[:,:,:3]
         xyz_coarse_sampled=xyz_coarse_sampled + flow_bw
@@ -239,10 +239,8 @@ def render_rays(models,
     elif 'bones' in models.keys():
         # backward skinning
         bones = models['bones']
-        embedding_time = embeddings['time']
-
-        xyz_coarse_sampled, skin, bones_dfm = lbs(bones, embedding_time, 
-                                                  xyz_coarse_sampled, frameid)
+        xyz_coarse_sampled, skin, bones_dfm = lbs(bones, time_embedded, 
+                                                  xyz_coarse_sampled)
 
     if test_time:
         weights_coarse = \

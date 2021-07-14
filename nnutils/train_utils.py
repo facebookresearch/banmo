@@ -104,8 +104,8 @@ class v2s_trainer(Trainer):
 
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer,\
            [opts.learning_rate, # params_nerf
-            opts.learning_rate*10, # params_embed
-            opts.learning_rate*10, # params_bones
+            opts.learning_rate, # params_embed
+            opts.learning_rate, # params_bones
             ],
             200*len(self.dataloader), pct_start=0.01, 
             cycle_momentum=False, anneal_strategy='linear',
@@ -285,13 +285,14 @@ class v2s_trainer(Trainer):
                     query_xyz_chunk += flowbw_chunk
                 elif model.opts.lbs:
                     # backward skinning
+                    bones = model.bones
                     query_xyz_chunk = query_xyz_chunk[:,None]
                     query_time = torch.ones(chunk,1).to(model.device)*frameid
-                    bones = model.bones
-                    embedding_time = nn.Sequential(model.embedding_time, model.nerf_rts)
+                    query_time = query_time.long()
+                    time_embedded = model.embedding_time(query_time)
 
-                    query_xyz_chunk,skin,bones_dfm = lbs(bones, embedding_time,
-                                                  query_xyz_chunk, query_time)
+                    query_xyz_chunk,skin,bones_dfm = lbs(bones, time_embedded,
+                                                  query_xyz_chunk)
 
                     query_xyz_chunk = query_xyz_chunk[:,0]
                     rt_dict['bones'] = bones_dfm 

@@ -26,7 +26,7 @@ def save_output(aux_seq, seqname):
         np.savetxt('%s-cam-%05d.txt'%(save_dir, idx), rtk)
 
         # convert bones to meshes
-        if 'bone' in aux_seq.keys():
+        if 'bone' in aux_seq.keys() and len(aux_seq['bone'])>0:
             bones = aux_seq['bone'][i]
             B = len(bones)
             elips_list = []

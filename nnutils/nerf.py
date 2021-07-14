@@ -121,9 +121,9 @@ class NeRF(nn.Module):
         dir_encoding_input = torch.cat([xyz_encoding_final, input_dir], -1)
         dir_encoding = self.dir_encoding(dir_encoding_input)
         rgb = self.rgb(dir_encoding)
-        if not self.raw_feat:
+        if self.raw_feat:
+            out = rgb
+        else:
             rgb = rgb.sigmoid()
-
-        out = torch.cat([rgb, sigma], -1)
-
+            out = torch.cat([rgb, sigma], -1)
         return out

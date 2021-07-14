@@ -149,9 +149,8 @@ def blend_skinning_bw(bones, rts_fw, pts):
     return pts, skin, bones_dfm
 
 
-def lbs(bones, embedding_time, xyz, frameid):
+def lbs(bones, time_embedded, xyz):
     B = bones.shape[-2]
-    time_embedded = embedding_time(frameid.long())[...,:-1]
     time_embedded = time_embedded.view(-1,B,7)# B,7
     rquat=time_embedded[:,:,:4]
     tmat= time_embedded[:,:,4:7] *0.1
@@ -323,18 +322,23 @@ def raycast(xys, Rmat, Tmat, Kinv, bound=1.5):
     Rmat = Rmat.view(-1,3,3)
     Tmat = Tmat.view(-1,1,3)
     Kinv = Kinv.view(-1,3,3)
-    nsamples = xys.shape[1]
+    bs,nsample,_ = xys.shape
 
     xy1s = torch.cat([xys, torch.ones_like(xys[:,:,:1])],2)
     xyz3d = xy1s.matmul(Kinv.permute(0,2,1))
     ray_directions = xyz3d.matmul(Rmat)  # transpose -> right multiply
     ray_origins = -Tmat.matmul(Rmat) # transpose -> right multiply
-    znear =Tmat[:,:,-1:].repeat(1,nsamples,1)-bound
-    zfar = Tmat[:,:,-1:].repeat(1,nsamples,1)+bound
-    ray_origins = ray_origins.repeat(1,nsamples,1)
+    znear =Tmat[:,:,-1:].repeat(1,nsample,1)-bound
+    zfar = Tmat[:,:,-1:].repeat(1,nsample,1)+bound
+    ray_origins = ray_origins.repeat(1,nsample,1)
 
-    rays = torch.cat([ray_origins, ray_directions, znear, zfar],-1)
-    rays = rays.float()
+    rays={'rays_o': ray_origins, 
+          'rays_d': ray_directions,
+          'near': znear,
+          'far': zfar,
+          'nsample': nsample,
+          'bs': bs,
+          }
     return rays
 
 def sample_xy(img_size, bs, nsample, device, return_all=False):
@@ -352,3 +356,16 @@ def sample_xy(img_size, bs, nsample, device, return_all=False):
         xys = torch.stack([xygrid[i][rand_inds[i]] for i in range(bs)],0) # bs,ns,2
     
     return rand_inds, xys
+
+def chunk_rays(rays,start,delta):
+    """
+    rays: a dictionary
+    """
+    rays_chunk = {}
+    for k,v in rays.items():
+        if torch.is_tensor(v):
+            v = v.view(-1, v.shape[-1])
+            rays_chunk[k] = v[start:start+delta]
+    return rays_chunk
+        
+

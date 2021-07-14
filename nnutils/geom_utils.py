@@ -369,3 +369,17 @@ def chunk_rays(rays,start,delta):
     return rays_chunk
         
 
+def generate_bones(num_bones_x, bound, device):
+    """
+    num_bones_x: bones along one direction
+    bones: x,9
+    """
+    num_bones = num_bones_x**3
+    center =  torch.linspace(-bound, bound, num_bones_x).to(device)
+    center =torch.meshgrid(center, center, center)
+    center = torch.stack(center,0).permute(1,2,3,0).reshape(-1,3)
+    orient =  torch.Tensor([[1,0,0,0]]).to(device)
+    orient = orient.repeat(num_bones,1)
+    scale = torch.zeros(num_bones,3).to(device)
+    bones = torch.cat([center, orient, scale],-1)
+    return bones, num_bones

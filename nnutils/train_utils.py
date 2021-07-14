@@ -85,6 +85,7 @@ class v2s_trainer(Trainer):
         params_nerf=[]
         params_embed=[]
         params_bones=[]
+        params_root=[]
         for name,p in self.model.named_parameters():
             if 'nerf' in name:
                 params_nerf.append(p)
@@ -92,6 +93,8 @@ class v2s_trainer(Trainer):
                 params_embed.append(p)
             elif 'bones' == name:
                 params_bones.append(p)
+            elif 'root' == name:
+                params_root.append(p)
             else: continue
             print(name)
                 
@@ -99,6 +102,7 @@ class v2s_trainer(Trainer):
             [{'params': params_nerf},
              {'params': params_embed},
              {'params': params_bones},
+             {'params': params_root},
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
@@ -106,6 +110,7 @@ class v2s_trainer(Trainer):
            [opts.learning_rate, # params_nerf
             opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
+            opts.learning_rate, # params_root
             ],
             200*len(self.dataloader), pct_start=0.01, 
             cycle_momentum=False, anneal_strategy='linear',

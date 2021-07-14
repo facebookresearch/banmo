@@ -16,12 +16,14 @@ import torch.nn as nn
 from torch.autograd import Variable
 import torch.nn.functional as F
 import trimesh, pytorch3d, pytorch3d.loss, pdb
+from pytorch3d import transforms
 
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from nnutils.nerf import Embedding, NeRF
 import kornia, configparser, soft_renderer as sr
-from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy, chunk_rays
+from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy,\
+                                chunk_rays, generate_bones
 from nnutils.rendering import render_rays
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
@@ -105,6 +107,8 @@ flags.DEFINE_float('perturb',   1.0, 'factor to perturb depth sampling points')
 flags.DEFINE_float('noise_std', 1.0, 'std dev of noise added to regularize sigma')
 flags.DEFINE_bool('flowbw', False, 'use backward warping 3d flow')
 flags.DEFINE_bool('lbs', False, 'use lbs for backward warping 3d flow')
+flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')
+flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
 flags.DEFINE_integer('sample_grid3d', 128, 'resolution for mesh extraction from nerf')
 
 class v2s_net(nn.Module):
@@ -117,35 +121,33 @@ class v2s_net(nn.Module):
         self.nerf_coarse = NeRF()
         self.embedding_xyz = Embedding(3, 10) # 10 is the default number
         self.embedding_dir = Embedding(3, 4) # 4 is the default number
+        self.embeddings = {'xyz':self.embedding_xyz, 'dir':self.embedding_dir}
+        self.nerf_models= {'coarse':self.nerf_coarse}
 
         # set dnerf model
         max_t=100
-        num_bones_x = 4
-        num_bones = num_bones_x**3
-        self.num_t_feat = 7*num_bones
-        
-        self.embeddings = {'xyz':self.embedding_xyz, 'dir':self.embedding_dir}
-        self.nerf_models= {'coarse':self.nerf_coarse}
+        self.embedding_time = nn.Embedding(max_t, max_t) ##TODO change 15
         if opts.flowbw:
-            self.embedding_time = nn.Embedding(max_t, max_t) ##TODO change 15
             self.nerf_flowbw = NeRF(in_channels_xyz=63+max_t, 
                                 in_channels_dir=0)
             self.nerf_models['flowbw'] = self.nerf_flowbw
         elif opts.lbs:
-            center =  torch.linspace(-0.5, 0.5, num_bones_x).to(self.device)
-            center =torch.meshgrid(center, center, center)
-            center = torch.stack(center,0).permute(1,2,3,0).reshape(-1,3)
-            orient =  torch.Tensor([[1,0,0,0]]).to(self.device)
-            orient = orient.repeat(num_bones,1)
-            scale = torch.zeros(num_bones,3).to(self.device)
-            self.bones = nn.Parameter(torch.cat([center, orient, scale],-1))
+            num_bones_x = 4
+            bound = 0.5
+            bones, num_bones = generate_bones(num_bones_x, bound, self.device)
+            self.bones = nn.Parameter(bones)
             self.nerf_models['bones'] = self.bones
 
-            self.nerf_rts = NeRF(in_channels_xyz=max_t, 
+            self.nerf_rts = NeRF(in_channels_xyz=max_t, D=4,
                                 in_channels_dir=0,
-                                out_channels=self.num_t_feat, raw_feat=True)
+                                out_channels=7*num_bones, raw_feat=True)
             self.embedding_time = nn.Sequential(nn.Embedding(max_t,max_t),
                                                      self.nerf_rts)
+
+        # optimize camera
+        if opts.root_opt:
+            root =  torch.Tensor([0,0,0, 1,0,0,0]).to(self.device)
+            self.root = nn.Parameter(root)
 
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
@@ -181,7 +183,6 @@ class v2s_net(nn.Module):
             rays_chunk = chunk_rays(rays,i,opts.chunk)
             rendered_chunks = render_rays(self.nerf_models,
                         self.embeddings,
-#                        rays[i:i+opts.chunk],
                         rays_chunk,
                         N_samples = ndepth,
                         use_disp=False,
@@ -234,8 +235,26 @@ class v2s_net(nn.Module):
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1)
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)
+
+        bs = self.imgs.shape[0]
+        if not self.opts.use_cam:
+            self.rtk[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(self.device)
+            self.rtk[:,:2,3] = 0.
         
-        bs = 2*bs
+        if self.opts.root_opt:
+            root_tmat = self.root[:3]
+            root_tmat = root_tmat[None]
+            root_quat = self.root[3:7]
+            root_quat = F.normalize(root_quat, 2,-1)[None]
+            root_rmat = transforms.quaternion_to_matrix(root_quat)
+            
+            rmat = self.rtk[:,:3,:3]
+            tmat = self.rtk[:,:3,3]
+            rmat = rmat.matmul(root_rmat)
+            tmat = tmat + rmat.matmul(root_tmat[...,None])[...,0]
+            self.rtk[:,:3,:3] = rmat
+            self.rtk[:,:3,3] = tmat
+        
         return bs
 
     def forward(self, batch):

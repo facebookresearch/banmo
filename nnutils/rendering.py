@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from pytorch3d import transforms
 from torchsearchsorted import searchsorted
 
-from nnutils.geom_utils import lbs
+from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam
 
 __all__ = ['render_rays']
 
@@ -216,6 +216,9 @@ def render_rays(models,
     xyz_coarse_sampled = rays_o.unsqueeze(1) + \
                          rays_d.unsqueeze(1) * z_vals.unsqueeze(2) # (N_rays, N_samples, 3)
 
+    # root space point correspondence in t2
+    xyz_coarse_target = xyz_coarse_sampled.clone()
+
     ##TODO: produce backward 3d flow and warp to canonical space.
     def evaluate_mlp(model, xyz_embedded, code=None):
         B,nbins,_ = xyz_embedded.shape
@@ -249,8 +252,9 @@ def render_rays(models,
             pdb.set_trace()
             bone_rts_target = rays['bone_rts_target']
             xyz_coarse_target = lbs(bones, bone_rts_target, 
-                                    xyz_coarse_sampled,backward=False)
+                                    xyz_coarse_target,backward=False)
             # blend in the root space with weights, return the blended point and transform to view space.
+    
 
     if test_time:
         weights_coarse = \
@@ -263,8 +267,23 @@ def render_rays(models,
                       dir_embedded, z_vals, weights_only=False)
         result = {'img_coarse': rgb_coarse,
                   'depth_coarse': depth_coarse,
-                  'sil_coarse': weights_coarse.sum(1)
+                  'sil_coarse': weights_coarse.sum(1),
                  }
+
+    # compute correspondence: root space to target view space
+    # RT: root space to camera space
+    rtk_vec =  rays['rtk_vec']
+    Rmat = rtk_vec[:,0:9].view(N_rays,1,3,3)
+    Tmat = rtk_vec[:,9:12].view(N_rays,1,3)
+    Kinv = rtk_vec[:,12:21].view(N_rays,1,3,3)
+    K = mat2K(Kmatinv(Kinv))
+
+    xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
+    xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
+    xy_coarse_target =  weights_coarse[...,None] * xyz_coarse_target[:,:,:2]
+    xy_coarse_target = xy_coarse_target.sum(1)
+                  
+    result['xy_coarse_target'] = xy_coarse_target
 
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points

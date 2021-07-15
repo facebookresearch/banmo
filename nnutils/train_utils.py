@@ -317,10 +317,9 @@ class v2s_trainer(Trainer):
         return rt_dict
 
     def save_logs(self, log, aux_output, total_steps, epoch):
-        self.add_scalar(log,'total_loss', aux_output,total_steps)
-        self.add_scalar(log,'sil_loss', aux_output,total_steps)
-        self.add_scalar(log,'img_loss', aux_output,total_steps)
-    
+        for k,v in aux_output.items():
+            self.add_scalar(log, k, aux_output,total_steps)
+            
     @staticmethod
     def add_image_from_dict(log,tag,data,step,scale=True):
         if tag in data.keys():

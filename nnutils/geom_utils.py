@@ -192,6 +192,7 @@ def mat2K(Kmat):
     """
     Kmat: ...,3,3
     """
+    shape=Kmat.shape[:-2]
     Kmat = Kmat.view(-1,3,3)
     device = Kmat.device
     bs = Kmat.shape[0]
@@ -201,6 +202,7 @@ def mat2K(Kmat):
     K[:,1] = Kmat[:,1,1]
     K[:,2] = Kmat[:,0,2]
     K[:,3] = Kmat[:,1,2]
+    K = K.view(shape+(4,))
     return K
 
 def Kmatinv(Kmat):
@@ -209,6 +211,7 @@ def Kmatinv(Kmat):
     """
     K = mat2K(Kmat)
     Kmatinv = K2inv(K)
+    Kmatinv = Kmatinv.view(Kmat.shape)
     return Kmatinv
 
 def K2inv(K):
@@ -229,8 +232,9 @@ def K2inv(K):
 
 def pinhole_cam(in_verts, K):
     """
-    verts: ...,N,3
-    K:     ...,4
+    in_verts: ...,N,3
+    K:        ...,4
+    verts:    ...,N,3 in (x,y,Z)
     """
     verts = in_verts.clone()
     verts = verts.view(-1,verts.shape[1],3)
@@ -240,7 +244,10 @@ def pinhole_cam(in_verts, K):
     Kmat = Kmat.permute(0,2,1)
 
     verts = verts.matmul(Kmat)
-    verts[:,:,:2] /= verts[:,:,2:3]
+    verts_z = verts[:,:,2:3]
+    verts_xy = verts[:,:,:2] / verts_z
+    
+    verts = torch.cat([verts_xy,verts_z],-1)
     verts = verts.reshape(in_verts.shape)
     return verts
 
@@ -319,10 +326,17 @@ def raycast(xys, Rmat, Tmat, Kinv, bound=1.5):
     zfar = Tmat[:,:,-1:].repeat(1,nsample,1)+bound
     ray_origins = ray_origins.repeat(1,nsample,1)
 
+    rmat_vec = Rmat.reshape(-1,1,9)
+    tmat_vec = Tmat.reshape(-1,1,3)
+    kinv_vec = Kinv.reshape(-1,1,9)
+    rtk_vec = torch.cat([rmat_vec, tmat_vec, kinv_vec],-1) # x,21
+    rtk_vec = rtk_vec.repeat(1,nsample,1)
+
     rays={'rays_o': ray_origins, 
           'rays_d': ray_directions,
           'near': znear,
           'far': zfar,
+          'rtk_vec': rtk_vec,
           'nsample': nsample,
           'bs': bs,
           }

@@ -173,6 +173,16 @@ class v2s_net(nn.Module):
                                    return_all= not(self.training))
         rays = raycast(xys, Rmat, Tmat, Kinv, bound=1.5)
 
+        if opts.use_corresp and bs>1:
+            rtk_vec = rays['rtk_vec']
+            rtk_vec = rtk_vec.view(2,-1).flip(0)
+            rays['rtk_vec'] = rtk_vec.reshape(rays['rtk_vec'].shape)
+               
+            if opts.lbs:
+                frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
+                bone_rts_target = self.nerf_bone_rts(frameid_target)
+                rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
+
         frameid = frameid.long().to(self.device)[:,None]
         if opts.flowbw:
             time_embedded = self.embedding_time(frameid)
@@ -181,12 +191,6 @@ class v2s_net(nn.Module):
             bone_rts = self.nerf_bone_rts(frameid)
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
-        if opts.use_corresp and bs>1:
-            frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
-            bone_rts_target = self.nerf_bone_rts(frameid_target)
-            rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
-            
-        
         # render rays
         bs_rays = rays['bs']
         results=defaultdict(list)
@@ -212,6 +216,11 @@ class v2s_net(nn.Module):
             else:
                 v = v.view(bs,img_size, img_size, -1)
             results[k] = v
+        
+        # bs, nsamp, 2
+        results['flo_coarse'] = results['xy_coarse_target'] - \
+                      xys.view(results['xy_coarse_target'].shape) 
+        results['flo_coarse'] = results['flo_coarse']/img_size * 2
         
         return results, rand_inds
 
@@ -291,6 +300,15 @@ class v2s_net(nn.Module):
         aux_out['total_loss'] = total_loss
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
+        
+        # flow loss
+        if opts.use_corresp:
+            rendered_flo = rendered['flo_coarse']
+            flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
+            flo_loss = (rendered_flo - flo_at_samp).norm(2,-1)
+            flo_loss = flo_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
+            total_loss = total_loss + flo_loss
+            aux_out['flo_loss'] = flo_loss
         
         return total_loss, aux_out
 

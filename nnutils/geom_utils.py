@@ -305,6 +305,12 @@ def force_type(varlist):
         varlist[i] = varlist[i].type(varlist[0].dtype)
     return varlist
 
+def tensor2array(tdict):
+    adict={}
+    for k,v in tdict.items():
+        adict[k] = v.detach().cpu().numpy()
+    return adict
+
 def raycast(xys, Rmat, Tmat, Kinv, bound=1.5):
     """
     xys: bs, N, 3

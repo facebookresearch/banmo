@@ -1,4 +1,6 @@
 from absl import flags, app
+import sys
+sys.path.insert(0,'third_party')
 import numpy as np
 import torch
 import os
@@ -7,17 +9,23 @@ import pdb
 import cv2
 import trimesh
 from scipy.spatial.transform import Rotation as R
+import imageio
 
 from utils.colors import label_colormap
 from nnutils.train_utils import v2s_trainer
-from nnutils.geom_utils import obj_to_cam
+from nnutils.geom_utils import obj_to_cam, tensor2array
+from ext_utils.util_flow import write_pfm
+from ext_utils.flowlib import cat_imgflo 
 opts = flags.FLAGS
                 
-def save_output(aux_seq, seqname):
+def save_output(rendered_seq, aux_seq, seqname):
     save_dir = '%s/%s'%(opts.model_path.rsplit('/',1)[0],seqname)
     length = len(aux_seq['mesh'])
+
+    flo_gt_vid = []
+    flo_p_vid = []
     for i in range(length):
-        idx = aux_seq['idx'][i]
+        idx = int(aux_seq['idx'][i])
         
         mesh = aux_seq['mesh'][i]
         mesh.export('%s-mesh-%05d.obj'%(save_dir, idx))
@@ -25,7 +33,7 @@ def save_output(aux_seq, seqname):
         rtk = aux_seq['rtk'][i]
         np.savetxt('%s-cam-%05d.txt'%(save_dir, idx), rtk)
 
-        # convert bones to meshes
+        # convert bones to meshes TODO: warp with a function
         if 'bone' in aux_seq.keys() and len(aux_seq['bone'])>0:
             bones = aux_seq['bone'][i]
             B = len(bones)
@@ -54,7 +62,21 @@ def save_output(aux_seq, seqname):
             elips.visual.vertex_colors[:len(colormap),:3] = colormap
             elips.export('%s-bone-%05d.obj'%(save_dir, idx))
             
-    
+        img_gt = rendered_seq['img'][idx]
+        flo_gt = rendered_seq['flo'][idx]
+        imgflo_gt = cat_imgflo(img_gt, flo_gt)
+        cv2.imwrite('%s-imgflo-gt-%05d.jpg'%(save_dir, idx), imgflo_gt)
+        flo_gt_vid.append(imgflo_gt)
+        
+        img_p = rendered_seq['img_coarse'][idx]
+        flo_p = rendered_seq['flo_coarse'][idx]
+        imgflo_p = cat_imgflo(img_p, flo_p)
+        cv2.imwrite('%s-imgflo-p-%05d.jpg'%(save_dir, idx), imgflo_p)
+        flo_p_vid.append(imgflo_p)
+
+    imageio.mimsave('%s-imgflo-p.gif' %(save_dir), flo_p_vid)
+    imageio.mimsave('%s-imgflo-gt.gif'%(save_dir), flo_gt_vid)
+
 def transform_shape(mesh,rtk):
     """
     (deprecated): absorb rt into mesh vertices, 
@@ -79,7 +101,8 @@ def main(_):
     dynamic_mesh = opts.flowbw or opts.lbs
     rendered_seq, aux_seq = trainer.eval(num_view=num_view,
                                                     dynamic_mesh=dynamic_mesh) 
-    save_output(aux_seq, seqname)
+    rendered_seq = tensor2array(rendered_seq)
+    save_output(rendered_seq, aux_seq, seqname)
 
 if __name__ == '__main__':
     app.run(main)

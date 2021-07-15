@@ -234,8 +234,8 @@ class v2s_net(nn.Module):
         # convert to float
         for k,v in batch.items():
             batch[k] = batch[k].float()
-            if not self.training:
-                batch[k] = batch[k][:,:1]
+            #if not self.training:
+            #    batch[k] = batch[k][:,:1]
 
         img_tensor = batch['img'].view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w)
         input_img_tensor = img_tensor.clone()
@@ -244,14 +244,15 @@ class v2s_net(nn.Module):
 
         self.input_imgs   = input_img_tensor.cuda()
         self.imgs         = img_tensor.cuda()
-        self.flow         = batch['flow']        .view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(self.device)    
-        self.masks        = batch['mask']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)    
-        self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)    
-        self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)    
-        self.cams         = batch['cam']         .view(bs,-1,7).permute(1,0,2).reshape(-1,7)          .to(self.device)    
-        self.pp           = batch['pps']         .view(bs,-1,2).permute(1,0,2).reshape(-1,2)          .to(self.device)    
-        self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)      .to(self.device)    
-        self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)            .to(self.device)    
+        self.flow         = batch['flow']        .view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(self.device)
+        self.flow = self.flow[:,:2]
+        self.masks        = batch['mask']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
+        self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
+        self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
+        self.cams         = batch['cam']         .view(bs,-1,7).permute(1,0,2).reshape(-1,7)          .to(self.device)  
+        self.pp           = batch['pps']         .view(bs,-1,2).permute(1,0,2).reshape(-1,2)          .to(self.device)  
+        self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)      .to(self.device)
+        self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)            .to(self.device)
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1)
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)

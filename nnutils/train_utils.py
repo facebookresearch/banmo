@@ -34,6 +34,7 @@ from pytorch3d import transforms
 
 from nnutils.geom_utils import lbs 
 from ext_nnutils.train_utils import Trainer
+from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
 
@@ -157,24 +158,26 @@ class v2s_trainer(Trainer):
                         rendered_seq[k] += [v]
 
                     # save images
-                    rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)]
-                    rendered_seq['sil'] += [self.model.masks[...,None]]
+                    rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:1]]
+                    rendered_seq['sil'] += [self.model.masks[...,None]      [:1]]
+                    rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:1]]
+                    rendered_seq['flo_coarse'][-1] *= rendered_seq['sil_coarse'][-1]
 
                     # run marching cubes
                     if dynamic_mesh:
                         mesh_dict = self.extract_mesh(self.model,self.opts.chunk,
                                             self.opts.sample_grid3d, frameid=i)
                     aux_seq['mesh'].append(mesh_dict['mesh'])
+                    # save bones
+                    if 'bones' in mesh_dict.keys():
+                        aux_seq['bone'].append(mesh_dict['bones'][0].cpu().numpy())
 
                     # save cams
                     aux_seq['rtk'].append(self.model.rtk[0].cpu().numpy())
                     
                     # save image list
-                    aux_seq['idx'].append(self.model.frameid)
+                    aux_seq['idx'].append(self.model.frameid[0])
 
-                    # save bones
-                    if 'bones' in mesh_dict.keys():
-                        aux_seq['bone'].append(mesh_dict['bones'][0].cpu().numpy())
 
             for k,v in rendered_seq.items():
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)
@@ -205,11 +208,6 @@ class v2s_trainer(Trainer):
                 grid_img = image_grid(rendered_seq[k],3,3)
                 self.add_image(log, k, grid_img, epoch, scale=False)
                 
-#            rgb_coarse = image_grid(rendered_seq['rgb_coarse'], 3,3)
-#            sil_coarse = image_grid(rendered_seq['opacity_coarse'], 3,3)
-#            self.add_image(log, 'rendered_img', rgb_coarse, epoch, scale=False)
-#            self.add_image(log, 'rendered_sil', sil_coarse, epoch, scale=False)
-
             self.model.train()
             for i, batch in enumerate(self.dataloader):
                 self.model.iters=i
@@ -257,6 +255,8 @@ class v2s_trainer(Trainer):
         kaug[:,:2] *= opts.img_size/render_size
 
         rendered, _ = model.nerf_render(rtk, kaug, frameid, render_size)
+        for k,v in rendered.items():
+            rendered[k] = v[:1]
         return rendered  
 
     @staticmethod
@@ -321,16 +321,13 @@ class v2s_trainer(Trainer):
             self.add_scalar(log, k, aux_output,total_steps)
             
     @staticmethod
-    def add_image_from_dict(log,tag,data,step,scale=True):
-        if tag in data.keys():
-            timg = data[tag][0].detach().cpu().numpy()
-            add_image(log, tag, timg, step, scale)
-
-    @staticmethod
     def add_image(log,tag,timg,step,scale=True):
         """
         timg, h,w,x
         """
+        if 'flo' in tag: 
+            timg = timg.detach().cpu().numpy()
+            timg = flow_to_image(timg)
         if scale:
             timg = (timg-timg.min())/(timg.max()-timg.min())
     
@@ -338,8 +335,10 @@ class v2s_trainer(Trainer):
             formats='HW'
         elif timg.shape[0]==3:
             formats='CHW'
+            print('error'); pdb.set_trace()
         else:
             formats='HWC'
+
         log.add_image(tag,timg,step,dataformats=formats)
 
     @staticmethod

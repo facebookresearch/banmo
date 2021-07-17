@@ -217,10 +217,21 @@ class v2s_net(nn.Module):
                 v = v.view(bs,img_size, img_size, -1)
             results[k] = v
         
-        # bs, nsamp, 2
-        results['flo_coarse'] = results['xy_coarse_target'] - \
-                      xys.view(results['xy_coarse_target'].shape) 
-        results['flo_coarse'] = results['flo_coarse']/img_size * 2
+        # bs, nsamp, -1, x
+        weights_coarse = results['weights_coarse']
+        weights_shape = weights_coarse.shape
+        xyz_coarse_target = results['xyz_coarse_target']
+        xyz_coarse_target = xyz_coarse_target.view(weights_shape+(3,))
+        xy_coarse_target = xyz_coarse_target[...,:2]
+        xys_unsq = xys.view(weights_shape[:-1]+(1,2))
+
+        flo_coarse = xy_coarse_target - xys_unsq
+        flo_coarse =  weights_coarse[...,None] * flo_coarse
+        flo_coarse = flo_coarse.sum(-2)
+        results['flo_coarse'] = flo_coarse/img_size * 2
+    
+        del results['weights_coarse']
+        del results['xyz_coarse_target']
         
         return results, rand_inds
 
@@ -306,7 +317,9 @@ class v2s_net(nn.Module):
         if opts.use_corresp:
             rendered_flo = rendered['flo_coarse']
             flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
-            flo_loss = (rendered_flo - flo_at_samp).norm(2,-1)
+            flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
+            # weight by rendered_sil: downweight points with sum(p)<1
+            #flo_loss = flo_loss * (rendered_sil[...,0].detach() > 0.9).float()
             flo_loss = flo_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
             total_loss = total_loss + flo_loss
             aux_out['flo_loss'] = flo_loss

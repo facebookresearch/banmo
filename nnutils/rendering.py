@@ -280,10 +280,9 @@ def render_rays(models,
 
     xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
     xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
-    xy_coarse_target =  weights_coarse[...,None] * xyz_coarse_target[:,:,:2]
-    xy_coarse_target = xy_coarse_target.sum(1)
                   
-    result['xy_coarse_target'] = xy_coarse_target
+    result['xyz_coarse_target'] = xyz_coarse_target
+    result['weights_coarse'] = weights_coarse
 
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points

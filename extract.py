@@ -74,8 +74,9 @@ def save_output(rendered_seq, aux_seq, seqname):
         cv2.imwrite('%s-imgflo-p-%05d.jpg'%(save_dir, idx), imgflo_p)
         flo_p_vid.append(imgflo_p)
 
-    imageio.mimsave('%s-imgflo-p.gif' %(save_dir), flo_p_vid)
-    imageio.mimsave('%s-imgflo-gt.gif'%(save_dir), flo_gt_vid)
+    fps = 1./(5./len(flo_p_vid))
+    imageio.mimsave('%s-imgflo-p.gif' %(save_dir), flo_p_vid, fps=fps)
+    imageio.mimsave('%s-imgflo-gt.gif'%(save_dir), flo_gt_vid,fps=fps)
 
 def transform_shape(mesh,rtk):
     """

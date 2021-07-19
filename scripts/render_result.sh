@@ -38,16 +38,16 @@ python render_vis.py --testdir $testdir \
                      --seqname $seqname \
                      --freeze yes
 
-ffmpeg -i $prefix-vid.mp4 \
-       -i $prefix-sta.mp4 \
-       -i $prefix-mov.mp4 \
-       -i $prefix-mov0.mp4 \
-       -i $prefix-mov1.mp4 \
-       -i $prefix-mov2.mp4 \
+ffmpeg -y -i $prefix-vid.mp4 \
+          -i $prefix-sta.mp4 \
+          -i $prefix-mov.mp4 \
+          -i $prefix-mov0.mp4 \
+          -i $prefix-mov1.mp4 \
+          -i $prefix-mov2.mp4 \
 -filter_complex "[0:v][1:v][2:v]hstack=inputs=3[top];\
 [3:v][4:v][5:v]hstack=inputs=3[bottom];\
 [top][bottom]vstack=inputs=2[v]" \
 -map "[v]" \
 $prefix-all.mp4
 
-ffmpeg -i $prefix-all.mp4 $prefix-all.gif
+ffmpeg -y -i $prefix-all.mp4 $prefix-all.gif

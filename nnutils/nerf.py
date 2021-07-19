@@ -135,12 +135,22 @@ class RTHead(NeRF):
     """
     modify the output to be rigid transforms
     """
+    def __init__(self, is_bone,**kwargs):
+        super(RTHead, self).__init__(**kwargs)
+        self.is_bone=is_bone
+
+        for m in self.modules():
+            if isinstance(m, nn.Linear):
+                if hasattr(m.bias,'data'):
+                    m.bias.data.zero_()
+
     def forward(self, x):
         x = super(RTHead, self).forward(x)
 
         rts = x.view(-1,7) 
         rquat=rts[:,:4]
-        rquat[:,0]+=10
+        if self.is_bone:
+            rquat[:,0]+=10
         rquat=F.normalize(rquat,2,-1)
         tmat= rts[:,4:7] *0.1
 

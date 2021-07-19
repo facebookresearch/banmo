@@ -127,10 +127,10 @@ class v2s_net(nn.Module):
         self.nerf_models= {'coarse':self.nerf_coarse}
 
         # set dnerf model
-        max_t=100
-        self.embedding_time = nn.Embedding(max_t, max_t) ##TODO change 15
+        max_t=100  ##TODO change 15
+        self.embedding_time = nn.Embedding(max_t, max_t)
         if opts.flowbw:
-            self.nerf_flowbw = NeRF(in_channels_xyz=63+max_t, 
+            self.nerf_flowbw = NeRF(in_channels_xyz=63+max_t,
                                 in_channels_dir=0)
             self.nerf_models['flowbw'] = self.nerf_flowbw
         elif opts.lbs:
@@ -141,25 +141,25 @@ class v2s_net(nn.Module):
             self.nerf_models['bones'] = self.bones
 
             self.nerf_bone_rts = nn.Sequential(self.embedding_time,
-                                RTHead(in_channels_xyz=max_t, D=4,
+                                RTHead(is_bone=True, in_channels_xyz=max_t, D=4,
                                 in_channels_dir=0,
                                 out_channels=7*num_bones, raw_feat=True))
 
         # optimize camera
         if opts.root_opt:
             self.nerf_root_rts = nn.Sequential(self.embedding_time,
-                                RTHead(in_channels_xyz=max_t, D=4,
+                                RTHead(is_bone=False, in_channels_xyz=max_t, D=4,
                                 in_channels_dir=0,
                                 out_channels=7, raw_feat=True))
 
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
             self.nerf_models['fine'] = self.nerf_fine
-        
+
         self.resnet_transform = torchvision.transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225])
-        
+
     def nerf_render(self, rtk, kaug, frameid, img_size, nsample=256, ndepth=128):
         opts=self.opts
         Rmat = rtk[:,:3,:3]
@@ -317,10 +317,11 @@ class v2s_net(nn.Module):
         if opts.use_corresp:
             rendered_flo = rendered['flo_coarse']
             flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
+            #flo_loss = (rendered_flo - flo_at_samp).norm(2,-1)
             flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
             # weight by rendered_sil: downweight points with sum(p)<1
-            #flo_loss = flo_loss * (rendered_sil[...,0].detach() > 0.9).float()
-            flo_loss = flo_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
+            sil_at_samp_flo = (sil_at_samp>0) & (rendered_sil > 0.9)
+            flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
             total_loss = total_loss + flo_loss
             aux_out['flo_loss'] = flo_loss
         

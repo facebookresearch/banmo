@@ -20,6 +20,7 @@ from pytorch3d import transforms
 
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
+from ext_nnutils.net_blocks import Encoder, CodePredictor
 from nnutils.nerf import Embedding, NeRF, RTHead
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy,\
@@ -110,6 +111,7 @@ flags.DEFINE_bool('lbs', False, 'use lbs for backward warping 3d flow')
 flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')
 flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
 flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspondence')
+flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
 flags.DEFINE_integer('sample_grid3d', 128, 'resolution for mesh extraction from nerf')
 
 
@@ -147,7 +149,11 @@ class v2s_net(nn.Module):
 
         # optimize camera
         if opts.root_opt:
-            self.nerf_root_rts = nn.Sequential(self.embedding_time,
+            if opts.cnn_root:
+                self.nerf_root_rts = nn.Sequential(Encoder(input_shape, n_blocks=4),
+                                                   CodePredictor(n_bones=1, n_hypo=1))
+            else:
+                self.nerf_root_rts = nn.Sequential(self.embedding_time,
                                 RTHead(is_bone=False, in_channels_xyz=max_t, D=4,
                                 in_channels_dir=0,
                                 out_channels=7, raw_feat=True))
@@ -275,10 +281,17 @@ class v2s_net(nn.Module):
         
         if self.opts.root_opt:
             frameid = self.frameid.long().to(self.device)
-            root_rts = self.nerf_root_rts(frameid)
-            root_quat = root_rts[:,:4]
-            root_rmat = transforms.quaternion_to_matrix(root_quat)
-            root_tmat = root_rts[:,4:7]
+            if self.opts.cnn_root:
+                _, root_tmat1, root_rmat, root_tmat2, _ = \
+                    self.nerf_root_rts(self.input_imgs)
+                root_tmat = torch.cat([root_tmat1, root_tmat2],-1)
+                root_tmat = root_tmat * 0.1
+                root_rmat = root_rmat.view(bs,3,3)
+            else:
+                root_rts = self.nerf_root_rts(frameid)
+                root_quat = root_rts[:,:4]
+                root_rmat = transforms.quaternion_to_matrix(root_quat)
+                root_tmat = root_rts[:,4:7]
             
             rmat = self.rtk[:,:3,:3]
             tmat = self.rtk[:,:3,3]

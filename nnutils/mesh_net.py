@@ -150,7 +150,8 @@ class v2s_net(nn.Module):
         # optimize camera
         if opts.root_opt:
             if opts.cnn_root:
-                self.nerf_root_rts = nn.Sequential(Encoder(input_shape, n_blocks=4),
+                self.cnn_shape = (512,512)
+                self.nerf_root_rts = nn.Sequential(Encoder(self.cnn_shape, n_blocks=4),
                                                    CodePredictor(n_bones=1, n_hypo=1))
             else:
                 self.nerf_root_rts = nn.Sequential(self.embedding_time,
@@ -225,6 +226,8 @@ class v2s_net(nn.Module):
         
         # bs, nsamp, -1, x
         weights_coarse = results['weights_coarse']
+        # renormalize
+        weights_coarse = weights_coarse/(1e-9+weights_coarse.sum(-1)[...,None])
         weights_shape = weights_coarse.shape
         xyz_coarse_target = results['xyz_coarse_target']
         xyz_coarse_target = xyz_coarse_target.view(weights_shape+(3,))
@@ -282,10 +285,11 @@ class v2s_net(nn.Module):
         if self.opts.root_opt:
             frameid = self.frameid.long().to(self.device)
             if self.opts.cnn_root:
+                input_imgs = F.interpolate(self.input_imgs, self.cnn_shape, mode='bilinear')
                 _, root_tmat1, root_rmat, root_tmat2, _ = \
-                    self.nerf_root_rts(self.input_imgs)
+                    self.nerf_root_rts(input_imgs)
                 root_tmat = torch.cat([root_tmat1, root_tmat2],-1)
-                root_tmat = root_tmat * 0.1
+                root_tmat = root_tmat
                 root_rmat = root_rmat.view(bs,3,3)
             else:
                 root_rts = self.nerf_root_rts(frameid)
@@ -330,10 +334,8 @@ class v2s_net(nn.Module):
         if opts.use_corresp:
             rendered_flo = rendered['flo_coarse']
             flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
-            #flo_loss = (rendered_flo - flo_at_samp).norm(2,-1)
             flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
-            # weight by rendered_sil: downweight points with sum(p)<1
-            sil_at_samp_flo = (sil_at_samp>0) & (rendered_sil > 0.9)
+            sil_at_samp_flo = (sil_at_samp>0)
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
             total_loss = total_loss + flo_loss
             aux_out['flo_loss'] = flo_loss

@@ -114,11 +114,15 @@ flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspon
 flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
 flags.DEFINE_integer('sample_grid3d', 128, 'resolution for mesh extraction from nerf')
 
+#viser
+flags.DEFINE_bool('use_viser', False, 'whether to use viser')
+flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, nz_feat=100, num_kps=15, sfm_mean_shape=None):
         super(v2s_net, self).__init__()
         self.opts = opts
+        self.cnn_shape = (opts.cnn_shape,opts.cnn_shape)
         self.device = torch.device("cuda:%d"%opts.local_rank)
 
         # set nerf model
@@ -150,7 +154,6 @@ class v2s_net(nn.Module):
         # optimize camera
         if opts.root_opt:
             if opts.cnn_root:
-                self.cnn_shape = (512,512)
                 self.nerf_root_rts = nn.Sequential(Encoder(self.cnn_shape, n_blocks=4),
                                                    CodePredictor(n_bones=1, n_hypo=1))
             else:
@@ -162,6 +165,10 @@ class v2s_net(nn.Module):
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
             self.nerf_models['fine'] = self.nerf_fine
+
+        if opts.use_viser:
+            from ext_nnutils.viser_net import MeshNet
+            self.viser = MeshNet(self.cnn_shape, opts)
 
         self.resnet_transform = torchvision.transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
@@ -180,6 +187,7 @@ class v2s_net(nn.Module):
                                    return_all= not(self.training))
         rays = raycast(xys, Rmat, Tmat, Kinv, bound=1.5)
 
+        # update rays
         if opts.use_corresp and bs>1:
             rtk_vec = rays['rtk_vec']
             rtk_vec = rtk_vec.view(2,-1).flip(0)
@@ -223,7 +231,8 @@ class v2s_net(nn.Module):
             else:
                 v = v.view(bs,img_size, img_size, -1)
             results[k] = v
-        
+       
+        # render flow 
         # bs, nsamp, -1, x
         weights_coarse = results['weights_coarse']
         # renormalize
@@ -312,6 +321,20 @@ class v2s_net(nn.Module):
         kaug= self.kaug
         frameid=self.frameid
     
+        
+        # Render viser
+        if opts.use_viser:
+            pdb.set_trace()
+            viser_loss = self.viser(self.input_imgs, 
+                                    self.imgs, 
+                                    self.masks, 
+                                    self.cams, 
+                                    self.flow, 
+                                    self.pp, 
+                                    self.occ, 
+                                    self.frameid, 
+                                    self.dataid)
+
         # Render
         rendered, rand_inds = self.nerf_render(rtk, kaug, frameid, opts.img_size)
         rendered_img = rendered['img_coarse']
@@ -337,7 +360,14 @@ class v2s_net(nn.Module):
             flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
             sil_at_samp_flo = (sil_at_samp>0)
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
+
+            #warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
+            #total_loss = total_loss*warmup_fac + flo_loss
+
             total_loss = total_loss + flo_loss
+
+            #total_loss = img_loss
+
             aux_out['flo_loss'] = flo_loss
         
         return total_loss, aux_out

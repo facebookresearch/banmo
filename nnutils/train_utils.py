@@ -31,6 +31,7 @@ import torchvision
 from torch.autograd import Variable
 from collections import defaultdict
 from pytorch3d import transforms
+from torch.nn.utils import clip_grad_norm_
 
 from nnutils.geom_utils import lbs 
 from ext_nnutils.train_utils import Trainer
@@ -245,6 +246,16 @@ class v2s_trainer(Trainer):
                     print('forward back time:%.2f'%(time.time()-start_time))
 
                 ## gradient clipping
+                nerf_coarse_grad = []
+                nerf_root_rts_grad = []
+                for name,p in self.model.named_parameters():
+                    if 'nerf_coarse' in name:
+                        nerf_coarse_grad.append(p)
+                    elif 'nerf_root_rts' in name:
+                        nerf_root_rts_grad.append(p)
+                aux_out['nerf_coarse_g'] = clip_grad_norm_(nerf_coarse_grad, .1)
+                aux_out['nerf_root_rts_g'] = clip_grad_norm_(nerf_root_rts_grad, .1)
+                
 
                 self.optimizer.step()
                 self.scheduler.step()

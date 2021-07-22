@@ -182,6 +182,7 @@ class v2s_net(nn.Module):
         Kaug = K2inv(kaug) # p = Kaug Kmat P
         Kinv = Kmatinv(Kaug.matmul(Kmat))
         bs = Kinv.shape[0]
+        frameid = frameid.long().to(self.device)[:,None]
 
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
@@ -198,7 +199,6 @@ class v2s_net(nn.Module):
                 bone_rts_target = self.nerf_bone_rts(frameid_target)
                 rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
 
-        frameid = frameid.long().to(self.device)[:,None]
         if opts.flowbw:
             time_embedded = self.embedding_time(frameid)
             rays['time_embedded'] = time_embedded.repeat(1,rays['nsample'],1)
@@ -241,13 +241,20 @@ class v2s_net(nn.Module):
         xyz_coarse_target = results['xyz_coarse_target']
         xyz_coarse_target = xyz_coarse_target.view(weights_shape+(3,))
         xy_coarse_target = xyz_coarse_target[...,:2]
-        xys_unsq = xys.view(weights_shape[:-1]+(1,2))
 
+        # candidate motion vector
+        xys_unsq = xys.view(weights_shape[:-1]+(1,2))
         flo_coarse = xy_coarse_target - xys_unsq
         flo_coarse =  weights_coarse[...,None] * flo_coarse
         flo_coarse = flo_coarse.sum(-2)
+
+        ## candidate target point
+        #xys_unsq = xys.view(weights_shape[:-1]+(2,))
+        #xy_coarse_target = weights_coarse[...,None] * xy_coarse_target
+        #xy_coarse_target = xy_coarse_target.sum(-2)
+        #flo_coarse = xy_coarse_target - xys_unsq
+
         results['flo_coarse'] = flo_coarse/img_size * 2
-    
         del results['weights_coarse']
         del results['xyz_coarse_target']
         
@@ -361,12 +368,10 @@ class v2s_net(nn.Module):
             sil_at_samp_flo = (sil_at_samp>0)
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
-            #warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
-            #total_loss = total_loss*warmup_fac + flo_loss
+            warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
+            total_loss = total_loss*warmup_fac + flo_loss
 
-            total_loss = total_loss + flo_loss
-
-            #total_loss = img_loss
+            #total_loss = total_loss + flo_loss
 
             aux_out['flo_loss'] = flo_loss
         

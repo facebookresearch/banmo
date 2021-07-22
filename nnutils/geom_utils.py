@@ -139,6 +139,7 @@ def lbs(bones, rts_fw, xyz_in, backward=True):
     """
     B = bones.shape[-2]
     N = xyz_in.shape[-2]
+    bs = rts_fw.shape[0]
     bones = bones.view(-1,B,10)
     xyz_in = xyz_in.view(-1,N,3)
     rts_fw = rts_fw.view(-1,B,7)# B,7
@@ -149,12 +150,13 @@ def lbs(bones, rts_fw, xyz_in, backward=True):
     rts_fw = rts_fw.view(-1,B,3,4)
 
     if backward:
-        bones_dfm = bone_transform(bones, rts_fw) # bone coordinates after deform
+        bones = bone_transform(bones, rts_fw) # bone coordinates after deform
         rts_bw = rts_invert(rts_fw)
-        xyz, skin = blend_skinning(bones_dfm, rts_bw, xyz_in)
+        xyz, skin = blend_skinning(bones, rts_bw, xyz_in)
     else:
+        bones = bones.repeat(bs,1,1)
         xyz, skin = blend_skinning(bones, rts_fw, xyz_in)
-    return xyz, skin, bones_dfm
+    return xyz, skin, bones
 
 def obj_to_cam(in_verts, Rmat, Tmat):
     """

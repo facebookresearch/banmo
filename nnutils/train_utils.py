@@ -129,9 +129,11 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
             ],
-            200*len(self.dataloader), pct_start=0.01, 
-            cycle_momentum=False, anneal_strategy='linear',
-            final_div_factor=1./25, div_factor = 25,
+            opts.num_epochs * len(self.dataloader),
+            pct_start=2./opts.num_epochs, # use 2 epochs to warm up
+            cycle_momentum=False, 
+            anneal_strategy='cos',
+            final_div_factor=1./5, div_factor = 25,
             )
     
     def save_network(self, epoch_label):
@@ -290,7 +292,7 @@ class v2s_trainer(Trainer):
         return rendered  
 
     @staticmethod
-    def extract_mesh(model,chunk,grid_size,frameid=None,threshold=0.5,bound=1.2):
+    def extract_mesh(model,chunk,grid_size,frameid=None,threshold=0.5,bound=1.5):
         rt_dict = {}
         pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
         query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)

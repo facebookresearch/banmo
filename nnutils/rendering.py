@@ -248,11 +248,10 @@ def render_rays(models,
                                                   bone_rts_fw, 
                                                   xyz_coarse_sampled)
             
-        if 'bone_rts_target' in models.keys():
-            pdb.set_trace()
+        if 'bone_rts_target' in rays.keys():
             bone_rts_target = rays['bone_rts_target']
             xyz_coarse_target = lbs(bones, bone_rts_target, 
-                                    xyz_coarse_target,backward=False)
+                                    xyz_coarse_sampled,backward=False)
             # blend in the root space with weights, return the blended point and transform to view space.
     
 

@@ -137,8 +137,13 @@ class v2s_net(nn.Module):
         self.embedding_time = nn.Embedding(max_t, max_t)
         if opts.flowbw:
             self.nerf_flowbw = NeRF(in_channels_xyz=63+max_t,
-                                in_channels_dir=0)
+                                in_channels_dir=0, raw_feat=True)
             self.nerf_models['flowbw'] = self.nerf_flowbw
+            if opts.use_corresp:
+                self.nerf_flowfw = NeRF(in_channels_xyz=63+max_t,
+                                in_channels_dir=0, raw_feat=True)
+                self.nerf_models['flowfw'] = self.nerf_flowfw
+                
         elif opts.lbs:
             num_bones_x = 4
             bound = 0.5
@@ -193,9 +198,13 @@ class v2s_net(nn.Module):
             rtk_vec = rays['rtk_vec']
             rtk_vec = rtk_vec.view(2,-1).flip(0)
             rays['rtk_vec'] = rtk_vec.reshape(rays['rtk_vec'].shape)
-               
-            if opts.lbs:
-                frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
+              
+            frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
+            if opts.flowbw:
+                time_embedded_target = self.embedding_time(frameid_target)
+                rays['time_embedded_target'] = time_embedded_target.repeat(1,
+                                                            rays['nsample'],1)
+            elif opts.lbs:
                 bone_rts_target = self.nerf_bone_rts(frameid_target)
                 rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
 
@@ -368,10 +377,11 @@ class v2s_net(nn.Module):
             sil_at_samp_flo = (sil_at_samp>0)
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
-            warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
-            total_loss = total_loss*warmup_fac + flo_loss
+            #warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
+            #total_loss = total_loss*warmup_fac + flo_loss
 
             #total_loss = total_loss + flo_loss
+            total_loss = flo_loss
 
             aux_out['flo_loss'] = flo_loss
         

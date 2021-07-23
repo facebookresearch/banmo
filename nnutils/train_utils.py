@@ -96,7 +96,7 @@ class v2s_trainer(Trainer):
                 params_nerf_coarse.append(p)
             elif 'nerf_fine' in name:
                 params_nerf_fine.append(p)
-            elif 'nerf_flowbw' in name:
+            elif 'nerf_flowbw' in name or 'nerf_flowfw':
                 params_nerf_flowbw.append(p)
             elif 'nerf_root_rts' in name:
                 params_nerf_root_rts.append(p)
@@ -132,7 +132,7 @@ class v2s_trainer(Trainer):
             opts.num_epochs * len(self.dataloader),
             pct_start=2./opts.num_epochs, # use 2 epochs to warm up
             cycle_momentum=False, 
-            anneal_strategy='cos',
+            anneal_strategy='linear',
             final_div_factor=1./5, div_factor = 25,
             )
     

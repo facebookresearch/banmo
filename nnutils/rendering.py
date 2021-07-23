@@ -234,11 +234,19 @@ def render_rays(models,
     # free deform
     if 'flowbw' in models.keys():
         model_flowbw = models['flowbw']
-        time_embedded = rays['time_embedded']
+        time_embedded = rays['time_embedded'][:,None]
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
         flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, code=time_embedded)
-        flow_bw = flow_bw[:,:,:3]
         xyz_coarse_sampled=xyz_coarse_sampled + flow_bw
+
+        if "time_embedded_target" in rays.keys():
+            model_flowfw = models['flowfw']
+            time_embedded_target = rays['time_embedded_target'][:,None]
+            xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+            xyz_coarse_embedded = xyz_coarse_embedded
+            flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
+                                    code=time_embedded_target)
+            xyz_coarse_target=xyz_coarse_sampled + flow_fw
 
     elif 'bones' in models.keys():
         # backward skinning
@@ -250,10 +258,8 @@ def render_rays(models,
             
         if 'bone_rts_target' in rays.keys():
             bone_rts_target = rays['bone_rts_target']
-            xyz_coarse_target = lbs(bones, bone_rts_target, 
+            xyz_coarse_target,_,_ = lbs(bones, bone_rts_target, 
                                     xyz_coarse_sampled,backward=False)
-            # blend in the root space with weights, return the blended point and transform to view space.
-    
 
     if test_time:
         weights_coarse = \

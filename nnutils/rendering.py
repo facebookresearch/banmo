@@ -234,16 +234,19 @@ def render_rays(models,
     # free deform
     if 'flowbw' in models.keys():
         model_flowbw = models['flowbw']
+        model_flowfw = models['flowfw']
         time_embedded = rays['time_embedded'][:,None]
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
         flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, code=time_embedded)
         xyz_coarse_sampled=xyz_coarse_sampled + flow_bw
+        
+        # cycle loss
+        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+        flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, code=time_embedded)
+        frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
 
         if "time_embedded_target" in rays.keys():
-            model_flowfw = models['flowfw']
             time_embedded_target = rays['time_embedded_target'][:,None]
-            xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-            xyz_coarse_embedded = xyz_coarse_embedded
             flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
                                     code=time_embedded_target)
             xyz_coarse_target=xyz_coarse_sampled + flow_fw
@@ -252,9 +255,14 @@ def render_rays(models,
         # backward skinning
         bones = models['bones']
         bone_rts_fw = rays['bone_rts']
+        xyz_coarse_frame = xyz_coarse_sampled.clone()
         xyz_coarse_sampled, skin, bones_dfm = lbs(bones, 
                                                   bone_rts_fw, 
                                                   xyz_coarse_sampled)
+        # cycle loss
+        xyz_coarse_frame_cyc,_,_ = lbs(bones, bone_rts_fw,
+                                       xyz_coarse_sampled,backward=False)
+        frame_cyc_dis = (xyz_coarse_frame - xyz_coarse_frame_cyc).norm(2,-1)
             
         if 'bone_rts_target' in rays.keys():
             bone_rts_target = rays['bone_rts_target']
@@ -277,10 +285,10 @@ def render_rays(models,
 
     # compute correspondence: root space to target view space
     # RT: root space to camera space
-    rtk_vec =  rays['rtk_vec']
-    Rmat = rtk_vec[:,0:9].view(N_rays,1,3,3)
-    Tmat = rtk_vec[:,9:12].view(N_rays,1,3)
-    Kinv = rtk_vec[:,12:21].view(N_rays,1,3,3)
+    rtk_vec_target =  rays['rtk_vec_target']
+    Rmat = rtk_vec_target[:,0:9].view(N_rays,1,3,3)
+    Tmat = rtk_vec_target[:,9:12].view(N_rays,1,3)
+    Kinv = rtk_vec_target[:,12:21].view(N_rays,1,3,3)
     K = mat2K(Kmatinv(Kinv))
 
     xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
@@ -288,6 +296,9 @@ def render_rays(models,
                   
     result['xyz_coarse_target'] = xyz_coarse_target
     result['weights_coarse'] = weights_coarse
+        
+    if 'flowbw' in models.keys() or  'bones' in models.keys():
+        result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
 
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points

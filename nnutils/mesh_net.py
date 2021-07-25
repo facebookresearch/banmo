@@ -138,11 +138,10 @@ class v2s_net(nn.Module):
         if opts.flowbw:
             self.nerf_flowbw = NeRF(in_channels_xyz=63+max_t,
                                 in_channels_dir=0, raw_feat=True)
-            self.nerf_models['flowbw'] = self.nerf_flowbw
-            if opts.use_corresp:
-                self.nerf_flowfw = NeRF(in_channels_xyz=63+max_t,
+            self.nerf_flowfw = NeRF(in_channels_xyz=63+max_t,
                                 in_channels_dir=0, raw_feat=True)
-                self.nerf_models['flowfw'] = self.nerf_flowfw
+            self.nerf_models['flowbw'] = self.nerf_flowbw
+            self.nerf_models['flowfw'] = self.nerf_flowfw
                 
         elif opts.lbs:
             num_bones_x = 4
@@ -196,9 +195,9 @@ class v2s_net(nn.Module):
         # update rays
         if opts.use_corresp and bs>1:
             rtk_vec = rays['rtk_vec']
-            rtk_vec = rtk_vec.view(2,-1).flip(0)
-            rays['rtk_vec'] = rtk_vec.reshape(rays['rtk_vec'].shape)
-              
+            rtk_vec_target = rtk_vec.view(2,-1).flip(0)
+            rays['rtk_vec_target'] = rtk_vec_target.reshape(rays['rtk_vec'].shape)
+            
             frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
             if opts.flowbw:
                 time_embedded_target = self.embedding_time(frameid_target)
@@ -362,12 +361,17 @@ class v2s_net(nn.Module):
         img_loss = (rendered_img - img_at_samp).pow(2)
         img_loss = img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss = F.mse_loss(rendered_sil, sil_at_samp)
-        total_loss = sil_loss+img_loss
+        
+        # regularization 
+        cyc_loss = rendered['frame_cyc_dis'].mean()
+
+        total_loss = sil_loss+img_loss+cyc_loss
         
         aux_out={}
         aux_out['total_loss'] = total_loss
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
+        aux_out['cyc_loss'] = cyc_loss
         
         # flow loss
         if opts.use_corresp:
@@ -380,8 +384,7 @@ class v2s_net(nn.Module):
             #warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
             #total_loss = total_loss*warmup_fac + flo_loss
 
-            #total_loss = total_loss + flo_loss
-            total_loss = flo_loss
+            total_loss = total_loss + flo_loss
 
             aux_out['flo_loss'] = flo_loss
         

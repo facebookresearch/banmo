@@ -26,8 +26,6 @@ parser.add_argument('--testdir', default='',
                     help='path to test dir')
 parser.add_argument('--seqname', default='camel',
                     help='sequence to test')
-parser.add_argument('--freeze', default='no',
-                    help='freeze object at frist frame')
 parser.add_argument('--outpath', default='/data/gengshay/output.gif',
                     help='output path')
 parser.add_argument('--overlay', default='no',
@@ -48,10 +46,17 @@ parser.add_argument('--corresp', dest='corresp', action='store_true',
                     help='whether to render correspondence')
 parser.add_argument('--floor', dest='floor', action='store_true',
                     help='whether to add floor')
+parser.add_argument('--freeze', dest='freeze',action='store_true',
+                    help='freeze object at frist frame')
+parser.add_argument('--rest', dest='rest',action='store_true',
+                    help='render rest object shape')
 parser.add_argument('--vp', default=0, type=int,
                     help='which viewpoint to render 0,1,2')
+parser.add_argument('--gtdir', default='',
+                    help='path to gt dir')
 args = parser.parse_args()
 
+gt_meshes =   [trimesh.load(i, process=False) for i in sorted( glob.glob('%s/*.obj'%(args.gtdir)) )]
 
 def draw_joints_on_image(rgb_img, joints, visibility, region_colors, marker_types):
     joints = joints[:, ::-1] # OpenCV works in (x, y) rather than (i, j)
@@ -74,6 +79,7 @@ def remesh(mesh):
 
 def main():
     print(args.testdir)
+    mesh_rest = trimesh.load('%s/%s-mesh-rest.obj'%(args.testdir, args.seqname),process=False)
     # store all the data
     all_anno = []
     all_mesh = []
@@ -110,6 +116,7 @@ def main():
             bone = trimesh.load('%s/%s-bone-%05d.obj'%(args.testdir, seqname,fr),process=False)
             all_bone.append(bone)
         except: print('no mesh found')
+
 
     # add bones?
     num_original_verts = []
@@ -164,7 +171,7 @@ def main():
     frames=[]
     if args.append_img=="yes":
         if args.append_render=='yes':
-            if args.freeze=='yes': napp_fr = 30
+            if args.freeze: napp_fr = 30
             else:                  napp_fr = int(len(all_anno)//5)
             for i in range(napp_fr):
                 frames.append(cv2.resize(all_anno[0][0],output_size[::-1])[:,:,::-1])
@@ -191,18 +198,19 @@ def main():
     #theta = 7*np.pi/9
     init_light_pose = np.asarray([[1,0,0,0],[0,np.cos(theta),-np.sin(theta),0],[0,np.sin(theta),np.cos(theta),0],[0,0,0,1]])
     init_light_pose0 =np.asarray([[1,0,0,0],[0,0,-1,0],[0,1,0,0],[0,0,0,1]])
-    if args.freeze=='yes':
+    if args.freeze or args.rest:
         size = 150
     else:
         size = len(all_mesh)
     for i in range(size):
         if args.append_render=='no':break
         # render flow between mesh 1 and 2
-        if args.freeze=='yes':
+        if args.freeze or args.rest:
             print(i)
             refimg, refsil, refkp, refvis, refname = all_anno[0]
             img_size = max(refimg.shape)
-            refmesh = all_mesh[0]
+            if args.freeze: refmesh = all_mesh[0]
+            elif args.rest: refmesh = mesh_rest
             refmesh.vertices -= refmesh.vertices.mean(0)[None]
             refmesh.vertices /= 1.2*np.abs(refmesh.vertices).max()
             refcam = all_cam[0].copy()
@@ -218,26 +226,31 @@ def main():
             img_size = max(refimg.shape)
             refmesh = all_mesh[i]
             refcam = all_cam[i]
-            if args.vp==-1:
-                # static camera
-                vp_rmat = refcam[:3,:3].T
-            elif args.vp==1:
-                vp_rmat = cv2.Rodrigues(np.asarray([0,np.pi/2,0]))[0]
-            elif args.vp==2:
-                vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0]
-            else:
-                vp_rmat = cv2.Rodrigues(np.asarray([0.,0,0]))[0]
-            refcam[:3,:3] = vp_rmat.dot(refcam[:3,:3])
-        currcam = np.concatenate([refcam[:3,:4],np.asarray([[0,0,0,1]])],0)
+
+        # change viewpoint
+        if args.vp==-1:
+            # static camera
+            vp_rmat = refcam[:3,:3].T
+        elif args.vp==1:
+            vp_rmat = cv2.Rodrigues(np.asarray([0,np.pi/2,0]))[0]
+        elif args.vp==2:
+            vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0]
+        else:
+            vp_rmat = cv2.Rodrigues(np.asarray([0.,0,0]))[0]
+        refcam_vp = refcam.copy()
+        refcam_vp[:3,:3] = vp_rmat.dot(refcam_vp[:3,:3])
+
+
+        currcam = np.concatenate([refcam_vp[:3,:4],np.asarray([[0,0,0,1]])],0)
         if i==0:
             initcam = currcam.copy()
         
         refface = torch.Tensor(refmesh.faces[None]).cuda()
         verts = torch.Tensor(refmesh.vertices[None]).cuda()
-        Rmat =  torch.Tensor(refcam[None,:3,:3]).cuda()
-        Tmat =  torch.Tensor(refcam[None,:3,3]).cuda()
-        ppoint =refcam[3,2:]
-        scale = refcam[3,:2]
+        Rmat =  torch.Tensor(refcam_vp[None,:3,:3]).cuda()
+        Tmat =  torch.Tensor(refcam_vp[None,:3,3]).cuda()
+        ppoint =refcam_vp[3,2:]
+        scale = refcam_vp[3,:2]
         verts = obj_to_cam(verts, Rmat, Tmat)
         r = OffscreenRenderer(img_size, img_size)
         colors = refmesh.visual.vertex_colors
@@ -245,10 +258,35 @@ def main():
         scene = Scene(ambient_light=0.4*np.asarray([1.,1.,1.,1.]))
         direc_l = pyrender.DirectionalLight(color=np.ones(3), intensity=6.0)
         colors= np.concatenate([0.6*colors[:,:3].astype(np.uint8), colors[:,3:]],-1)  # avoid overexposure
+            
+        # compute error if ground-truth is given
+        if len(args.gtdir)>0:
+            verts_gt = torch.Tensor(gt_meshes[i].vertices[None]).cuda()
+            refface_gt=torch.Tensor(gt_meshes[i].faces[None]).cuda()
 
+            # render ground-truth to different viewpoint according to cam prediction
+            Rmat_gt = refcam[:3,:3].T
+            Tmat_gt = -refcam[:3,:3].T.dot(refcam[:3,3:4])[...,0]
+            Rmat_gt = refcam_vp[:3,:3].dot(Rmat_gt)
+            Tmat_gt = refcam_vp[:3,:3].dot(Tmat_gt[...,None])[...,0] + refcam_vp[:3,3]
+            Rmat_gt = torch.Tensor(Rmat_gt).cuda()[None]
+            Tmat_gt = torch.Tensor(Tmat_gt).cuda()[None]
+            verts_gt = obj_to_cam(verts_gt, Rmat_gt, Tmat_gt)
+
+            import chamfer3D.dist_chamfer_3D
+            chamLoss = chamfer3D.dist_chamfer_3D.chamfer_3DDist()
+            raw_cd,_,_,_ = chamLoss(verts_gt,verts)  # this returns distance squared
+            raw_cd = np.asarray(raw_cd.cpu()[0])
+            raw_cd = raw_cd / raw_cd.max()
+            cm = plt.get_cmap('plasma')
+
+            verts = verts_gt
+            refface = refface_gt
+            colors = cm(raw_cd)
+        
 
         smooth=args.smooth
-        if args.freeze=='yes':
+        if args.freeze:
             tbone = 0
         else:
             tbone = i
@@ -315,7 +353,14 @@ def main():
         color = cv2.resize(color, output_size[::-1])
 
         frames.append(color)
-    imageio.mimsave('%s.gif'%args.outpath, frames, fps=1./(5./len(frames)))
-    imageio.mimsave('%s.mp4'%args.outpath, frames, fps=1./(5./len(frames)))
+
+    # convert to 150 frames
+    frame_150=[]
+    for i in range(150):
+        fid = int(i/150.*len(frames))
+        frame_150.append(frames[fid])
+
+    imageio.mimsave('%s.gif'%args.outpath, frame_150, fps=30)
+    imageio.mimsave('%s.mp4'%args.outpath, frame_150, fps=30)
 if __name__ == '__main__':
     main()

@@ -61,6 +61,7 @@ mkdir_p( '%s/DAVIS/Annotations/Full-Resolution/%s/'  %(filedir,args.outdir))
 mkdir_p( '%s/DAVIS/FlowFW/Full-Resolution/%s/'       %(filedir,args.outdir))
 mkdir_p( '%s/DAVIS/FlowBW/Full-Resolution/%s/'       %(filedir,args.outdir))
 mkdir_p( '%s/DAVIS/Cameras/Full-Resolution/%s/'       %(filedir,args.outdir))
+mkdir_p( '%s/DAVIS/Meshes/Full-Resolution/%s/'       %(filedir,args.outdir))
 
 
 # soft renderer
@@ -75,8 +76,8 @@ for i in range(0,args.nframes):
     verts = overts_list[i]
 
     # set cameras
-    rotx = np.random.rand()
-    #rotx=0.
+    #rotx = np.random.rand()
+    rotx=0.
     if i==0: rotx=0.
     roty = args.init_a*6.28+args.alpha*6.28*i/args.nframes
     rotz = 0.
@@ -94,6 +95,9 @@ for i in range(0,args.nframes):
 
     # obj-cam transform 
     verts = obj_to_cam(verts, Rmat, Tmat)
+    mesh_cam = trimesh.Trimesh(vertices=verts[0].cpu().numpy(), 
+                               faces=faces[0].cpu().numpy())
+    trimesh.repair.fix_inversion(mesh_cam)
     
     # pespective projection
     verts = pinhole_cam(verts, K)
@@ -110,6 +114,8 @@ for i in range(0,args.nframes):
     cv2.imwrite('%s/DAVIS/JPEGImages/Full-Resolution/%s/%05d.jpg'     %(filedir,args.outdir,i),rendered_img[:,:,::-1])
     cv2.imwrite('%s/DAVIS/Annotations/Full-Resolution/%s/%05d.png'    %(filedir,args.outdir,i),rendered_sil)
     np.savetxt('%s/DAVIS/Cameras/Full-Resolution/%s/%05d.txt'         %(filedir,args.outdir,i),rtk)
+    mesh_cam.export('%s/DAVIS/Meshes/Full-Resolution/%s/%05d.obj'      %(filedir,args.outdir,i))
+
 
 
 # render flow

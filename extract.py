@@ -21,6 +21,7 @@ opts = flags.FLAGS
 def save_output(rendered_seq, aux_seq, seqname):
     save_dir = '%s/%s'%(opts.model_path.rsplit('/',1)[0],seqname)
     length = len(aux_seq['mesh'])
+    aux_seq['mesh_rest'].export('%s-mesh-rest.obj'%save_dir)
 
     flo_gt_vid = []
     flo_p_vid = []

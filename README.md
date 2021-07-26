@@ -18,6 +18,7 @@ git clone --recursive -j8 git://github.com/hjwdzh/Manifold; cd Manifold; mkdir b
 To render objects
 ```
 python scripts/render_synthetic.py --outdir syn-eagle-100 --model eagle --nframes 100 --alpha 1
+python scripts/render_synthetic.py --outdir syn-eagled-15h --model eagle --nframes 15 --alpha 0.5 --xspeed 1
 ```
 To optimize
 ```

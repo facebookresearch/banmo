@@ -169,7 +169,8 @@ class v2s_trainer(Trainer):
 
             # render and save intermediate outputs
             rendered_seq = defaultdict(list)
-            aux_seq = {'mesh':[],
+            aux_seq = {'mesh_rest': mesh_dict['mesh'],
+                       'mesh':[],
                        'rtk':[],
                        'idx':[],
                        'bone':[],}
@@ -340,7 +341,7 @@ class v2s_trainer(Trainer):
         vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
         print('fraction occupied:', (vol_o > threshold).float().mean())
         vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
-        vertices = (vertices - grid_size/2)/grid_size*2
+        vertices = (vertices - grid_size/2)/grid_size*2*bound
 
         mesh = trimesh.Trimesh(vertices, triangles)
         if len(mesh.vertices)>0:

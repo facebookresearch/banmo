@@ -381,7 +381,7 @@ def chunk_rays(rays,start,delta):
 def generate_bones(num_bones_x, bound, device):
     """
     num_bones_x: bones along one direction
-    bones: x,9
+    bones: x**3,9
     """
     num_bones = num_bones_x**3
     center =  torch.linspace(-bound, bound, num_bones_x).to(device)
@@ -392,3 +392,19 @@ def generate_bones(num_bones_x, bound, device):
     scale = torch.zeros(num_bones,3).to(device)
     bones = torch.cat([center, orient, scale],-1)
     return bones, num_bones
+
+def reinit_bones(num_bones, mesh, device):
+    """
+    num_bones: number of bones on the surface
+    mesh: trimesh
+    """
+    from kmeans_pytorch import kmeans
+    points = torch.Tensor(mesh.vertices).to(device)
+    _, center = kmeans(X=points, num_clusters=num_bones, 
+                       distance='euclidean', device=device)
+    center=center.to(device)
+    orient =  torch.Tensor([[1,0,0,0]]).to(device)
+    orient = orient.repeat(num_bones,1)
+    scale = torch.zeros(num_bones,3).to(device)
+    bones = torch.cat([center, orient, scale],-1)
+    return bones

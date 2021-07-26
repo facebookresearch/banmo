@@ -245,6 +245,9 @@ def render_rays(models,
         flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, code=time_embedded)
         frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
 
+        # rigidity loss
+        frame_disp3d = flow_fw.norm(2,-1)
+
         if "time_embedded_target" in rays.keys():
             time_embedded_target = rays['time_embedded_target'][:,None]
             flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
@@ -263,6 +266,9 @@ def render_rays(models,
         xyz_coarse_frame_cyc,_,_ = lbs(bones, bone_rts_fw,
                                        xyz_coarse_sampled,backward=False)
         frame_cyc_dis = (xyz_coarse_frame - xyz_coarse_frame_cyc).norm(2,-1)
+        
+        # rigidity loss
+        frame_disp3d = (xyz_coarse_frame_cyc - xyz_coarse_sampled).norm(2,-1)
             
         if 'bone_rts_target' in rays.keys():
             bone_rts_target = rays['bone_rts_target']
@@ -299,6 +305,7 @@ def render_rays(models,
         
     if 'flowbw' in models.keys() or  'bones' in models.keys():
         result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
+        result['frame_disp3d'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
 
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points

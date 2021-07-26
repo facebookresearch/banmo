@@ -146,14 +146,14 @@ class v2s_net(nn.Module):
         elif opts.lbs:
             num_bones_x = 4
             bound = 0.5
-            bones, num_bones = generate_bones(num_bones_x, bound, self.device)
+            bones, self.num_bones = generate_bones(num_bones_x, bound, self.device)
             self.bones = nn.Parameter(bones)
             self.nerf_models['bones'] = self.bones
 
             self.nerf_bone_rts = nn.Sequential(self.embedding_time,
                                 RTHead(is_bone=True, in_channels_xyz=max_t, D=4,
                                 in_channels_dir=0,
-                                out_channels=7*num_bones, raw_feat=True))
+                                out_channels=7*self.num_bones, raw_feat=True))
 
         # optimize camera
         if opts.root_opt:
@@ -335,7 +335,7 @@ class v2s_net(nn.Module):
         rtk = self.rtk
         kaug= self.kaug
         frameid=self.frameid
-    
+        aux_out={}
         
         # Render viser
         if opts.use_viser:
@@ -361,17 +361,10 @@ class v2s_net(nn.Module):
         img_loss = (rendered_img - img_at_samp).pow(2)
         img_loss = img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss = F.mse_loss(rendered_sil, sil_at_samp)
+        total_loss = sil_loss+img_loss
         
-        # regularization 
-        cyc_loss = rendered['frame_cyc_dis'].mean()
-
-        total_loss = sil_loss+img_loss+cyc_loss
-        
-        aux_out={}
-        aux_out['total_loss'] = total_loss
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
-        aux_out['cyc_loss'] = cyc_loss
         
         # flow loss
         if opts.use_corresp:
@@ -381,12 +374,25 @@ class v2s_net(nn.Module):
             sil_at_samp_flo = (sil_at_samp>0)
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
-            #warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
-            #total_loss = total_loss*warmup_fac + flo_loss
+            warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
+            total_loss = (sil_loss+img_loss)*warmup_fac + flo_loss
 
-            total_loss = total_loss + flo_loss
+            #total_loss = sil_loss + img_loss + flo_loss
 
             aux_out['flo_loss'] = flo_loss
         
+        # regularization 
+        if opts.lbs or opts.flowbw:
+            # cycle loss
+            cyc_loss = rendered['frame_cyc_dis'].mean()
+            total_loss = total_loss + cyc_loss
+            aux_out['cyc_loss'] = cyc_loss
+
+            # globally rigid prior
+            rig_loss = rendered['frame_disp3d'].mean()
+            total_loss = total_loss + rig_loss
+            aux_out['rig_loss'] = rig_loss
+
+        aux_out['total_loss'] = total_loss
         return total_loss, aux_out
 

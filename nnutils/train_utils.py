@@ -33,7 +33,7 @@ from collections import defaultdict
 from pytorch3d import transforms
 from torch.nn.utils import clip_grad_norm_
 
-from nnutils.geom_utils import lbs 
+from nnutils.geom_utils import lbs, reinit_bones
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
@@ -226,11 +226,19 @@ class v2s_trainer(Trainer):
             # evaluation
             rendered_seq, aux_seq = self.eval()                
             mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
-            aux_seq['mesh'][0].export(mesh_file)
+            mesh_rest = aux_seq['mesh'][0]
+            mesh_rest.export(mesh_file)
             for k,v in rendered_seq.items():
                 grid_img = image_grid(rendered_seq[k],3,3)
                 self.add_image(log, k, grid_img, epoch, scale=False)
-                
+               
+            # reinit bones based on extracted surface
+            if opts.lbs and epoch==10:
+                bones_reinit = reinit_bones(self.model.num_bones, mesh_rest, 
+                                        self.device)
+                self.model.bones.data  = bones_reinit
+ 
+            # training loop
             self.model.train()
             for i, batch in enumerate(self.dataloader):
                 self.model.iters=i

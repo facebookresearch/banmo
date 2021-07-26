@@ -5,9 +5,9 @@ add_args=${*: 3:$#-1}
 prefix=$testdir/$seqname
 #prefix=/scratch/gengshany/Dropbox/output/$seqname
 
-#python extract.py --seqname $seqname \
-#                  --model_path $model_path \
-#                  $add_args
+python extract.py --seqname $seqname \
+                  --model_path $model_path \
+                  $add_args
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-vid \
                      --seqname $seqname \
@@ -72,3 +72,4 @@ $prefix-all.mp4
 
 ffmpeg -y -i $prefix-all.mp4 -vf "scale=iw/4:ih/4" $prefix-all.gif
 imgcat $prefix-all.gif
+imgcat $prefix-bne.gif

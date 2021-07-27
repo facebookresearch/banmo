@@ -31,7 +31,6 @@ flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
 flags.DEFINE_integer('ngpu', 1, 'number of gpus to use')
 flags.DEFINE_float('random_geo', 1, 'Random geometric augmentation')
-flags.DEFINE_string('config_name', 'template', 'name of the test data config file')
 flags.DEFINE_string('seqname', 'syn-spot-40', 'name of the sequence')
 flags.DEFINE_integer('img_size', 256, 'image size')
 flags.DEFINE_float('padding_frac', 0.05, 'bbox is increased by this fraction of max_dim')
@@ -193,7 +192,7 @@ class v2s_net(nn.Module):
         rays = raycast(xys, Rmat, Tmat, Kinv, bound=1.5)
 
         # update rays
-        if opts.use_corresp and bs>1:
+        if bs>1:
             rtk_vec = rays['rtk_vec']
             rtk_vec_target = rtk_vec.view(2,-1).flip(0)
             rays['rtk_vec_target'] = rtk_vec_target.reshape(rays['rtk_vec'].shape)

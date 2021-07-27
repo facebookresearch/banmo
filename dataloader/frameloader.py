@@ -34,9 +34,8 @@ def _init_fn(worker_id):
     random.seed()
     
 def get_config_info(opts, config, name, dataid, is_eval=False):
-    def load_attr(attrs, config, dataname, seqname):
-        try:attrs['datapath'] = '%s/%s'%(str(config.get(dataname, 'datapath')),
-                                          opts.seqname)
+    def load_attr(attrs, config, dataname):
+        try:attrs['datapath'] = '%s'%(str(config.get(dataname, 'datapath')))
         except:pass
         try:attrs['dframe'] = [int(i) for i in config.get(dataname, 'dframe').split(',')]
         except:pass
@@ -49,16 +48,17 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
         return 
     
     attrs={}
-    load_attr(attrs, config, 'data', opts.seqname)
-    load_attr(attrs, config, name, opts.seqname)
+    load_attr(attrs, config, 'data')
+    load_attr(attrs, config, name)
     datapath = attrs['datapath']
     dframe =   attrs['dframe']
     can_frame =attrs['can_frame']
     init_frame=attrs['init_frame']
     end_frame= attrs['end_frame']
+    numvid =  len(config.sections())-1
+    if numvid==1: datapath='%s/%s'%(datapath, opts.seqname)
     
     imglist = sorted(glob.glob('%s/*'%datapath))
-    numvid =  int(config.get('meta', 'numvid'))
     try: flip=int(config.get(name, 'flip'))
     except: flip=0
 
@@ -145,9 +145,9 @@ def data_loader(opts, shuffle=True):
     print('# pairs: %d'%opts.batch_size)
    
     config = configparser.RawConfigParser()
-    config.read('configs/%s.config'%opts.config_name)
+    config.read('configs/%s.config'%opts.seqname)
     
-    numvid =  int(config.get('meta', 'numvid'))
+    numvid =  len(config.sections())-1
     datalist = []
     for i in range(numvid):
         dataset = get_config_info(opts, config, 'data_%d'%i, i)
@@ -172,10 +172,17 @@ def eval_loader(opts):
     print('# pairs: %d'%opts.batch_size)
    
     config = configparser.RawConfigParser()
-    config.read('configs/%s.config'%opts.config_name)
+    config.read('configs/%s.config'%opts.seqname)
     
-    dataset = get_config_info(opts, config, 'data', 0, is_eval=True)
-    dataset = torch.utils.data.ConcatDataset(dataset)
+    numvid =  len(config.sections())-1
+    datalist = []
+    for i in range(numvid):
+        dataset = get_config_info(opts, config, 'data_%d'%i, i, is_eval=True)
+        datalist = datalist + dataset
+    dataset = torch.utils.data.ConcatDataset(datalist)
+    
+    #dataset = get_config_info(opts, config, 'data', 0, is_eval=True)
+    #dataset = torch.utils.data.ConcatDataset(dataset)
     dataset = DataLoader(dataset,
          batch_size= 1, num_workers=num_workers, drop_last=False, pin_memory=True, shuffle=False)
     return dataset

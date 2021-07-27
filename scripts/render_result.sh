@@ -53,6 +53,11 @@ python render_vis.py --testdir $testdir \
                      --seqname $seqname \
                      --vp 2  \
                      --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-errs \
+                     --seqname $seqname \
+                     --vp -1 \
+                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
 
 ffmpeg -y -i $prefix-vid.mp4 \
           -i $prefix-rst.mp4 \

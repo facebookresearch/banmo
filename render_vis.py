@@ -277,7 +277,7 @@ def main():
             chamLoss = chamfer3D.dist_chamfer_3D.chamfer_3DDist()
             raw_cd,_,_,_ = chamLoss(verts_gt,verts)  # this returns distance squared
             raw_cd = np.asarray(raw_cd.cpu()[0])
-            raw_cd = raw_cd / raw_cd.max()
+            raw_cd = 100*raw_cd
             cm = plt.get_cmap('plasma')
 
             verts = verts_gt

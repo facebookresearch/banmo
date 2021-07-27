@@ -233,6 +233,7 @@ class v2s_trainer(Trainer):
                 self.add_image(log, k, grid_img, epoch, scale=False)
                
             # reinit bones based on extracted surface
+            # TODO: reinit_bone_rts(self.model.nerf_bone_rts)
             if opts.lbs and epoch==10:
                 bones_reinit = reinit_bones(self.model.num_bones, mesh_rest, 
                                         self.device)

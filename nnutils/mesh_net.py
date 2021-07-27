@@ -374,10 +374,11 @@ class v2s_net(nn.Module):
             sil_at_samp_flo = (sil_at_samp>0)
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
-            warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
-            total_loss = (sil_loss+img_loss)*warmup_fac + flo_loss
-
-            #total_loss = sil_loss + img_loss + flo_loss
+            if opts.root_opt:
+                warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
+                total_loss = (sil_loss+img_loss)*warmup_fac + flo_loss
+            else:
+                total_loss = sil_loss + img_loss + flo_loss
 
             aux_out['flo_loss'] = flo_loss
         
@@ -389,7 +390,7 @@ class v2s_net(nn.Module):
             aux_out['cyc_loss'] = cyc_loss
 
             # globally rigid prior
-            rig_loss = rendered['frame_disp3d'].mean()
+            rig_loss = 0.1*rendered['frame_disp3d'].mean()
             total_loss = total_loss + rig_loss
             aux_out['rig_loss'] = rig_loss
 

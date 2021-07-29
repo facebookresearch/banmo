@@ -106,7 +106,8 @@ class NeRF(nn.Module):
             input_xyz, input_dir = \
                 torch.split(x, [self.in_channels_xyz, self.in_channels_dir], dim=-1)
         else:
-            input_xyz = x
+            input_xyz, input_dir = \
+                torch.split(x, [self.in_channels_xyz, 0], dim=-1)
 
         xyz_ = input_xyz
         for i in range(self.D):

@@ -164,10 +164,7 @@ def main():
 
     # store all the results
     input_size = all_anno[0][0].shape[:2]
-    if '.gif' in args.outpath:
-        output_size = (int(input_size[0] * 480/input_size[1]), 480)# 270x480
-    else:
-        output_size = (int(input_size[0] * 960/input_size[1]), 960)# 540x960
+    output_size = (int(input_size[0] * 480/input_size[1]), 480)# 270x480
     frames=[]
     if args.append_img=="yes":
         if args.append_render=='yes':

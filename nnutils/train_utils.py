@@ -303,6 +303,7 @@ class v2s_trainer(Trainer):
 
     @staticmethod
     def extract_mesh(model,chunk,grid_size,frameid=None,threshold=0.5,bound=1.5):
+        opts = model.opts
         rt_dict = {}
         pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
         query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)
@@ -315,26 +316,26 @@ class v2s_trainer(Trainer):
         for i in range(0, bs_pts, chunk):
             query_xyz_chunk = query_xyz[i:i+chunk]
             query_dir_chunk = query_dir[i:i+chunk]
-           
-            if frameid is not None:
-                if model.opts.flowbw:
+          
+            # backward warping 
+            if frameid is not None and not opts.queryfw:
+                query_time = torch.ones(chunk,1).to(model.device)*frameid
+                query_time = query_time.long()
+                if opts.flowbw:
                     # flowbw
-                    query_time = torch.ones(chunk,1).long().to(model.device)*frameid
                     xyz_embedded = model.embedding_xyz(query_xyz_chunk)
                     time_embedded = model.embedding_time(query_time)[:,0]
                     xyztime_embedded = torch.cat([xyz_embedded, time_embedded],1)
+
                     flowbw_chunk = model.nerf_flowbw(xyztime_embedded)
-                    flowbw_chunk =  flowbw_chunk[:,:3]
                     query_xyz_chunk += flowbw_chunk
-                elif model.opts.lbs:
+                elif opts.lbs:
                     # backward skinning
                     bones = model.bones
                     query_xyz_chunk = query_xyz_chunk[:,None]
-                    query_time = torch.ones(chunk,1).to(model.device)*frameid
-                    query_time = query_time.long()
                     bone_rts_fw = model.nerf_bone_rts(query_time)
 
-                    query_xyz_chunk,skin,bones_dfm = lbs(bones, 
+                    query_xyz_chunk,_,bones_dfm = lbs(bones, 
                                                   bone_rts_fw,
                                                   query_xyz_chunk)
 
@@ -351,6 +352,30 @@ class v2s_trainer(Trainer):
         print('fraction occupied:', (vol_o > threshold).float().mean())
         vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
         vertices = (vertices - grid_size/2)/grid_size*2*bound
+
+        # forward warping
+        if frameid is not None and opts.queryfw:
+            num_pts = vertices.shape[0]
+            query_time = torch.ones(num_pts,1).long().to(model.device)*frameid
+            pts_can=torch.Tensor(vertices).to(model.device)
+            if opts.flowbw:
+                # forward flow
+                pts_can_embedded = model.embedding_xyz(pts_can)
+                time_embedded = model.embedding_time(query_time)[:,0]
+                ptstime_embedded = torch.cat([pts_can_embedded, time_embedded],1)
+
+                pts_dfm = pts_can + model.nerf_flowfw(ptstime_embedded)
+            elif opts.lbs:
+                # forward skinning
+                bones = model.bones
+                pts_can = pts_can[:,None]
+                bone_rts_fw = model.nerf_bone_rts(query_time)
+
+                pts_dfm,_,bones_dfm = lbs(bones, bone_rts_fw, pts_can,backward=False)
+                pts_dfm = pts_dfm[:,0]
+                rt_dict['bones'] = bones_dfm
+            vertices = pts_dfm.cpu().numpy()
+                
 
         mesh = trimesh.Trimesh(vertices, triangles)
         if len(mesh.vertices)>0:

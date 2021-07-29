@@ -166,7 +166,7 @@ def render_rays(models,
         weights_sum = weights.sum(1) # (N_rays), the accumulated opacity along the rays
                                      # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
         if weights_only:
-            return weights
+            return weights, sigmas
 
         # compute final weighted outputs
         rgb_final = torch.sum(weights.unsqueeze(-1)*rgbs, -2) # (N_rays, 3)
@@ -175,7 +175,7 @@ def render_rays(models,
         if white_back:
             rgb_final = rgb_final + 1-weights_sum.unsqueeze(-1)
 
-        return rgb_final, depth_final, weights
+        return rgb_final, depth_final, weights, sigmas
 
 
     # Extract models from lists
@@ -220,13 +220,14 @@ def render_rays(models,
     xyz_coarse_target = xyz_coarse_sampled.clone()
 
     ##TODO: produce backward 3d flow and warp to canonical space.
-    def evaluate_mlp(model, xyz_embedded, code=None):
-        B,nbins,_ = xyz_embedded.shape
+    def evaluate_mlp(model, embedded, code=None, sigma_only=False):
+        B,nbins,_ = embedded.shape
         out_chunks = []
         for i in range(0, B, chunk):
-            embedded = torch.cat([xyz_embedded[i:i+chunk],
-                       code[i:i+chunk].repeat(1,nbins,1)], -1)
-            out_chunks += [model(embedded, sigma_only=False)]
+            if code is not None:
+                embedded = torch.cat([embedded[i:i+chunk],
+                           code[i:i+chunk].repeat(1,nbins,1)], -1)
+            out_chunks += [model(embedded, sigma_only=sigma_only)]
 
         out = torch.cat(out_chunks, 0)
         return out
@@ -240,13 +241,29 @@ def render_rays(models,
         flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, code=time_embedded)
         xyz_coarse_sampled=xyz_coarse_sampled + flow_bw
         
-        # cycle loss
-        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-        flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, code=time_embedded)
-        frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
+        ## cycle loss
+        #xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+        #flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, code=time_embedded)
+        #frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
+        ## rigidity loss
+        #frame_disp3d = flow_fw.norm(2,-1)
 
+        # cycle loss: canodical deformed canonical
+        bound=1 #TODO modif this based on size of canonical volume
+        xyz_can_sampled = torch.rand(xyz_coarse_sampled.shape)*2*bound-bound
+        xyz_can_sampled = xyz_can_sampled.to(xyz_coarse_embedded.device)
+        xyz_can_embedded = embedding_xyz(xyz_can_sampled)
+        sigma_can = evaluate_mlp(model_coarse, xyz_can_embedded, sigma_only=True)
+        weights_sample = sigma_can.sigmoid()[...,0]
+        flow_fw_can = evaluate_mlp(model_flowfw, xyz_can_embedded, code=time_embedded)
+
+        xyz_dfm_sampled = xyz_can_sampled + flow_fw_can
+        xyz_dfm_embedded = embedding_xyz(xyz_dfm_sampled)
+        flow_bw_dfm = evaluate_mlp(model_flowbw, xyz_dfm_embedded, code=time_embedded)
+        frame_cyc_dis = (flow_bw_dfm+flow_fw_can).norm(2,-1)
+        
         # rigidity loss
-        frame_disp3d = flow_fw.norm(2,-1)
+        frame_disp3d = flow_fw_can.norm(2,-1)
 
         if "time_embedded_target" in rays.keys():
             time_embedded_target = rays['time_embedded_target'][:,None]
@@ -262,13 +279,27 @@ def render_rays(models,
         xyz_coarse_sampled, skin, bones_dfm = lbs(bones, 
                                                   bone_rts_fw, 
                                                   xyz_coarse_sampled)
-        # cycle loss
-        xyz_coarse_frame_cyc,_,_ = lbs(bones, bone_rts_fw,
-                                       xyz_coarse_sampled,backward=False)
-        frame_cyc_dis = (xyz_coarse_frame - xyz_coarse_frame_cyc).norm(2,-1)
+        ## cycle loss
+        #xyz_coarse_frame_cyc,_,_ = lbs(bones, bone_rts_fw,
+        #                               xyz_coarse_sampled,backward=False)
+        #frame_cyc_dis = (xyz_coarse_frame - xyz_coarse_frame_cyc).norm(2,-1)
+        #
+        ## rigidity loss
+        #frame_disp3d = (xyz_coarse_frame_cyc - xyz_coarse_sampled).norm(2,-1)
+        
+        # cycle loss: canodical deformed canonical
+        bound=1.5
+        xyz_can_sampled = torch.rand(xyz_coarse_sampled.shape)*2*bound-bound
+        xyz_can_sampled = xyz_can_sampled.to(xyz_coarse_sampled.device)
+        xyz_can_embedded = embedding_xyz(xyz_can_sampled)
+        sigma_can = evaluate_mlp(model_coarse, xyz_can_embedded, sigma_only=True)
+        weights_sample = sigma_can.sigmoid()[...,0]
+        xyz_dfm_sampled,_,_ = lbs(bones, bone_rts_fw, xyz_can_sampled,backward=False)
+        xyz_can_cyc,_,_     = lbs(bones, bone_rts_fw, xyz_dfm_sampled)
+        frame_cyc_dis = (xyz_can_sampled - xyz_can_cyc).norm(2,-1)
         
         # rigidity loss
-        frame_disp3d = (xyz_coarse_frame_cyc - xyz_coarse_sampled).norm(2,-1)
+        frame_disp3d = (xyz_can_sampled - xyz_dfm_sampled).norm(2,-1)
             
         if 'bone_rts_target' in rays.keys():
             bone_rts_target = rays['bone_rts_target']
@@ -276,12 +307,12 @@ def render_rays(models,
                                     xyz_coarse_sampled,backward=False)
 
     if test_time:
-        weights_coarse = \
+        weights_coarse, sigmas = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=True)
         result = {'sil_coarse': weights_coarse.sum(1)}
     else:
-        rgb_coarse, depth_coarse, weights_coarse = \
+        rgb_coarse, depth_coarse, weights_coarse, sigmas = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=False)
         result = {'img_coarse': rgb_coarse,
@@ -304,8 +335,25 @@ def render_rays(models,
     result['weights_coarse'] = weights_coarse
         
     if 'flowbw' in models.keys() or  'bones' in models.keys():
-        result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
-        result['frame_disp3d'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
+        #result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
+        #result['frame_disp3d'] =  (frame_disp3d  * weights_coarse.detach()).sum(-1)
+        
+        result['frame_cyc_dis'] = 0.01*(frame_cyc_dis * weights_sample.detach()).sum(-1)
+        result['frame_disp3d'] =  0.01*(frame_disp3d  * weights_sample.detach()).sum(-1)
+        
+        #sigmas =sigmas.sigmoid()
+        #result['frame_cyc_dis'] =0.01* (frame_cyc_dis * sigmas).sum(-1)
+        #result['frame_disp3d'] = 0.01* (frame_disp3d  * sigmas).sum(-1)
+        
+        ### script to plot sigmas/weights
+        #from matplotlib import pyplot as plt
+        #plt.ioff()
+        #plt.plot(weights_coarse[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
+        #plt.savefig('weights.png')
+        #plt.cla()
+        #plt.plot(sigmas[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
+        #plt.savefig('sigmas.png')
+
 
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
@@ -320,7 +368,7 @@ def render_rays(models,
                            # (N_rays, N_samples+N_importance, 3)
 
         model_fine = models['fine']
-        rgb_fine, depth_fine, weights_fine = \
+        rgb_fine, depth_fine, weights_fine, sigmas = \
             inference(model_fine, embedding_xyz, xyz_fine_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=False)
 

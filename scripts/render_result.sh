@@ -75,6 +75,7 @@ ffmpeg -y -i $prefix-vid.mp4 \
 -map "[v]" \
 $prefix-all.mp4
 
-ffmpeg -y -i $prefix-all.mp4 -vf "scale=iw/4:ih/4" $prefix-all.gif
+ffmpeg -y -i $prefix-all.mp4 -vf "scale=iw/2:ih/2" $prefix-all.gif
+imgcat $prefix*.mp4
 imgcat $prefix-all.gif
 imgcat $prefix-bne.gif

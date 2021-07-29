@@ -105,6 +105,7 @@ flags.DEFINE_integer('chunk', 32*1024, 'chunk size to split the input to avoid O
 flags.DEFINE_integer('N_importance', 0, 'number of additional fine samples')
 flags.DEFINE_float('perturb',   1.0, 'factor to perturb depth sampling points')
 flags.DEFINE_float('noise_std', 1.0, 'std dev of noise added to regularize sigma')
+flags.DEFINE_bool('queryfw', False, 'use forward warping to query deformed shape')
 flags.DEFINE_bool('flowbw', False, 'use backward warping 3d flow')
 flags.DEFINE_bool('lbs', False, 'use lbs for backward warping 3d flow')
 flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')
@@ -143,7 +144,7 @@ class v2s_net(nn.Module):
             self.nerf_models['flowfw'] = self.nerf_flowfw
                 
         elif opts.lbs:
-            num_bones_x = 4
+            num_bones_x = 2 ## TODO change to # of cat bones
             bound = 0.5
             bones, self.num_bones = generate_bones(num_bones_x, bound, self.device)
             self.bones = nn.Parameter(bones)
@@ -300,6 +301,9 @@ class v2s_net(nn.Module):
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)
 
+        ## TODO
+        #self.frameid = self.frameid + (self.dataid*20)
+
         bs = self.imgs.shape[0]
         if not self.opts.use_cam:
             self.rtk[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(self.device)
@@ -389,7 +393,7 @@ class v2s_net(nn.Module):
             aux_out['cyc_loss'] = cyc_loss
 
             # globally rigid prior
-            rig_loss = 0.1*rendered['frame_disp3d'].mean()
+            rig_loss = 0.0001*rendered['frame_disp3d'].mean()
             total_loss = total_loss + rig_loss
             aux_out['rig_loss'] = rig_loss
 

@@ -52,12 +52,11 @@ class v2s_trainer(Trainer):
             with open(log_file, 'w') as f:
                 for k in dir(opts): f.write('{}: {}\n'.format(k, opts.__getattr__(k)))
 
-    def define_model(self, no_ddp=False):
+    def define_model(self, no_ddp=False, half_bones=False):
         opts = self.opts
         img_size = (opts.img_size, opts.img_size)
         self.device = torch.device('cuda:{}'.format(opts.local_rank))
-        self.model = mesh_net.v2s_net(
-            img_size, opts, nz_feat=opts.nz_feat, num_kps=opts.num_kps, sfm_mean_shape=None)
+        self.model = mesh_net.v2s_net(img_size, opts, half_bones=half_bones)
 
         if opts.model_path!='':
             self.load_network(opts.model_path)
@@ -233,11 +232,9 @@ class v2s_trainer(Trainer):
                 self.add_image(log, k, grid_img, epoch, scale=False)
                
             # reinit bones based on extracted surface
-            # TODO: reinit_bone_rts(self.model.nerf_bone_rts)
             if opts.lbs and epoch==10:
-                bones_reinit = reinit_bones(self.model.num_bones, mesh_rest, 
-                                        self.device)
-                self.model.bones.data  = bones_reinit
+                reinit_bones(self.model, mesh_rest)
+                self.init_training() # add new params to optimizer
  
             # training loop
             self.model.train()

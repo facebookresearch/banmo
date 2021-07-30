@@ -119,7 +119,7 @@ flags.DEFINE_bool('use_viser', False, 'whether to use viser')
 flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 
 class v2s_net(nn.Module):
-    def __init__(self, input_shape, opts, nz_feat=100, num_kps=15, sfm_mean_shape=None):
+    def __init__(self, input_shape, opts, half_bones):
         super(v2s_net, self).__init__()
         self.opts = opts
         self.cnn_shape = (opts.cnn_shape,opts.cnn_shape)
@@ -144,9 +144,12 @@ class v2s_net(nn.Module):
             self.nerf_models['flowfw'] = self.nerf_flowfw
                 
         elif opts.lbs:
-            num_bones_x = 2 ## TODO change to # of cat bones
+            num_bones_x = 3 # TODO change to # of cat bones
+            num_bones = num_bones_x**3
+            if half_bones: num_bones = num_bones // 2
+            self.num_bones = num_bones
             bound = 0.5
-            bones, self.num_bones = generate_bones(num_bones_x, bound, self.device)
+            bones= generate_bones(num_bones_x, num_bones, bound, self.device)
             self.bones = nn.Parameter(bones)
             self.nerf_models['bones'] = self.bones
 

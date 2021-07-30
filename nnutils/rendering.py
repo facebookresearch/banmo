@@ -288,7 +288,7 @@ def render_rays(models,
         #frame_disp3d = (xyz_coarse_frame_cyc - xyz_coarse_sampled).norm(2,-1)
         
         # cycle loss: canodical deformed canonical
-        bound=1.5
+        bound=1 #TODO modif this based on size of canonical volume
         xyz_can_sampled = torch.rand(xyz_coarse_sampled.shape)*2*bound-bound
         xyz_can_sampled = xyz_can_sampled.to(xyz_coarse_sampled.device)
         xyz_can_embedded = embedding_xyz(xyz_can_sampled)

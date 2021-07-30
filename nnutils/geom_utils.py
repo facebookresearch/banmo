@@ -2,6 +2,7 @@ import pdb
 import numpy as np
 from pytorch3d import transforms
 import torch
+import torch.nn as nn
 import torch.nn.functional as F
 import soft_renderer as sr
 
@@ -378,28 +379,41 @@ def chunk_rays(rays,start,delta):
     return rays_chunk
         
 
-def generate_bones(num_bones_x, bound, device):
+def generate_bones(num_bones_x, num_bones, bound, device):
     """
     num_bones_x: bones along one direction
     bones: x**3,9
     """
-    num_bones = num_bones_x**3
     center =  torch.linspace(-bound, bound, num_bones_x).to(device)
     center =torch.meshgrid(center, center, center)
     center = torch.stack(center,0).permute(1,2,3,0).reshape(-1,3)
+    center = center[:num_bones]
+    
     orient =  torch.Tensor([[1,0,0,0]]).to(device)
     orient = orient.repeat(num_bones,1)
     scale = torch.zeros(num_bones,3).to(device)
     bones = torch.cat([center, orient, scale],-1)
-    return bones, num_bones
+    return bones
 
-def reinit_bones(num_bones, mesh, device):
+def reinit_bones(model, mesh):
     """
     num_bones: number of bones on the surface
     mesh: trimesh
     """
     from kmeans_pytorch import kmeans
+    num_bones = model.num_bones
+    device = model.device
     points = torch.Tensor(mesh.vertices).to(device)
+    rthead = model.nerf_bone_rts[1].rgb
+    
+    num_bones = num_bones//2  # reduce bones
+    
+    # reinit
+    num_in = rthead[0].weight.shape[1]
+    rthead = nn.Sequential(nn.Linear(num_in, 7*num_bones)).to(device)
+    torch.nn.init.xavier_uniform_(rthead[0].weight, gain=0.5)
+    torch.nn.init.zeros_(rthead[0].bias)
+
     _, center = kmeans(X=points, num_clusters=num_bones, 
                        distance='euclidean', device=device)
     center=center.to(device)
@@ -407,4 +421,9 @@ def reinit_bones(num_bones, mesh, device):
     orient = orient.repeat(num_bones,1)
     scale = torch.zeros(num_bones,3).to(device)
     bones = torch.cat([center, orient, scale],-1)
-    return bones
+    
+    model.bones = nn.Parameter(bones)
+    model.nerf_models['bones'] = model.bones
+    model.num_bones = num_bones
+    model.nerf_bone_rts[1].rgb = rthead
+    return

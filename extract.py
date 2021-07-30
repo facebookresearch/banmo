@@ -96,7 +96,7 @@ def transform_shape(mesh,rtk):
 def main(_):
     trainer = v2s_trainer(opts)
     trainer.init_dataset()    
-    trainer.define_model(no_ddp=True)
+    trainer.define_model(no_ddp=True, half_bones=True)
     seqname=opts.seqname
     num_view=0
 

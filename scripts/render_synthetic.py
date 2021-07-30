@@ -8,6 +8,7 @@ import torch
 import cv2
 import kornia
 import pdb
+from scipy.spatial.transform import Rotation as R
 
 from nnutils.geom_utils import obj_to_cam, pinhole_cam, render_color, render_flow
 from ext_utils.flowlib import flow_to_image
@@ -30,6 +31,8 @@ parser.add_argument('--xspeed', default=0,type=float,
                     help='times speed up')
 parser.add_argument('--focal', default=2,type=float,
                     help='focal length')
+parser.add_argument('--can_rand', dest='can_rand',action='store_true',
+                    help='ranomize canonical space')
 args = parser.parse_args()
 ## io
 img_size = 512
@@ -37,6 +40,8 @@ bgcolor = None
 #bgcolor = np.asarray([0,0,0])
 d_obj = 3
 filedir='database'
+
+rot_rand = torch.Tensor(R.random().as_matrix()).cuda()
 
 overts_list = []
 for i in range(args.nframes):
@@ -52,6 +57,11 @@ for i in range(args.nframes):
     overts -= center
     overts *= 1.0 / float(scale)
     overts[:,:,1]*= -1  # aligh with camera coordinate
+
+    # random rot
+    if args.can_rand:
+        overts[0] = overts[0].matmul(rot_rand.T)
+
     overts_list.append(overts)
 colors=mesh.textures
 faces = mesh.faces
@@ -81,7 +91,11 @@ for i in range(0,args.nframes):
     if i==0: rotx=0.
     roty = args.init_a*6.28+args.alpha*6.28*i/args.nframes
     rotz = 0.
-    Rmat = torch.Tensor(cv2.Rodrigues(np.asarray([rotx, roty, rotz]))[0]).cuda()
+    Rmat = cv2.Rodrigues(np.asarray([rotx, roty, rotz]))[0]
+    Rmat = torch.Tensor(Rmat).cuda()
+    # random rot
+    if args.can_rand:
+        Rmat = Rmat.matmul(rot_rand.T)
     Tmat = torch.Tensor([0,0,d_obj]                                        ).cuda()
     K =    torch.Tensor([args.focal,args.focal,0,0]  ).cuda() 
     Kimg = torch.Tensor([args.focal*img_size/2.,args.focal*img_size/2.,img_size/2.,img_size/2.]  ).cuda() 

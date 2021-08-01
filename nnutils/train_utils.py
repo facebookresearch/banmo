@@ -33,7 +33,7 @@ from collections import defaultdict
 from pytorch3d import transforms
 from torch.nn.utils import clip_grad_norm_
 
-from nnutils.geom_utils import lbs, reinit_bones
+from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
@@ -153,12 +153,13 @@ class v2s_trainer(Trainer):
         num_view: number of views to render
         dynamic_mesh: whether to extract canonical shape, or dynamic shape
         """
+        opts = self.opts
         with torch.no_grad():
             self.model.eval()
 
             # run marching cubes
-            mesh_dict = self.extract_mesh(self.model, self.opts.chunk, \
-                                                    self.opts.sample_grid3d)
+            mesh_dict_rest = self.extract_mesh(self.model, opts.chunk, \
+                                                    opts.sample_grid3d)
 
             # render a grid image or the whold video
             if num_view>0:
@@ -168,7 +169,7 @@ class v2s_trainer(Trainer):
 
             # render and save intermediate outputs
             rendered_seq = defaultdict(list)
-            aux_seq = {'mesh_rest': mesh_dict['mesh'],
+            aux_seq = {'mesh_rest': mesh_dict_rest['mesh'],
                        'mesh':[],
                        'rtk':[],
                        'idx':[],
@@ -187,8 +188,11 @@ class v2s_trainer(Trainer):
 
                     # run marching cubes
                     if dynamic_mesh:
-                        mesh_dict = self.extract_mesh(self.model,self.opts.chunk,
-                                            self.opts.sample_grid3d, frameid=i)
+                        if not opts.queryfw:
+                           mesh_dict_rest=None 
+                        mesh_dict = self.extract_mesh(self.model,opts.chunk,
+                                            opts.sample_grid3d, 
+                                        frameid=i, mesh_dict_in=mesh_dict_rest)
                     aux_seq['mesh'].append(mesh_dict['mesh'])
                     # save bones
                     if 'bones' in mesh_dict.keys():
@@ -199,7 +203,6 @@ class v2s_trainer(Trainer):
                     
                     # save image list
                     aux_seq['idx'].append(self.model.frameid[0])
-
 
             for k,v in rendered_seq.items():
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)
@@ -299,89 +302,59 @@ class v2s_trainer(Trainer):
         return rendered  
 
     @staticmethod
-    def extract_mesh(model,chunk,grid_size,frameid=None,threshold=0.5,bound=1.5):
+    def extract_mesh(model,chunk,grid_size,
+                      frameid=None,threshold=0.5,bound=1.5,
+                      mesh_dict_in=None):
         opts = model.opts
-        rt_dict = {}
-        pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
-        query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)
-        query_yxz = torch.Tensor(query_yxz).to(model.device).view(-1, 3)
-        query_xyz = torch.cat([query_yxz[:,1:2], query_yxz[:,0:1], query_yxz[:,2:3]],-1)
-        query_dir = torch.zeros_like(query_xyz)
+        mesh_dict = {}
 
-        bs_pts = query_xyz.shape[0]
-        out_chunks = []
-        for i in range(0, bs_pts, chunk):
-            query_xyz_chunk = query_xyz[i:i+chunk]
-            query_dir_chunk = query_dir[i:i+chunk]
-          
-            # backward warping 
-            if frameid is not None and not opts.queryfw:
-                query_time = torch.ones(chunk,1).to(model.device)*frameid
-                query_time = query_time.long()
-                if opts.flowbw:
-                    # flowbw
-                    xyz_embedded = model.embedding_xyz(query_xyz_chunk)
-                    time_embedded = model.embedding_time(query_time)[:,0]
-                    xyztime_embedded = torch.cat([xyz_embedded, time_embedded],1)
+        if mesh_dict_in is None:
+            pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
+            query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)
+            query_yxz = torch.Tensor(query_yxz).to(model.device).view(-1, 3)
+            query_xyz = torch.cat([query_yxz[:,1:2], query_yxz[:,0:1], query_yxz[:,2:3]],-1)
+            query_dir = torch.zeros_like(query_xyz)
 
-                    flowbw_chunk = model.nerf_flowbw(xyztime_embedded)
-                    query_xyz_chunk += flowbw_chunk
-                elif opts.lbs:
-                    # backward skinning
-                    bones = model.bones
-                    query_xyz_chunk = query_xyz_chunk[:,None]
-                    bone_rts_fw = model.nerf_bone_rts(query_time)
+            bs_pts = query_xyz.shape[0]
+            out_chunks = []
+            for i in range(0, bs_pts, chunk):
+                query_xyz_chunk = query_xyz[i:i+chunk]
+                query_dir_chunk = query_dir[i:i+chunk]
 
-                    query_xyz_chunk,_,bones_dfm = lbs(bones, 
-                                                  bone_rts_fw,
-                                                  query_xyz_chunk)
+                # backward warping 
+                if frameid is not None and not opts.queryfw:
+                    query_xyz_chunk, mesh_dict = warp_bw(opts, model, mesh_dict, 
+                                                   query_xyz_chunk, frameid, chunk)
+                    
+                xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
+                dir_embedded = model.embedding_dir(query_dir_chunk) # (N, embed_dir_channels)
+                xyzdir_embedded = torch.cat([xyz_embedded, dir_embedded], 1)
+                out_chunks += [model.nerf_coarse(xyzdir_embedded)]
+            vol_rgbo = torch.cat(out_chunks, 0)
 
-                    query_xyz_chunk = query_xyz_chunk[:,0]
-                    rt_dict['bones'] = bones_dfm 
-                
-            xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
-            dir_embedded = model.embedding_dir(query_dir_chunk) # (N, embed_dir_channels)
-            xyzdir_embedded = torch.cat([xyz_embedded, dir_embedded], 1)
-            out_chunks += [model.nerf_coarse(xyzdir_embedded)]
-        vol_rgbo = torch.cat(out_chunks, 0)
-
-        vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
-        print('fraction occupied:', (vol_o > threshold).float().mean())
-        vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
-        vertices = (vertices - grid_size/2)/grid_size*2*bound
+            vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
+            print('fraction occupied:', (vol_o > threshold).float().mean())
+            vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
+            vertices = (vertices - grid_size/2)/grid_size*2*bound
+        
+            # mesh post-processing 
+            mesh = trimesh.Trimesh(vertices, triangles)
+            if len(mesh.vertices)>0:
+                mesh = [i for i in mesh.split(only_watertight=False)]
+                mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
+                mesh = mesh[-1]
+                mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
 
         # forward warping
         if frameid is not None and opts.queryfw:
-            num_pts = vertices.shape[0]
-            query_time = torch.ones(num_pts,1).long().to(model.device)*frameid
-            pts_can=torch.Tensor(vertices).to(model.device)
-            if opts.flowbw:
-                # forward flow
-                pts_can_embedded = model.embedding_xyz(pts_can)
-                time_embedded = model.embedding_time(query_time)[:,0]
-                ptstime_embedded = torch.cat([pts_can_embedded, time_embedded],1)
-
-                pts_dfm = pts_can + model.nerf_flowfw(ptstime_embedded)
-            elif opts.lbs:
-                # forward skinning
-                bones = model.bones
-                pts_can = pts_can[:,None]
-                bone_rts_fw = model.nerf_bone_rts(query_time)
-
-                pts_dfm,_,bones_dfm = lbs(bones, bone_rts_fw, pts_can,backward=False)
-                pts_dfm = pts_dfm[:,0]
-                rt_dict['bones'] = bones_dfm
-            vertices = pts_dfm.cpu().numpy()
-                
-
-        mesh = trimesh.Trimesh(vertices, triangles)
-        if len(mesh.vertices)>0:
-            mesh = [i for i in mesh.split()]
-            mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
-            mesh = mesh[-1]
-            mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
-        rt_dict['mesh'] = mesh
-        return rt_dict
+            mesh = mesh_dict_in['mesh'].copy()
+            vertices = mesh.vertices
+            vertices, mesh_dict = warp_fw(opts, model, mesh_dict, 
+                                           vertices, frameid)
+            mesh.vertices = vertices
+               
+        mesh_dict['mesh'] = mesh
+        return mesh_dict
 
     def save_logs(self, log, aux_output, total_steps, epoch):
         for k,v in aux_output.items():

@@ -427,3 +427,51 @@ def reinit_bones(model, mesh):
     model.num_bones = num_bones
     model.nerf_bone_rts[1].rgb = rthead
     return
+            
+def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid, chunk):
+    query_time = torch.ones(chunk,1).to(model.device)*frameid
+    query_time = query_time.long()
+    if opts.flowbw:
+        # flowbw
+        xyz_embedded = model.embedding_xyz(query_xyz_chunk)
+        time_embedded = model.embedding_time(query_time)[:,0]
+        xyztime_embedded = torch.cat([xyz_embedded, time_embedded],1)
+
+        flowbw_chunk = model.nerf_flowbw(xyztime_embedded)
+        query_xyz_chunk += flowbw_chunk
+    elif opts.lbs:
+        # backward skinning
+        bones = model.bones
+        query_xyz_chunk = query_xyz_chunk[:,None]
+        bone_rts_fw = model.nerf_bone_rts(query_time)
+
+        query_xyz_chunk,_,bones_dfm = lbs(bones, 
+                                      bone_rts_fw,
+                                      query_xyz_chunk)
+
+        query_xyz_chunk = query_xyz_chunk[:,0]
+        rt_dict['bones'] = bones_dfm 
+    return query_xyz_chunk, rt_dict
+        
+def warp_fw(opts, model, rt_dict, vertices, frameid):
+    num_pts = vertices.shape[0]
+    query_time = torch.ones(num_pts,1).long().to(model.device)*frameid
+    pts_can=torch.Tensor(vertices).to(model.device)
+    if opts.flowbw:
+        # forward flow
+        pts_can_embedded = model.embedding_xyz(pts_can)
+        time_embedded = model.embedding_time(query_time)[:,0]
+        ptstime_embedded = torch.cat([pts_can_embedded, time_embedded],1)
+
+        pts_dfm = pts_can + model.nerf_flowfw(ptstime_embedded)
+    elif opts.lbs:
+        # forward skinning
+        bones = model.bones
+        pts_can = pts_can[:,None]
+        bone_rts_fw = model.nerf_bone_rts(query_time)
+
+        pts_dfm,_,bones_dfm = lbs(bones, bone_rts_fw, pts_can,backward=False)
+        pts_dfm = pts_dfm[:,0]
+        rt_dict['bones'] = bones_dfm
+    vertices = pts_dfm.cpu().numpy()
+    return vertices, rt_dict

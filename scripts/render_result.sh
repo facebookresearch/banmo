@@ -19,6 +19,11 @@ python render_vis.py --testdir $testdir \
                      --vp -1 \
                      --vis_bones
 python render_vis.py --testdir $testdir \
+                     --outpath $prefix-trj0 \
+                     --seqname $seqname \
+                     --vp 0 \
+                     --vis_traj
+python render_vis.py --testdir $testdir \
                      --outpath $prefix-mov0 \
                      --seqname $seqname \
                      --vp 0 

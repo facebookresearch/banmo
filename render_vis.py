@@ -34,7 +34,7 @@ parser.add_argument('--cam_type', default='perspective',
                     help='camera model, orthographic or perspective')
 parser.add_argument('--vis_bones', dest='vis_bones',action='store_true',
                     help='whether show transparent surface and vis bones')
-parser.add_argument('--vis_traj', default='no',
+parser.add_argument('--vis_traj', dest='vis_traj', action='store_true',
                     help='whether show trajectory of vertices')
 parser.add_argument('--append_img', default='no',
                     help='whether append images before the seq')
@@ -87,9 +87,6 @@ def main():
     all_cam = []
     all_fr = []
 
-    targetstr = ''
-    if args.corresp or args.vis_traj=='yes':targetstr = 'skinpred'
-    
     config = configparser.RawConfigParser()
     config.read('configs/template.config')
     datapath = '%s/%s'%(str(config.get('data', 'datapath')), args.seqname)
@@ -125,19 +122,21 @@ def main():
     num_trajs = 0
     pts_trajs = []
     col_trajs = []
-    traj_len = 5
-    traj_num = len(all_mesh[0].vertices)
+    traj_len = int(0.2*len(all_mesh))
+    pts_num = len(all_mesh[0].vertices)
+    traj_num = min(1000, pts_num)
+    traj_idx = np.random.choice(pts_num, traj_num)
 
-    if args.vis_traj=='yes':
+    if args.vis_traj:
         for i in range(len(all_mesh)):
             pts_traj = np.zeros((traj_len, traj_num,2,3))
             col_traj = np.zeros((traj_len, traj_num,2,4))
             for j in range(traj_len):
                 if i-j-1<0: continue
-                pts_traj[j,:,0] = all_mesh[i-j-1].vertices
-                pts_traj[j,:,1] = all_mesh[i-j].vertices
-                col_traj[j,:,0] = all_mesh[i-j-1].visual.vertex_colors/255
-                col_traj[j,:,1] = all_mesh[i-j].visual.vertex_colors/255
+                pts_traj[j,:,0] = all_mesh[i-j-1].vertices[traj_idx]
+                pts_traj[j,:,1] = all_mesh[i-j].vertices  [traj_idx]
+                col_traj[j,:,0] = all_mesh[i-j-1].visual.vertex_colors[traj_idx]/255
+                col_traj[j,:,1] = all_mesh[i-j].visual.vertex_colors  [traj_idx]/255
             pts_trajs.append(pts_traj)
             col_trajs.append(col_traj)
     
@@ -147,20 +146,6 @@ def main():
             num_original_verts.append( all_mesh[i].vertices.shape[0])
             num_original_faces.append( all_mesh[i].faces.shape[0]  )  
             all_mesh[i] = trimesh.util.concatenate([all_mesh[i], all_bone[i]])
-        elif args.vis_traj=='yes':
-            sphere = trimesh.creation.uv_sphere(radius=0.02,count=(3,3))
-            sphere_traj = trimesh.Trimesh()
-            ipts=0
-            nverts = all_mesh[i].vertices.shape[0]
-
-            sphere_trajs.append(sphere_traj)
-
-            all_mesh[i] = remesh(all_mesh[i])
-            all_mesh[i].visual.vertex_colors[:,:]=128 # rgb alpha
-            num_original_verts.append( all_mesh[i].vertices.shape[0])
-            num_original_faces.append( all_mesh[i].faces.shape[0]  )  
-            all_mesh[i] = trimesh.util.concatenate([all_mesh[i], sphere_trajs[i]])
-            #all_mesh[i] = trimesh.util.concatenate([all_mesh[i], all_bone[i]])
 
     # store all the results
     input_size = all_anno[0][0].shape[:2]
@@ -225,9 +210,13 @@ def main():
             refcam = all_cam[i]
 
         # change viewpoint
+        vp_tmat = refcam[:3,3]
+        vp_kmat = refcam[3]
         if args.vp==-1:
             # static camera
             vp_rmat = refcam[:3,:3].T
+            vp_tmat = all_cam[0][:3,3]
+            vp_kmat = all_cam[0][3]
         elif args.vp==1:
             vp_rmat = cv2.Rodrigues(np.asarray([0,np.pi/2,0]))[0]
         elif args.vp==2:
@@ -236,6 +225,8 @@ def main():
             vp_rmat = cv2.Rodrigues(np.asarray([0.,0,0]))[0]
         refcam_vp = refcam.copy()
         refcam_vp[:3,:3] = vp_rmat.dot(refcam_vp[:3,:3])
+        refcam_vp[:3,3]  = vp_tmat
+        refcam_vp[3]     = vp_kmat
 
 
         currcam = np.concatenate([refcam_vp[:3,:4],np.asarray([[0,0,0,1]])],0)
@@ -256,6 +247,14 @@ def main():
         direc_l = pyrender.DirectionalLight(color=np.ones(3), intensity=6.0)
         colors= np.concatenate([0.6*colors[:,:3].astype(np.uint8), colors[:,3:]],-1)  # avoid overexposure
             
+        # project trajectories to image
+        if args.vis_traj:
+            pts_traj = pts_trajs[i]
+            pts_traj_shape = pts_traj.shape
+            pts_traj = torch.Tensor(pts_traj).cuda().reshape(1,-1,3)
+            pts_traj = obj_to_cam(pts_traj, Rmat,Tmat)
+            pts_trajs[i] = pts_traj.view(pts_traj_shape).cpu().numpy()
+
         # compute error if ground-truth is given
         if len(args.gtdir)>0:
             if len(gt_meshes)>0:
@@ -301,20 +300,17 @@ def main():
             mesh2=Mesh.from_trimesh(mesh2,smooth=smooth)
             mesh2._primitives[0].material.RoughnessFactor=.5
             scene.add_node( Node(mesh=mesh2))
-        elif args.vis_traj=='yes':
-            mesh = trimesh.Trimesh(vertices=np.asarray(verts[0,:num_original_verts[tbone],:3].cpu()), faces=np.asarray(refface[0,:num_original_faces[tbone]].cpu()),vertex_colors=colors[:num_original_verts[tbone]])
-            meshr = Mesh.from_trimesh(mesh,smooth=smooth)
-            meshr._primitives[0].material.RoughnessFactor=.5
-            scene.add_node( Node(mesh=meshr ))
-            pts = pts_trajs[i].reshape(-1,3)# np.asarray([[-1,-1,1],[1,1,1]])  # 2TxNx3
-            colors = col_trajs[i].reshape(-1,4)#np.random.uniform(size=pts.shape)
-            m = Mesh([pyrender.Primitive(pts,mode=1,color_0=colors)])
-            scene.add_node( Node(mesh=m)) 
         else: 
             mesh = trimesh.Trimesh(vertices=np.asarray(verts[0,:,:3].cpu()), faces=np.asarray(refface[0].cpu()),vertex_colors=colors)
             meshr = Mesh.from_trimesh(mesh,smooth=smooth)
             meshr._primitives[0].material.RoughnessFactor=.5
             scene.add_node( Node(mesh=meshr ))
+
+        if args.vis_traj:
+            pts = pts_trajs[i].reshape(-1,3)# np.asarray([[-1,-1,1],[1,1,1]])  # 2TxNx3
+            colors = col_trajs[i].reshape(-1,4)#np.random.uniform(size=pts.shape)
+            m = Mesh([pyrender.Primitive(pts,mode=1,color_0=colors)])
+            scene.add_node( Node(mesh=m)) 
 
         floor_mesh = trimesh.load('./database/misc/wood.obj',process=False)
         floor_mesh.vertices = np.concatenate([floor_mesh.vertices[:,:1], floor_mesh.vertices[:,2:3], floor_mesh.vertices[:,1:2]],-1 )
@@ -339,7 +335,7 @@ def main():
         cam_node = scene.add(cam, pose=cam_pose)
         light_pose = init_light_pose
         direc_l_node = scene.add(direc_l, pose=light_pose)
-        if args.vis_bones or args.vis_traj=='yes':
+        if args.vis_bones:
             color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL)
         else:
             color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL | pyrender.RenderFlags.SKIP_CULL_FACES)

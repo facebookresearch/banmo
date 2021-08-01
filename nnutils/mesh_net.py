@@ -112,7 +112,7 @@ flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')
 flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
 flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspondence')
 flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
-flags.DEFINE_integer('sample_grid3d', 128, 'resolution for mesh extraction from nerf')
+flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')

@@ -258,8 +258,12 @@ def main():
             
         # compute error if ground-truth is given
         if len(args.gtdir)>0:
-            verts_gt = torch.Tensor(gt_meshes[i].vertices[None]).cuda()
-            refface_gt=torch.Tensor(gt_meshes[i].faces[None]).cuda()
+            if len(gt_meshes)>0:
+                verts_gt = torch.Tensor(gt_meshes[i].vertices[None]).cuda()
+                refface_gt=torch.Tensor(gt_meshes[i].faces[None]).cuda()
+            else:
+                verts_gt = verts
+                refface_gt = refface
 
             # render ground-truth to different viewpoint according to cam prediction
             Rmat_gt = refcam[:3,:3].T

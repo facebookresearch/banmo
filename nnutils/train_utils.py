@@ -376,6 +376,9 @@ class v2s_trainer(Trainer):
 
         mesh = trimesh.Trimesh(vertices, triangles)
         if len(mesh.vertices)>0:
+            mesh = [i for i in mesh.split()]
+            mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
+            mesh = mesh[-1]
             mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
         rt_dict['mesh'] = mesh
         return rt_dict

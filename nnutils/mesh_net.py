@@ -133,7 +133,7 @@ class v2s_net(nn.Module):
         self.nerf_models= {'coarse':self.nerf_coarse}
 
         # set dnerf model
-        max_t=100  ##TODO change 15
+        max_t=200  ##TODO change 15
         self.embedding_time = nn.Embedding(max_t, max_t)
         if opts.flowbw:
             self.nerf_flowbw = NeRF(in_channels_xyz=63+max_t,
@@ -380,7 +380,7 @@ class v2s_net(nn.Module):
             sil_at_samp_flo = (sil_at_samp>0)
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
-            if opts.root_opt:
+            if opts.root_opt and (not opts.use_cam):
                 warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
                 total_loss = (sil_loss+img_loss)*warmup_fac + flo_loss
             else:

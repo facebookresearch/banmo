@@ -428,7 +428,11 @@ def reinit_bones(model, mesh):
     model.nerf_bone_rts[1].rgb = rthead
     return
             
-def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid, chunk):
+def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
+    """
+    only used in mesh extraction
+    """
+    chunk = query_xyz_chunk.shape[0]
     query_time = torch.ones(chunk,1).to(model.device)*frameid
     query_time = query_time.long()
     if opts.flowbw:
@@ -454,6 +458,9 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid, chunk):
     return query_xyz_chunk, rt_dict
         
 def warp_fw(opts, model, rt_dict, vertices, frameid):
+    """
+    only used in mesh extraction
+    """
     num_pts = vertices.shape[0]
     query_time = torch.ones(num_pts,1).long().to(model.device)*frameid
     pts_can=torch.Tensor(vertices).to(model.device)

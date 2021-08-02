@@ -27,12 +27,8 @@ def save_output(rendered_seq, aux_seq, seqname):
     flo_p_vid = []
     for i in range(length):
         idx = int(aux_seq['idx'][i])
-        
         mesh = aux_seq['mesh'][i]
-        mesh.export('%s-mesh-%05d.obj'%(save_dir, idx))
-        
         rtk = aux_seq['rtk'][i]
-        np.savetxt('%s-cam-%05d.txt'%(save_dir, idx), rtk)
 
         # convert bones to meshes TODO: warp with a function
         if 'bone' in aux_seq.keys() and len(aux_seq['bone'])>0:
@@ -62,6 +58,9 @@ def save_output(rendered_seq, aux_seq, seqname):
             colormap= np.tile(colormap[:,None], (1,N_elips,1)).reshape((-1,3))
             elips.visual.vertex_colors[:len(colormap),:3] = colormap
             elips.export('%s-bone-%05d.obj'%(save_dir, idx))
+        
+        mesh.export('%s-mesh-%05d.obj'%(save_dir, idx))
+        np.savetxt('%s-cam-%05d.txt'%(save_dir, idx), rtk)
             
         img_gt = rendered_seq['img'][idx]
         flo_gt = rendered_seq['flo'][idx]

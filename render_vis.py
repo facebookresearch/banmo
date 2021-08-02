@@ -122,30 +122,33 @@ def main():
     num_trajs = 0
     pts_trajs = []
     col_trajs = []
-    traj_len = int(0.2*len(all_mesh))
+    traj_len = len(all_mesh)
     pts_num = len(all_mesh[0].vertices)
     traj_num = min(1000, pts_num)
     traj_idx = np.random.choice(pts_num, traj_num)
-
-    if args.vis_traj:
-        for i in range(len(all_mesh)):
-            pts_traj = np.zeros((traj_len, traj_num,2,3))
-            col_traj = np.zeros((traj_len, traj_num,2,4))
-            for j in range(traj_len):
-                if i-j-1<0: continue
-                pts_traj[j,:,0] = all_mesh[i-j-1].vertices[traj_idx]
-                pts_traj[j,:,1] = all_mesh[i-j].vertices  [traj_idx]
-                col_traj[j,:,0] = all_mesh[i-j-1].visual.vertex_colors[traj_idx]/255
-                col_traj[j,:,1] = all_mesh[i-j].visual.vertex_colors  [traj_idx]/255
-            pts_trajs.append(pts_traj)
-            col_trajs.append(col_traj)
+    traj_col = np.random.rand(pts_num, 4)
+    traj_col[:,-1] = 1.
     
+
     for i in range(len(all_mesh)):
         if args.vis_bones:
             all_mesh[i].visual.vertex_colors[:,-1]=192 # alpha
             num_original_verts.append( all_mesh[i].vertices.shape[0])
             num_original_faces.append( all_mesh[i].faces.shape[0]  )  
             all_mesh[i] = trimesh.util.concatenate([all_mesh[i], all_bone[i]])
+    
+        if args.vis_traj:
+            pts_traj = np.zeros((traj_len, traj_num,2,3))
+            col_traj = np.zeros((traj_len, traj_num,2,4))
+            for j in range(traj_len):
+                if i-j-1<0: continue
+                pts_traj[j,:,0] = all_mesh[i-j-1].vertices[traj_idx]
+                pts_traj[j,:,1] = all_mesh[i-j].vertices  [traj_idx]
+                col_traj[j,:,0] = traj_col[traj_idx]
+                col_traj[j,:,1] = traj_col[traj_idx]
+            pts_trajs.append(pts_traj)
+            col_trajs.append(col_traj)
+    
 
     # store all the results
     input_size = all_anno[0][0].shape[:2]

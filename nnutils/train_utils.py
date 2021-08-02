@@ -193,10 +193,13 @@ class v2s_trainer(Trainer):
                         mesh_dict = self.extract_mesh(self.model,opts.chunk,
                                             opts.sample_grid3d, 
                                         frameid=i, mesh_dict_in=mesh_dict_rest)
-                    aux_seq['mesh'].append(mesh_dict['mesh'])
-                    # save bones
-                    if 'bones' in mesh_dict.keys():
-                        aux_seq['bone'].append(mesh_dict['bones'][0].cpu().numpy())
+                        aux_seq['mesh'].append(mesh_dict['mesh'])
+
+                        # save bones
+                        if 'bones' in mesh_dict.keys():
+                            aux_seq['bone'].append(mesh_dict['bones'][0].cpu().numpy())
+                    else:
+                        aux_seq['mesh'].append(mesh_dict_rest['mesh'])
 
                     # save cams
                     aux_seq['rtk'].append(self.model.rtk[0].cpu().numpy())
@@ -324,7 +327,7 @@ class v2s_trainer(Trainer):
                 # backward warping 
                 if frameid is not None and not opts.queryfw:
                     query_xyz_chunk, mesh_dict = warp_bw(opts, model, mesh_dict, 
-                                                   query_xyz_chunk, frameid, chunk)
+                                                   query_xyz_chunk, frameid)
                     
                 xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
                 dir_embedded = model.embedding_dir(query_dir_chunk) # (N, embed_dir_channels)

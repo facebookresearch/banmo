@@ -20,6 +20,8 @@ from nnutils.geom_utils import obj_to_cam, pinhole_cam
 import pyrender
 from pyrender import IntrinsicsCamera,Mesh, Node, Scene,OffscreenRenderer
 import configparser
+import matplotlib
+cmap = matplotlib.cm.get_cmap('Spectral_r')
 
 parser = argparse.ArgumentParser(description='render mesh')
 parser.add_argument('--testdir', default='',
@@ -126,9 +128,6 @@ def main():
     pts_num = len(all_mesh[0].vertices)
     traj_num = min(1000, pts_num)
     traj_idx = np.random.choice(pts_num, traj_num)
-    traj_col = np.random.rand(pts_num, 4)
-    traj_col[:,-1] = 1.
-    
 
     for i in range(len(all_mesh)):
         if args.vis_bones:
@@ -144,8 +143,8 @@ def main():
                 if i-j-1<0: continue
                 pts_traj[j,:,0] = all_mesh[i-j-1].vertices[traj_idx]
                 pts_traj[j,:,1] = all_mesh[i-j].vertices  [traj_idx]
-                col_traj[j,:,0] = traj_col[traj_idx]
-                col_traj[j,:,1] = traj_col[traj_idx]
+                col_traj[j,:,0] = cmap(float(i-j-1)/traj_len)
+                col_traj[j,:,1] = cmap(float(i-j)/traj_len)
             pts_trajs.append(pts_traj)
             col_trajs.append(col_traj)
     

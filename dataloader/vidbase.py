@@ -146,7 +146,7 @@ class BaseDataset(Dataset):
             maskn = cv2.resize(maskn, imgn.shape[:2][::-1],interpolation=cv2.INTER_NEAREST)
             maskn = binary_erosion(maskn,iterations=1)
         maskn = np.expand_dims(maskn, 2)
-        
+
         # compement color
         color = 1-img[mask[:,:,0].astype(bool)].mean(0)[None,None,:]
         colorn = 1-imgn[maskn[:,:,0].astype(bool)].mean(0)[None,None,:]
@@ -154,8 +154,8 @@ class BaseDataset(Dataset):
         colorn[:]=0
         #color = np.random.uniform(0,1,shape)
         #colorn = np.random.uniform(0,1,shape)
-        img =   img*(mask>0).astype(float)    + color  *(1-(mask>0).astype(float))
-        imgn =   imgn*(maskn>0).astype(float) + colorn *(1-(maskn>0).astype(float))
+#        img =   img*(mask>0).astype(float)    + color  *(1-(mask>0).astype(float))
+#        imgn =   imgn*(maskn>0).astype(float) + colorn *(1-(maskn>0).astype(float))
 
         # flow
         if self.directlist[index]==1:
@@ -239,7 +239,7 @@ class BaseDataset(Dataset):
         kp[:,1] = kp[:,1] / maxh * 2-1
         kpn[:,0] = kpn[:,0] / maxw * 2-1
         kpn[:,1] = kpn[:,1] / maxh * 2-1
-
+        
         img = cv2.remap(img,x0,y0,interpolation=cv2.INTER_LINEAR,borderValue=color[0,0])
         mask = cv2.remap(mask.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
         flow = cv2.remap(flow,x0,y0,interpolation=cv2.INTER_LINEAR)
@@ -281,9 +281,6 @@ class BaseDataset(Dataset):
         flown[:,:,1] = 2 * (flown[:,:,1]/maxh)
         flown[:,:,2] = np.logical_and(flown[:,:,2]!=0, occn<10)  # as the valid pixels
 
-        flow[mask==0]=0
-        flown[maskn==0]=0
-
         # Finally transpose the image to 3xHxW
         img = np.transpose(img, (2, 0, 1))
         mask = (mask>0).astype(float)
@@ -322,14 +319,8 @@ class BaseDataset(Dataset):
             cam[1:2]=1./alp[1]   # modify focal length according to rescale
             camn[1:2]=1./alpn[1]
 
-        # convex hull
-        from skimage.morphology import convex_hull_image
-        mask_cvx = np.stack([convex_hull_image(mask).astype(float)-mask, convex_hull_image(maskn).astype(float)-maskn])
-
         # compute transforms
         mask = np.stack([mask,maskn])
-        dmask_dts =  np.stack([image_utils.compute_dt(m, iters=10) for m in mask])
-
 
         try:dataid = self.dataid
         except: dataid=0
@@ -357,8 +348,6 @@ class BaseDataset(Dataset):
         elem = {
             'img':          np.stack([img, imgn]),
             'mask':         mask,
-            'mask_dts':     dmask_dts,
-            'mask_cvx':     mask_cvx,
             'flow':         np.stack([flow, flown]),
             'occ':          np.stack([occ, occn]),
             'pps':          np.stack([pps, ppsn]),

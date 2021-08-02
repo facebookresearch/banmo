@@ -306,6 +306,8 @@ class v2s_net(nn.Module):
 
         ## TODO
         #self.frameid = self.frameid + (self.dataid*20)
+        ##TODO
+        #self.masks[:] = 1
 
         bs = self.imgs.shape[0]
         if not self.opts.use_cam:

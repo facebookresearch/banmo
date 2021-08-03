@@ -16,6 +16,7 @@ import pdb
 import numpy as np
 from absl import flags
 import cv2
+import time
 
 import mcubes
 import soft_renderer as sr
@@ -90,6 +91,7 @@ class v2s_trainer(Trainer):
         params_nerf_bone_rts=[]
         params_embed=[]
         params_bones=[]
+        params_ks=[]
         for name,p in self.model.named_parameters():
             if 'nerf_coarse' in name:
                 params_nerf_coarse.append(p)
@@ -105,6 +107,8 @@ class v2s_trainer(Trainer):
                 params_embed.append(p)
             elif 'bones' == name:
                 params_bones.append(p)
+            elif 'ks' == name:
+                params_ks.append(p)
             else: continue
             print(name)
                 
@@ -116,6 +120,7 @@ class v2s_trainer(Trainer):
              {'params': params_nerf_bone_rts},
              {'params': params_embed},
              {'params': params_bones},
+             {'params': params_ks},
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
@@ -127,6 +132,7 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_nerf_bone_rts
             opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
+            opts.learning_rate, # params_ks
             ],
             opts.num_epochs * len(self.dataloader),
             pct_start=2./opts.num_epochs, # use 2 epochs to warm up
@@ -176,9 +182,11 @@ class v2s_trainer(Trainer):
                        'bone':[],}
             for i,batch in enumerate(self.evalloader):
                 if i in idx_render:
+                    print('extracting frame %d'%(i))
                     rendered = self.render_vid(self.model, batch)
                     for k, v in rendered.items():
                         rendered_seq[k] += [v]
+
 
                     # save images
                     rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:1]]

@@ -314,11 +314,11 @@ def tensor2array(tdict):
         adict[k] = v.detach().cpu().numpy()
     return adict
 
-def raycast(xys, Rmat, Tmat, Kinv, bound=1.5):
+def raycast(xys, Rmat, Tmat, Kinv):
     """
     xys: bs, N, 3
     Rmat:bs, ...,3,3 
-    Tmat:bs, ...,3 
+    Tmat:bs, ...,3, camera to root coord transform 
     Kinv:bs, ...,3,3 
     """
     Rmat, Tmat, Kinv, xys = force_type([Rmat, Tmat, Kinv, xys])
@@ -331,6 +331,9 @@ def raycast(xys, Rmat, Tmat, Kinv, bound=1.5):
     xyz3d = xy1s.matmul(Kinv.permute(0,2,1))
     ray_directions = xyz3d.matmul(Rmat)  # transpose -> right multiply
     ray_origins = -Tmat.matmul(Rmat) # transpose -> right multiply
+    #TODO need a better way to bound raycast
+    #bound = Tmat[:,:,-1:].repeat(1,nsample,1) * 0.5
+    bound=1.5
     znear =Tmat[:,:,-1:].repeat(1,nsample,1)-bound
     zfar = Tmat[:,:,-1:].repeat(1,nsample,1)+bound
     ray_origins = ray_origins.repeat(1,nsample,1)

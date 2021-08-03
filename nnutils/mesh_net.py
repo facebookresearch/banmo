@@ -113,6 +113,7 @@ flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
 flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspondence')
 flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
+flags.DEFINE_integer('num_test_views', 0, 'number of test views, 0: use all viewsf')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -168,6 +169,10 @@ class v2s_net(nn.Module):
                                 RTHead(is_bone=False, in_channels_xyz=max_t, D=4,
                                 in_channels_dir=0,
                                 out_channels=7, raw_feat=True))
+                #TODO assign pps from image dimension
+                fx,fy,px,py=1920,1920,540,960
+                self.ks = torch.Tensor([fx,fy,px,py]).to(self.device)
+                self.ks_param = nn.Parameter(self.ks)
 
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
@@ -193,7 +198,7 @@ class v2s_net(nn.Module):
 
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
-        rays = raycast(xys, Rmat, Tmat, Kinv, bound=1.5)
+        rays = raycast(xys, Rmat, Tmat, Kinv)
 
         # update rays
         if bs>1:
@@ -281,8 +286,6 @@ class v2s_net(nn.Module):
         # convert to float
         for k,v in batch.items():
             batch[k] = batch[k].float()
-            #if not self.training:
-            #    batch[k] = batch[k][:,:1]
 
         img_tensor = batch['img'].view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w)
         input_img_tensor = img_tensor.clone()
@@ -313,7 +316,10 @@ class v2s_net(nn.Module):
         if not self.opts.use_cam:
             self.rtk[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(self.device)
             self.rtk[:,:2,3] = 0.
-        
+            
+            #TODO test
+            self.rtk[:,2,3] = 0
+       
         if self.opts.root_opt:
             frameid = self.frameid.long().to(self.device)
             if self.opts.cnn_root:
@@ -328,11 +334,14 @@ class v2s_net(nn.Module):
                 root_quat = root_rts[:,:4]
                 root_rmat = transforms.quaternion_to_matrix(root_quat)
                 root_tmat = root_rts[:,4:7]
+    
+                #TODO kmat
+                self.rtk[:,3,:] = self.ks_param
             
             rmat = self.rtk[:,:3,:3]
             tmat = self.rtk[:,:3,3]
-            rmat = rmat.matmul(root_rmat)
             tmat = tmat + rmat.matmul(root_tmat[...,None])[...,0]
+            rmat = rmat.matmul(root_rmat)
             self.rtk[:,:3,:3] = rmat
             self.rtk[:,:3,3] = tmat
         return bs

@@ -62,14 +62,14 @@ def save_output(rendered_seq, aux_seq, seqname):
         mesh.export('%s-mesh-%05d.obj'%(save_dir, idx))
         np.savetxt('%s-cam-%05d.txt'%(save_dir, idx), rtk)
             
-        img_gt = rendered_seq['img'][idx]
-        flo_gt = rendered_seq['flo'][idx]
+        img_gt = rendered_seq['img'][i]
+        flo_gt = rendered_seq['flo'][i]
         imgflo_gt = cat_imgflo(img_gt, flo_gt)
         cv2.imwrite('%s-imgflo-gt-%05d.jpg'%(save_dir, idx), imgflo_gt)
         flo_gt_vid.append(imgflo_gt)
         
-        img_p = rendered_seq['img_coarse'][idx]
-        flo_p = rendered_seq['flo_coarse'][idx]
+        img_p = rendered_seq['img_coarse'][i]
+        flo_p = rendered_seq['flo_coarse'][i]
         imgflo_p = cat_imgflo(img_p, flo_p)
         cv2.imwrite('%s-imgflo-p-%05d.jpg'%(save_dir, idx), imgflo_p)
         flo_p_vid.append(imgflo_p)
@@ -97,10 +97,9 @@ def main(_):
     trainer.init_dataset()    
     trainer.define_model(no_ddp=True, half_bones=True)
     seqname=opts.seqname
-    num_view=0
 
     dynamic_mesh = opts.flowbw or opts.lbs
-    rendered_seq, aux_seq = trainer.eval(num_view=num_view,
+    rendered_seq, aux_seq = trainer.eval(num_view=opts.num_test_views,
                                                     dynamic_mesh=dynamic_mesh) 
     rendered_seq = tensor2array(rendered_seq)
     save_output(rendered_seq, aux_seq, seqname)

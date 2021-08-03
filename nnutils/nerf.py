@@ -147,13 +147,17 @@ class RTHead(NeRF):
 
     def forward(self, x):
         x = super(RTHead, self).forward(x)
-
         rts = x.view(-1,7) 
+
         rquat=rts[:,:4]
         if self.is_bone:
             rquat[:,0]+=10
         rquat=F.normalize(rquat,2,-1)
+
         tmat= rts[:,4:7] *0.1
+        # TODO heuristics of depth=3xobject size
+        if not self.is_bone:
+            tmat[:,2] = tmat[:,2] + 3
 
         rts = torch.cat([rquat,tmat],-1)
         x = rts.view(x.shape)

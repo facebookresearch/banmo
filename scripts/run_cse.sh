@@ -10,6 +10,6 @@ data=$1
 python apply_net.py show \
             $config \
             $weights \
-            $1 dp_vertex -v --output ./output.png
+            $1 bbox,dp_vertex -v --output ./output.png
 cd -
 mv $det_path/output*.png ./

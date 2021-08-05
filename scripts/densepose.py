@@ -20,8 +20,10 @@ sys.path.insert(0,curr_dir)
 detbase='/private/home/gengshany/code/detectron2/'
 sys.path.insert(0,'%s/projects/PointRend/'%detbase)
 sys.path.insert(0,'%s/projects/DensePose/'%detbase)
+sys.path.insert(0,'third_party/ext_utils')
 from utils.cselib import create_cse, run_cse
 from utils.io import save_vid
+from util_flow import write_pfm
 import point_rend
         
 
@@ -30,10 +32,13 @@ datadir='/private/home/gengshany/data/tmp/%s/images/'%seqname
 odir='/private/home/gengshany/data/DAVIS/'
 imgdir= '%s/JPEGImages/Full-Resolution/%s'%(odir,seqname)
 maskdir='%s/Annotations/Full-Resolution/%s'%(odir,seqname)
+dpdir='%s/Densepose/Full-Resolution/%s'%(odir,seqname)
 if os.path.exists(imgdir): shutil.rmtree(imgdir)
 if os.path.exists(maskdir): shutil.rmtree(maskdir)
+if os.path.exists(dpdir): shutil.rmtree(dpdir)
 os.mkdir(imgdir)
 os.mkdir(maskdir)
+os.mkdir(dpdir)
 
 
 cfg = get_cfg()
@@ -80,7 +85,7 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%datadir))):
     if (mask_rszd.sum())<1000: continue
 
     # densepose
-    csmfw1, csmbw1, image_bgr1, bbox1,bbl1 = run_cse(predictor_dp, embedder, mesh_vertex_embeddings, 
+    clst_verts, image_bgr1 = run_cse(predictor_dp, embedder, mesh_vertex_embeddings, 
                                                     img_rszd, mask_rszd, 
                                                     mesh_name='sheep_5004')
     
@@ -89,9 +94,14 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%datadir))):
                                 np.zeros((h_rszd, w_rszd, 1))],-1)
      
     mask = cv2.resize(mask_rszd,(w,h))
+    clst_verts = cv2.resize(clst_verts, (w,h), interpolation=cv2.INTER_NEAREST)
+
+    # assume max 10k/200 max
+    clst_verts = (clst_verts/50.).astype(np.float32)
 
     cv2.imwrite('%s/%05d.jpg'%(imgdir,counter), img)
     cv2.imwrite('%s/%05d.png'%(maskdir,counter), mask)
+    write_pfm(  '%s/%05d.pfm'%(dpdir,counter), clst_verts)
     
     # vis
     v = Visualizer(img_rszd, coco_metadata, scale=1, instance_mode=ColorMode.IMAGE_BW)

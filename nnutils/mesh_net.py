@@ -9,6 +9,7 @@ from absl import flags
 from collections import defaultdict
 import os
 import os.path as osp
+import pickle
 import sys
 sys.path.insert(0, 'third_party')
 import cv2, numpy as np, time, torch, torchvision
@@ -26,6 +27,7 @@ import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones
 from nnutils.rendering import render_rays
+from ext_utils.flowlib import cat_imgflo 
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -174,6 +176,15 @@ class v2s_net(nn.Module):
                 self.ks = torch.Tensor([fx,fy,px,py]).to(self.device)
                 self.ks_param = nn.Parameter(self.ks)
 
+        # densepose
+        with open('tmp/geodists_sheep_5004.pkl', 'rb') as f: 
+            geodists=pickle.load(f)
+            geodists = torch.Tensor(geodists).cuda()
+            geodists[0,:] = np.inf
+            geodists[:,0] = np.inf
+            self.geodists = geodists
+
+
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
             self.nerf_models['fine'] = self.nerf_fine
@@ -297,6 +308,7 @@ class v2s_net(nn.Module):
         self.flow         = batch['flow']        .view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(self.device)
         self.flow = self.flow[:,:2]
         self.masks        = batch['mask']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
+        self.dps          = batch['dp']          .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.cams         = batch['cam']         .view(bs,-1,7).permute(1,0,2).reshape(-1,7)          .to(self.device)  
@@ -306,6 +318,60 @@ class v2s_net(nn.Module):
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1)
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)
+
+        ## TODO densepose to correspondence
+        ## downsample
+        #h_rszd,w_rszd=h//4,w//4
+        #hw_rszd = h_rszd*w_rszd
+        #dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), mode='nearest')[:,0]
+        #dps = dps.view(2,bs,-1).long()
+        #dps_refr = dps.view(2*bs,-1)
+        #dps_targ = dps.flip(0).view(2*bs,-1)
+        #for idx in range(2*bs):
+        #    dp_refr = dps_refr[idx].view(-1,1).repeat(1,hw_rszd).view(-1,1)
+        #    dp_targ = dps_targ[idx].view(1,-1).repeat(hw_rszd,1).view(-1,1)
+        #    match = self.geodists[dp_refr, dp_targ]
+        #    dis_geo,match = match.view(hw_rszd, hw_rszd).min(1)
+        #    match[dis_geo>0.1] = 0
+
+        #    # cx,cy
+        #    tar_coord = torch.cat([match[:,None]%w_rszd, match[:,None]//w_rszd],-1)
+        #    tar_coord = tar_coord.view(h_rszd, w_rszd, 2).float()
+        #    ref_coord = torch.Tensor(np.meshgrid(range(w_rszd), range(h_rszd)))
+        #    ref_coord = ref_coord.to(self.device).permute(1,2,0).view(-1,2)
+        #    ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
+        #    flo_dp = (tar_coord - ref_coord) / w_rszd * 2
+        #    flo_dp = flo_dp.permute(2,0,1)
+        #    flo_dp = F.interpolate(flo_dp[None], (h,w), mode='bilinear')[0]
+        #    self.flow[idx] = flo_dp
+
+        ## clean up flow
+        #self.occ = []
+        #for idx in range(bs):
+        #    flo_refr = self.flow[idx]
+        #    flo_targ = self.flow[idx+bs]
+        #    flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
+        #    flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
+        #    flo_refr_px = flo_refr * w / 2
+        #    flo_targ_px = flo_targ * w / 2
+        #    #fb check
+        #    from ext_utils.flowlib import warp_flow
+        #    x0,y0  =np.meshgrid(range(w),range(h))
+        #    hp0 = np.stack([x0,y0],-1) # screen coord
+
+        #    flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
+        #    flo_fb = flo_fb*2/w
+        #    fberr = np.linalg.norm(flo_fb, 2,-1)
+        #    self.occ.append(torch.Tensor(fberr[None]))
+
+        #    mask_fberr = (fberr<0.01)
+        #    flo_refr[~mask_fberr]=0.
+        #    cv2.imwrite('tmp/fberr-%05d.jpg'%(idx), 255*mask_fberr.astype(int))
+
+        #    img = self.imgs[idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
+        #    imgflo = cat_imgflo(img, flo_refr)
+        #    cv2.imwrite('tmp/imgflo-%05d.jpg'%(idx), imgflo)
+        #self.occ = torch.cat(self.occ, 0).to(self.device)
 
         ## TODO
         #self.frameid = self.frameid + (self.dataid*20)
@@ -386,9 +452,17 @@ class v2s_net(nn.Module):
         # flow loss
         if opts.use_corresp:
             rendered_flo = rendered['flo_coarse']
+
             flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
             flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
             sil_at_samp_flo = (sil_at_samp>0)
+
+            # confidence weighting: 30x normalized distance
+            cfd_at_samp = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
+            cfd_at_samp = (-cfd_at_samp).sigmoid()
+            cfd_at_samp = cfd_at_samp / cfd_at_samp[sil_at_samp_flo].mean()
+            flo_loss = flo_loss * cfd_at_samp[...,0]
+            
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
             if opts.root_opt and (not opts.use_cam):

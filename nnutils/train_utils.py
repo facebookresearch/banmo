@@ -192,6 +192,8 @@ class v2s_trainer(Trainer):
                     rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:1]]
                     rendered_seq['sil'] += [self.model.masks[...,None]      [:1]]
                     rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:1]]
+                    rendered_seq['dpc'] += [self.model.dps[...,None]      [:1]]
+                    rendered_seq['occ'] += [self.model.occ[...,None]      [:1]]
                     rendered_seq['flo_coarse'][-1] *= rendered_seq['sil_coarse'][-1]
 
                     # run marching cubes

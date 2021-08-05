@@ -100,6 +100,7 @@ class VidDataset(base_data.BaseDataset):
         self.featlist = [i.replace('JPEGImages', 'AppFeat').replace('.jpg', '.pfm').replace('.png', '.pfm').replace('%s/'%seqname, '%s/feat-'%seqname) for i in self.imglist]
         self.featlist = ['%s/feat-%06d.pfm'%(i.rsplit('/',1)[0], int(i.split('feat-')[-1].split('.pfm')[0])) for i in self.featlist]
         self.kplist = [i.replace('JPEGImages', 'KP').replace('.jpg', '_keypoints.json').replace('.png', '_keypoints.json') for i in self.imglist]
+        self.dplist = [i.replace('JPEGImages', 'Densepose').replace('.jpg', '.pfm').replace('.png', '.pfm') for i in self.imglist]
         if len(opts.rtk_path)>0:
             self.rtklist =['%s-%05d.txt'%(opts.rtk_path, i) for i in range(len(self.imglist))]
         else:

@@ -27,14 +27,7 @@ from scipy.ndimage import binary_erosion
 
 from ext_utils.util_flow import readPFM
 from ext_utils import image as image_utils
-
-def warp_flow(img, flow):
-    h, w = flow.shape[:2]
-    flow = flow.copy().astype(np.float32)
-    flow[:,:,0] += np.arange(w)
-    flow[:,:,1] += np.arange(h)[:,np.newaxis]
-    res = cv2.remap(img, flow, None, cv2.INTER_LINEAR)
-    return res
+from ext_utils.flowlib import warp_flow
 
 def read_json(filepath, mask):
     import json
@@ -192,6 +185,15 @@ class BaseDataset(Dataset):
         except:
             kp = np.zeros((25,3))
             kpn = np.zeros((25,3))
+        
+        try:
+            dp = readPFM(self.dplist[im0idx])[0]
+            dpn= readPFM(self.dplist[im1idx])[0]
+        except:
+            dp = np.zeros_like(occ)
+            dpn = np.zeros_like(occ)
+        dp= (dp *50).astype(np.int32)
+        dpn=(dpn*50).astype(np.int32)
 
         # crop box
         indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
@@ -245,12 +247,14 @@ class BaseDataset(Dataset):
         flow = cv2.remap(flow,x0,y0,interpolation=cv2.INTER_LINEAR)
         occ = cv2.remap(occ,x0,y0,interpolation=cv2.INTER_LINEAR)
         depth=cv2.remap(depth,x0,y0,interpolation=cv2.INTER_LINEAR)
+        dp   =cv2.remap(dp,   x0,y0,interpolation=cv2.INTER_NEAREST)
 
         imgn = cv2.remap(imgn,x0n,y0n,interpolation=cv2.INTER_LINEAR,borderValue=colorn[0,0])
         maskn = cv2.remap(maskn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
         flown = cv2.remap(flown,x0n,y0n,interpolation=cv2.INTER_LINEAR)
         occn = cv2.remap(occn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
         depthn = cv2.remap(depthn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
+        dpn    =cv2.remap(dpn,    x0n,y0n,interpolation=cv2.INTER_NEAREST)
 
         # augmenta flow
         hp1c = np.concatenate([flow[:,:,:2] + hp0[:,:,:2], np.ones_like(hp0[:,:,:1])],-1) # image coord
@@ -352,6 +356,7 @@ class BaseDataset(Dataset):
             'occ':          np.stack([occ, occn]),
             'pps':          np.stack([pps, ppsn]),
             'depth':        np.stack([depth, depthn]),
+            'dp':        np.stack([dp, dpn]),
             'cam':          np.stack([cam, camn]),
             'kp':           np.stack([kp, kpn]),
             'rtk':          np.stack([rtk, rtkn]),            

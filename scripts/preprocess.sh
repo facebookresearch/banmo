@@ -26,12 +26,13 @@ for infile in $filedir/*$suffix; do
   mkdir $todir/images/
   mkdir $todir/masks/
   cp $outdir/* $todir/images
+  #python scripts/densepose.py $seqname
 
-  python scripts/densepose.py $seqname
-#
-#  # flow
-#  bash auto_gen.sh $seqname
-#
+  # flow
+  . activate viser
+  cd /private/home/gengshany/code/viser/data_gen
+  bash auto_gen.sh $seqname
+
 #  cd /private/home/gengshany/code/viser/database/DAVIS/
 #  rm ~/dropbox/viser/$seqname.zip
 #  zip ~/dropbox/viser/$seqname.zip -r  */Full-Resolution/$seqname/

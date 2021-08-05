@@ -31,3 +31,4 @@ To re-render meshes
 bash scripts/render_result.sh syn-eagled-15h logdir/syn-eagled-15h-test3/params_20.pth --flowbw --sample_grid3d 256
 ```
 ## Additional Notes
+wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl

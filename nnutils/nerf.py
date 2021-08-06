@@ -155,9 +155,6 @@ class RTHead(NeRF):
         rquat=F.normalize(rquat,2,-1)
 
         tmat= rts[:,4:7] *0.1
-        # TODO heuristics of depth=3xobject size
-        if not self.is_bone:
-            tmat[:,2] = tmat[:,2] + 3
 
         rts = torch.cat([rquat,tmat],-1)
         x = rts.view(x.shape)

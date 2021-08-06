@@ -8,11 +8,17 @@ suffix=.MOV
 counter=0
 for infile in $filedir/*$suffix; do
   # filter videos
-#  if [[ "$infile" == *"cat_5/IMG_800"* ]]; then
-  if [[ "$infile" != *"cat_5/IMG_8005.MOV"* ]]; then
-  counter=$((counter+1))
-  continue
+#  if [[ "$infile" != *"cat_5/IMG_8005.MOV"* ]]; then
+  if [[ "$infile" == *"cat_5/IMG_8001.MOV"* ]]; then
+    counter=$((counter+1))
+    continue
   fi
+  if [[ "$infile" == *"cat_5/IMG_8005.MOV"* ]]; then
+    counter=$((counter+1))
+    continue
+  fi
+
+  echo $infile  
 
   # extract frames
   seqname=$prefix$(printf "%02d" $counter)
@@ -26,12 +32,13 @@ for infile in $filedir/*$suffix; do
   mkdir $todir/images/
   mkdir $todir/masks/
   cp $outdir/* $todir/images
-  #python scripts/densepose.py $seqname
+  python scripts/densepose.py $seqname
 
   # flow
   . activate viser
   cd /private/home/gengshany/code/viser/data_gen
   bash auto_gen.sh $seqname
+  cd -
 
 #  cd /private/home/gengshany/code/viser/database/DAVIS/
 #  rm ~/dropbox/viser/$seqname.zip
@@ -39,4 +46,5 @@ for infile in $filedir/*$suffix; do
 #
 #  counter=$((counter+1))
 #  cd /private/home/gengshany/dropbox/GengshanYang_project/test_videos
+  counter=$((counter+1))
 done

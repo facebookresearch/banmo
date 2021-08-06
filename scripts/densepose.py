@@ -72,7 +72,8 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%datadir))):
     for it,ins_cls in enumerate(outputs.pred_classes):
         print(ins_cls)
         #if ins_cls ==15: # cat
-        if ins_cls==0 or (ins_cls >= 14 and ins_cls <= 23):
+        #if ins_cls==0 or (ins_cls >= 14 and ins_cls <= 23):
+        if ins_cls >= 14 and ins_cls <= 23:
             mask_rszd += np.asarray(outputs.pred_masks[it])
 
     nb_components, output, stats, centroids = \

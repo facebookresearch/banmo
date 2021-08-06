@@ -198,7 +198,8 @@ def main():
             refmesh.vertices -= refmesh.vertices.mean(0)[None]
             refmesh.vertices /= 1.2*np.abs(refmesh.vertices).max()
             refcam = all_cam[0].copy()
-            refcam[:3,:3] = refcam[:3,:3].dot(cv2.Rodrigues(np.asarray([0.,-i*2*np.pi/size,0.]))[0])
+            rot_turntb = cv2.Rodrigues(np.asarray([0.,i*2*np.pi/size,0.]))[0]
+            refcam[:3,:3] = rot_turntb.dot( refcam[:3,:3] ) 
             refcam[:2,3] = 0  # trans xy
             refcam[2,3] = 10 # depth
             refcam[3,2] = refimg.shape[1]/2 # px py
@@ -216,7 +217,7 @@ def main():
         vp_kmat = refcam[3]
         if args.vp==-1:
             # static camera
-            vp_rmat = refcam[:3,:3].T
+            vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
             vp_tmat = all_cam[0][:3,3]
             vp_kmat = all_cam[0][3]
         elif args.vp==1:

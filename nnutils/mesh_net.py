@@ -18,6 +18,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 import trimesh, pytorch3d, pytorch3d.loss, pdb
 from pytorch3d import transforms
+import configparser
 
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
@@ -28,6 +29,7 @@ from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones
 from nnutils.rendering import render_rays
 from ext_utils.flowlib import cat_imgflo 
+from ext_utils.flowlib import warp_flow
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -112,6 +114,7 @@ flags.DEFINE_bool('flowbw', False, 'use backward warping 3d flow')
 flags.DEFINE_bool('lbs', False, 'use lbs for backward warping 3d flow')
 flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')
 flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
+flags.DEFINE_bool('bg', False, 'whether to optimize background')
 flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspondence')
 flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
@@ -127,6 +130,8 @@ class v2s_net(nn.Module):
         self.opts = opts
         self.cnn_shape = (opts.cnn_shape,opts.cnn_shape)
         self.device = torch.device("cuda:%d"%opts.local_rank)
+        self.config = configparser.RawConfigParser()
+        self.config.read('configs/%s.config'%opts.seqname)
 
         # set nerf model
         self.nerf_coarse = NeRF()
@@ -171,8 +176,9 @@ class v2s_net(nn.Module):
                                 RTHead(is_bone=False, in_channels_xyz=max_t, D=4,
                                 in_channels_dir=0,
                                 out_channels=7, raw_feat=True))
-                #TODO assign pps from image dimension
-                fx,fy,px,py=1920,1920,540,960
+
+                fx,fy,px,py=[int(i) for i in \
+                            self.config.get('data_0', 'ks').split(',')]
                 self.ks = torch.Tensor([fx,fy,px,py]).to(self.device)
                 self.ks_param = nn.Parameter(self.ks)
 
@@ -350,41 +356,50 @@ class v2s_net(nn.Module):
         #for idx in range(bs):
         #    flo_refr = self.flow[idx]
         #    flo_targ = self.flow[idx+bs]
+        #    img_refr = self.imgs[idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
+        #    img_targ= self.imgs[bs+idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
         #    flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
         #    flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
         #    flo_refr_px = flo_refr * w / 2
         #    flo_targ_px = flo_targ * w / 2
+
         #    #fb check
-        #    from ext_utils.flowlib import warp_flow
         #    x0,y0  =np.meshgrid(range(w),range(h))
         #    hp0 = np.stack([x0,y0],-1) # screen coord
 
         #    flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
         #    flo_fb = flo_fb*2/w
-        #    fberr = np.linalg.norm(flo_fb, 2,-1)
-        #    self.occ.append(torch.Tensor(fberr[None]))
+        #    fberr_fw = np.linalg.norm(flo_fb, 2,-1)
+        #    self.occ.append(torch.Tensor(fberr_fw[None]))
 
-        #    mask_fberr = (fberr<0.01)
-        #    flo_refr[~mask_fberr]=0.
-        #    cv2.imwrite('tmp/fberr-%05d.jpg'%(idx), 255*mask_fberr.astype(int))
+        #    flo_bf = warp_flow(hp0 + flo_refr_px, flo_targ_px) - hp0
+        #    flo_bf = flo_bf*2/w
+        #    fberr_bw = np.linalg.norm(flo_bf, 2,-1)
+        #    self.occ.append(torch.Tensor(fberr_bw[None]))
 
-        #    img = self.imgs[idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
-        #    imgflo = cat_imgflo(img, flo_refr)
+        #    # vis
+        #    thrd = 0.03
+        #    flo_refr[:,:,0] = (flo_refr[:,:,0] + 2)/2
+        #    flo_targ[:,:,0] = (flo_targ[:,:,0] - 2)/2
+        #    flo_refr[(fberr_fw>thrd)]=0.
+        #    flo_targ[(fberr_bw>thrd)]=0.
+        #    img = np.concatenate([img_refr, img_targ], 1)
+        #    flo = np.concatenate([flo_refr, flo_targ], 1)
+        #    imgflo = cat_imgflo(img, flo)
         #    cv2.imwrite('tmp/imgflo-%05d.jpg'%(idx), imgflo)
         #self.occ = torch.cat(self.occ, 0).to(self.device)
-
+        #self.occ = self.occ.view(-1,2,h,w).permute(1,0,2,3).reshape(-1,h,w)
+        #pdb.set_trace()
+ 
         ## TODO
         #self.frameid = self.frameid + (self.dataid*20)
-        ##TODO
-        #self.masks[:] = 1
+        if self.opts.bg: self.masks[:] = 1
 
         bs = self.imgs.shape[0]
         if not self.opts.use_cam:
             self.rtk[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(self.device)
             self.rtk[:,:2,3] = 0.
-            
-            #TODO test
-            self.rtk[:,2,3] = 0
+            self.rtk[:,2,3] = 3. # TODO heuristics of depth=3xobject size
        
         if self.opts.root_opt:
             frameid = self.frameid.long().to(self.device)
@@ -401,15 +416,13 @@ class v2s_net(nn.Module):
                 root_rmat = transforms.quaternion_to_matrix(root_quat)
                 root_tmat = root_rts[:,4:7]
     
-                #TODO kmat
-                self.rtk[:,3,:] = self.ks_param
-            
             rmat = self.rtk[:,:3,:3]
             tmat = self.rtk[:,:3,3]
             tmat = tmat + rmat.matmul(root_tmat[...,None])[...,0]
             rmat = rmat.matmul(root_rmat)
             self.rtk[:,:3,:3] = rmat
             self.rtk[:,:3,3] = tmat
+            self.rtk[:,3,:] = self.ks_param #TODO kmat
         return bs
 
     def forward(self, batch):

@@ -19,6 +19,10 @@ python render_vis.py --testdir $testdir \
                      --vp -1 \
                      --vis_bones
 python render_vis.py --testdir $testdir \
+                     --outpath $prefix-frz \
+                     --seqname $seqname \
+                     --freeze
+python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj0 \
                      --seqname $seqname \
                      --vp 0 \
@@ -33,10 +37,6 @@ python render_vis.py --testdir $testdir \
                      --seqname $seqname \
                      --vp 2 \
                      --vis_traj
-python render_vis.py --testdir $testdir \
-                     --outpath $prefix-frz \
-                     --seqname $seqname \
-                     --freeze
 #python render_vis.py --testdir $testdir \
 #                     --outpath $prefix-rst \
 #                     --seqname $seqname \

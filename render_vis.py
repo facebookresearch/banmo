@@ -6,6 +6,7 @@ sys.path.insert(0,'third_party')
 import subprocess
 import imageio
 import glob
+from utils.io import save_vid
 from ext_utils.badja_data import BADJAData
 from ext_utils.joint_catalog import SMALJointInfo
 import matplotlib.pyplot as plt
@@ -81,7 +82,8 @@ def remesh(mesh):
 
 def main():
     print(args.testdir)
-    mesh_rest = trimesh.load('%s/%s-mesh-rest.obj'%(args.testdir, args.seqname),process=False)
+    if args.rest:
+        mesh_rest = trimesh.load('%s/%s-mesh-rest.obj'%(args.testdir, args.seqname),process=False)
     # store all the data
     all_anno = []
     all_mesh = []
@@ -134,7 +136,9 @@ def main():
             all_mesh[i].visual.vertex_colors[:,-1]=192 # alpha
             num_original_verts.append( all_mesh[i].vertices.shape[0])
             num_original_faces.append( all_mesh[i].faces.shape[0]  )  
-            all_mesh[i] = trimesh.util.concatenate([all_mesh[i], all_bone[i]])
+            try: bone=all_bone[i]
+            except: bone=trimesh.Trimesh()
+            all_mesh[i] = trimesh.util.concatenate([all_mesh[i], bone])
     
         if args.vis_traj:
             pts_traj = np.zeros((traj_len, traj_num,2,3))
@@ -300,9 +304,10 @@ def main():
             scene.add_node( Node(mesh=meshr ))
             
             mesh2 = trimesh.Trimesh(vertices=np.asarray(verts[0,num_original_verts[tbone]:,:3].cpu()), faces=np.asarray(refface[0,num_original_faces[tbone]:].cpu()-num_original_verts[tbone]),vertex_colors=colors[num_original_verts[tbone]:])
-            mesh2=Mesh.from_trimesh(mesh2,smooth=smooth)
-            mesh2._primitives[0].material.RoughnessFactor=.5
-            scene.add_node( Node(mesh=mesh2))
+            if len(mesh2.vertices)>0:
+                mesh2=Mesh.from_trimesh(mesh2,smooth=smooth)
+                mesh2._primitives[0].material.RoughnessFactor=.5
+                scene.add_node( Node(mesh=mesh2))
         else: 
             mesh = trimesh.Trimesh(vertices=np.asarray(verts[0,:,:3].cpu()), faces=np.asarray(refface[0].cpu()),vertex_colors=colors)
             meshr = Mesh.from_trimesh(mesh,smooth=smooth)
@@ -354,13 +359,7 @@ def main():
 
         frames.append(color)
 
-    # convert to 150 frames
-    frame_150=[]
-    for i in range(150):
-        fid = int(i/150.*len(frames))
-        frame_150.append(frames[fid])
-
-    imageio.mimsave('%s.gif'%args.outpath, frame_150, fps=30)
-    imageio.mimsave('%s.mp4'%args.outpath, frame_150, fps=30)
+    save_vid(args.outpath, frames, suffix='.gif')
+    save_vid(args.outpath, frames, suffix='.mp4')
 if __name__ == '__main__':
     main()

@@ -314,7 +314,7 @@ def tensor2array(tdict):
         adict[k] = v.detach().cpu().numpy()
     return adict
 
-def raycast(xys, Rmat, Tmat, Kinv):
+def raycast(xys, Rmat, Tmat, Kinv, near_far):
     """
     xys: bs, N, 3
     Rmat:bs, ...,3,3 
@@ -326,16 +326,25 @@ def raycast(xys, Rmat, Tmat, Kinv):
     Tmat = Tmat.view(-1,1,3)
     Kinv = Kinv.view(-1,3,3)
     bs,nsample,_ = xys.shape
+    device = Rmat.device
 
     xy1s = torch.cat([xys, torch.ones_like(xys[:,:,:1])],2)
     xyz3d = xy1s.matmul(Kinv.permute(0,2,1))
     ray_directions = xyz3d.matmul(Rmat)  # transpose -> right multiply
     ray_origins = -Tmat.matmul(Rmat) # transpose -> right multiply
-    #TODO need a better way to bound raycast
-    #bound = Tmat[:,:,-1:].repeat(1,nsample,1) * 0.5
-    bound=1.5
-    znear =Tmat[:,:,-1:].repeat(1,nsample,1)-bound
-    zfar = Tmat[:,:,-1:].repeat(1,nsample,1)+bound
+
+    if near_far is not None:
+        znear= torch.ones(bs,nsample,1).to(device) *  near_far[0]
+        zfar = torch.ones(bs,nsample,1).to(device) *  near_far[1]
+    else:
+        #TODO need a better way to bound raycast
+        #lbound, ubound=[-1.5,1.5]
+        lbound, ubound=[-5, 5]
+
+        znear= Tmat[:,:,-1:].repeat(1,nsample,1)+lbound
+        zfar = Tmat[:,:,-1:].repeat(1,nsample,1)+ubound
+        znear[znear<1e-5]=1e-5
+
     ray_origins = ray_origins.repeat(1,nsample,1)
 
     rmat_vec = Rmat.reshape(-1,1,9)

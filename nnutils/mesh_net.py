@@ -133,6 +133,12 @@ class v2s_net(nn.Module):
         self.config = configparser.RawConfigParser()
         self.config.read('configs/%s.config'%opts.seqname)
 
+        # get near-far plane
+        try:
+            self.near_far = [float(i) for i in\
+                         self.config.get('data_0', 'near_far').split(',')]
+        except: self.near_far = None
+
         # set nerf model
         self.nerf_coarse = NeRF()
         self.embedding_xyz = Embedding(3, 10) # 10 is the default number
@@ -215,7 +221,7 @@ class v2s_net(nn.Module):
 
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
-        rays = raycast(xys, Rmat, Tmat, Kinv)
+        rays = raycast(xys, Rmat, Tmat, Kinv, self.near_far)
 
         # update rays
         if bs>1:
@@ -457,7 +463,8 @@ class v2s_net(nn.Module):
         img_loss = (rendered_img - img_at_samp).pow(2)
         img_loss = img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss = F.mse_loss(rendered_sil, sil_at_samp)
-        total_loss = sil_loss+img_loss
+        total_loss = img_loss
+        if not opts.bg: total_loss = total_loss + sil_loss 
         
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss

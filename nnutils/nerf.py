@@ -83,6 +83,11 @@ class NeRF(nn.Module):
                         )
 
         self.raw_feat = raw_feat
+        
+#        for m in self.modules():
+#            if isinstance(m, nn.Linear):
+#                if hasattr(m.weight,'data'):
+#                    nn.init.xavier_uniform_(m.weight)
 
     def forward(self, x, sigma_only=False):
         """

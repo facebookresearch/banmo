@@ -148,6 +148,8 @@ def render_rays(models,
 
         # Convert these values using volume rendering (Section 4)
         deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
+        # a hacky way to ensures prob. sum up to 1     
+        # while the prob. of last bin does not correspond with the values
         delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
         deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
 
@@ -158,7 +160,8 @@ def render_rays(models,
         noise = torch.randn(sigmas.shape, device=sigmas.device) * noise_std
 
         # compute alpha by the formula (3)
-        alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise)) # (N_rays, N_samples_)
+        alphas = 1-torch.exp(-deltas*F.softplus(sigmas+noise)) # (N_rays, N_samples_)
+        #alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise)) # (N_rays, N_samples_)
         alphas_shifted = \
             torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, a1, a2, ...]
         weights = \

@@ -195,6 +195,10 @@ class BaseDataset(Dataset):
         dp= (dp *50).astype(np.int32)
         dpn=(dpn*50).astype(np.int32)
 
+        # create mask for visible vs unkonwn
+        vis2d = np.ones_like(mask)
+        vis2dn= np.ones_like(mask)
+
         # crop box
         indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
         indicesn = np.where(maskn>0); xidn = indicesn[1]; yidn = indicesn[0]
@@ -208,8 +212,9 @@ class BaseDataset(Dataset):
         #length = (maxlength,maxlength)
         #lengthn = (maxlengthn,maxlengthn)
 
-        length = (int(1.2*length[0]), int(1.2*length[1]))
-        lengthn= (int(1.2*lengthn[0]),int(1.2*lengthn[1]))
+        crop_factor = 1.2
+        length = (int(crop_factor*length[0]), int(crop_factor*length[1]))
+        lengthn= (int(crop_factor*lengthn[0]),int(crop_factor*lengthn[1]))
 
         maxw=self.opts.img_size;maxh=self.opts.img_size
         orisize = (2*length[0], 2*length[1])
@@ -248,6 +253,7 @@ class BaseDataset(Dataset):
         occ = cv2.remap(occ,x0,y0,interpolation=cv2.INTER_LINEAR)
         depth=cv2.remap(depth,x0,y0,interpolation=cv2.INTER_LINEAR)
         dp   =cv2.remap(dp,   x0,y0,interpolation=cv2.INTER_NEAREST)
+        vis2d=cv2.remap(vis2d.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
 
         imgn = cv2.remap(imgn,x0n,y0n,interpolation=cv2.INTER_LINEAR,borderValue=colorn[0,0])
         maskn = cv2.remap(maskn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
@@ -255,6 +261,7 @@ class BaseDataset(Dataset):
         occn = cv2.remap(occn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
         depthn = cv2.remap(depthn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
         dpn    =cv2.remap(dpn,    x0n,y0n,interpolation=cv2.INTER_NEAREST)
+        vis2dn=cv2.remap(vis2dn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
 
         # augmenta flow
         hp1c = np.concatenate([flow[:,:,:2] + hp0[:,:,:2], np.ones_like(hp0[:,:,:1])],-1) # image coord
@@ -323,8 +330,8 @@ class BaseDataset(Dataset):
             cam[1:2]=1./alp[1]   # modify focal length according to rescale
             camn[1:2]=1./alpn[1]
 
-        # compute transforms
         mask = np.stack([mask,maskn])
+        vis2d= np.stack([vis2d, vis2dn])
 
         try:dataid = self.dataid
         except: dataid=0
@@ -357,6 +364,7 @@ class BaseDataset(Dataset):
             'pps':          np.stack([pps, ppsn]),
             'depth':        np.stack([depth, depthn]),
             'dp':        np.stack([dp, dpn]),
+            'vis2d':        vis2d,
             'cam':          np.stack([cam, camn]),
             'kp':           np.stack([kp, kpn]),
             'rtk':          np.stack([rtk, rtkn]),            

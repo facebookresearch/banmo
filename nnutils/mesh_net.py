@@ -108,7 +108,7 @@ flags.DEFINE_bool('nothuman', False, 'using animal model')
 flags.DEFINE_integer('chunk', 32*1024, 'chunk size to split the input to avoid OOM')
 flags.DEFINE_integer('N_importance', 0, 'number of additional fine samples')
 flags.DEFINE_float('perturb',   1.0, 'factor to perturb depth sampling points')
-flags.DEFINE_float('noise_std', 1.0, 'std dev of noise added to regularize sigma')
+flags.DEFINE_float('noise_std', 0., 'std dev of noise added to regularize sigma')
 flags.DEFINE_bool('queryfw', False, 'use forward warping to query deformed shape')
 flags.DEFINE_bool('flowbw', False, 'use backward warping 3d flow')
 flags.DEFINE_bool('lbs', False, 'use lbs for backward warping 3d flow')
@@ -140,9 +140,11 @@ class v2s_net(nn.Module):
         except: self.near_far = None
 
         # set nerf model
-        self.nerf_coarse = NeRF()
-        self.embedding_xyz = Embedding(3, 10) # 10 is the default number
-        self.embedding_dir = Embedding(3, 4) # 4 is the default number
+        num_freqs = 10
+        in_channels_xyz=3+3*num_freqs*2
+        self.nerf_coarse = NeRF(in_channels_xyz=in_channels_xyz)
+        self.embedding_xyz = Embedding(3,num_freqs) # 8 is the default number
+        self.embedding_dir = Embedding(3,4) # 4 is the default number
         self.embeddings = {'xyz':self.embedding_xyz, 'dir':self.embedding_dir}
         self.nerf_models= {'coarse':self.nerf_coarse}
 
@@ -150,9 +152,9 @@ class v2s_net(nn.Module):
         max_t=200  ##TODO change 15
         self.embedding_time = nn.Embedding(max_t, max_t)
         if opts.flowbw:
-            self.nerf_flowbw = NeRF(in_channels_xyz=63+max_t,
+            self.nerf_flowbw = NeRF(in_channels_xyz=in_channels_xyz+max_t,
                                 in_channels_dir=0, raw_feat=True)
-            self.nerf_flowfw = NeRF(in_channels_xyz=63+max_t,
+            self.nerf_flowfw = NeRF(in_channels_xyz=in_channels_xyz+max_t,
                                 in_channels_dir=0, raw_feat=True)
             self.nerf_models['flowbw'] = self.nerf_flowbw
             self.nerf_models['flowfw'] = self.nerf_flowfw
@@ -183,7 +185,7 @@ class v2s_net(nn.Module):
                                 in_channels_dir=0,
                                 out_channels=7, raw_feat=True))
 
-                fx,fy,px,py=[int(i) for i in \
+                fx,fy,px,py=[int(float(i)) for i in \
                             self.config.get('data_0', 'ks').split(',')]
                 self.ks = torch.Tensor([fx,fy,px,py]).to(self.device)
                 self.ks_param = nn.Parameter(self.ks)
@@ -320,6 +322,7 @@ class v2s_net(nn.Module):
         self.flow         = batch['flow']        .view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(self.device)
         self.flow = self.flow[:,:2]
         self.masks        = batch['mask']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
+        self.vis2d        = batch['vis2d']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.dps          = batch['dp']          .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
@@ -400,6 +403,8 @@ class v2s_net(nn.Module):
         ## TODO
         #self.frameid = self.frameid + (self.dataid*20)
         if self.opts.bg: self.masks[:] = 1
+        self.masks = (self.masks*self.vis2d)>0
+        self.masks = self.masks.float()
 
         bs = self.imgs.shape[0]
         if not self.opts.use_cam:
@@ -465,7 +470,7 @@ class v2s_net(nn.Module):
         sil_loss = F.mse_loss(rendered_sil, sil_at_samp)
         total_loss = img_loss
         if not opts.bg: total_loss = total_loss + sil_loss 
-        
+
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
         

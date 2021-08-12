@@ -274,6 +274,10 @@ class v2s_trainer(Trainer):
                 nerf_coarse_grad = []
                 nerf_root_rts_grad = []
                 for name,p in self.model.named_parameters():
+                    try: 
+                        pgrad_nan = p.grad.isnan()
+                        if pgrad_nan.sum()>0: pdb.set_trace()
+                    except: pass
                     if 'nerf_coarse' in name:
                         nerf_coarse_grad.append(p)
                     elif 'nerf_root_rts' in name:
@@ -316,10 +320,14 @@ class v2s_trainer(Trainer):
 
     @staticmethod
     def extract_mesh(model,chunk,grid_size,
-                      frameid=None,threshold=0.5,bound=1.5,
+                      frameid=None,
                       mesh_dict_in=None):
         opts = model.opts
         mesh_dict = {}
+        if model.near_far is not None: 
+            bound=np.mean(model.near_far) 
+        else: bound=1.5
+        threshold=20
 
         if mesh_dict_in is None:
             pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
@@ -352,11 +360,11 @@ class v2s_trainer(Trainer):
         
             # mesh post-processing 
             mesh = trimesh.Trimesh(vertices, triangles)
-            if len(mesh.vertices)>0:
-                mesh = [i for i in mesh.split(only_watertight=False)]
-                mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
-                mesh = mesh[-1]
-                mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
+            #if len(mesh.vertices)>0:
+            #    mesh = [i for i in mesh.split(only_watertight=False)]
+            #    mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
+            #    mesh = mesh[-1]
+            #    mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
 
         # forward warping
         if frameid is not None and opts.queryfw:

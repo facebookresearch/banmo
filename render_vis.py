@@ -133,7 +133,7 @@ def main():
 
     for i in range(len(all_mesh)):
         if args.vis_bones:
-            all_mesh[i].visual.vertex_colors[:,-1]=192 # alpha
+            #all_mesh[i].visual.vertex_colors[:,-1]=192 # alpha
             num_original_verts.append( all_mesh[i].vertices.shape[0])
             num_original_faces.append( all_mesh[i].faces.shape[0]  )  
             try: bone=all_bone[i]
@@ -343,10 +343,11 @@ def main():
         cam_node = scene.add(cam, pose=cam_pose)
         light_pose = init_light_pose
         direc_l_node = scene.add(direc_l, pose=light_pose)
-        if args.vis_bones:
-            color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL)
-        else:
-            color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL | pyrender.RenderFlags.SKIP_CULL_FACES)
+        #if args.vis_bones:
+        #    color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL)
+        #else:
+        #    color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL | pyrender.RenderFlags.SKIP_CULL_FACES)
+        color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL | pyrender.RenderFlags.SKIP_CULL_FACES)
         r.delete()
         color = color[:refimg.shape[0],:refimg.shape[1],:3]
         if args.overlay=='yes':

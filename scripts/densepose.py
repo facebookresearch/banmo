@@ -106,8 +106,11 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%datadir))):
     
     # vis
     v = Visualizer(img_rszd, coco_metadata, scale=1, instance_mode=ColorMode.IMAGE_BW)
+    outputs.remove('pred_masks')
     vis = v.draw_instance_predictions(outputs)
-    mask_result = cv2.addWeighted(vis.get_image(), 1, image_bgr1, 0.5, 0)
+    vis = vis.get_image()
+    alpha_mask = 0.8*(mask_rszd.sum(-1)>0)[...,None]
+    mask_result = vis*(1-alpha_mask) + image_bgr1 * alpha_mask
     cv2.imwrite('%s/vis-%05d.jpg'%(maskdir,counter), mask_result)
     
     counter+=1

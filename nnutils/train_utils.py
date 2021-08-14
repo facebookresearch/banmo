@@ -92,6 +92,7 @@ class v2s_trainer(Trainer):
         params_embed=[]
         params_bones=[]
         params_ks=[]
+        params_dp=[]
         for name,p in self.model.named_parameters():
             if 'nerf_coarse' in name:
                 params_nerf_coarse.append(p)
@@ -109,6 +110,8 @@ class v2s_trainer(Trainer):
                 params_bones.append(p)
             elif 'ks' == name:
                 params_ks.append(p)
+            elif 'nerf_dp' == name:
+                params_dp.append(p)
             else: continue
             print(name)
                 
@@ -121,6 +124,7 @@ class v2s_trainer(Trainer):
              {'params': params_embed},
              {'params': params_bones},
              {'params': params_ks},
+             {'params': params_dp},
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
@@ -133,6 +137,7 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
             opts.learning_rate, # params_ks
+            opts.learning_rate, # params_dp
             ],
             opts.num_epochs * len(self.dataloader),
             pct_start=2./opts.num_epochs, # use 2 epochs to warm up
@@ -354,16 +359,17 @@ class v2s_trainer(Trainer):
             vol_rgbo = torch.cat(out_chunks, 0)
 
             vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
+            vol_o = F.softplus(vol_o)
             print('fraction occupied:', (vol_o > threshold).float().mean())
             vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
             vertices = (vertices - grid_size/2)/grid_size*2*bound
         
-            # mesh post-processing 
             mesh = trimesh.Trimesh(vertices, triangles)
-            #if len(mesh.vertices)>0:
-            #    mesh = [i for i in mesh.split(only_watertight=False)]
-            #    mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
-            #    mesh = mesh[-1]
+            # mesh post-processing 
+            if not opts.bg and len(mesh.vertices)>0:
+                mesh = [i for i in mesh.split(only_watertight=False)]
+                mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
+                mesh = mesh[-1]
             #    mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
 
         # forward warping

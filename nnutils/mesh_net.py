@@ -26,7 +26,8 @@ from ext_nnutils.net_blocks import Encoder, CodePredictor
 from nnutils.nerf import Embedding, NeRF, RTHead
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy,\
-                                chunk_rays, generate_bones
+                                chunk_rays, generate_bones,\
+                                canonical2ndc
 from nnutils.rendering import render_rays
 from ext_utils.flowlib import cat_imgflo 
 from ext_utils.flowlib import warp_flow
@@ -119,6 +120,7 @@ flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspon
 flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
 flags.DEFINE_integer('num_test_views', 0, 'number of test views, 0: use all viewsf')
+flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -161,6 +163,7 @@ class v2s_net(nn.Module):
                 
         elif opts.lbs:
             num_bones_x = 3 # TODO change to # of cat bones
+            if opts.bg: num_bones_x=5
             num_bones = num_bones_x**3
             if half_bones: num_bones = num_bones // 2
             self.num_bones = num_bones
@@ -191,12 +194,20 @@ class v2s_net(nn.Module):
                 self.ks_param = nn.Parameter(self.ks)
 
         # densepose
-        with open('tmp/geodists_sheep_5004.pkl', 'rb') as f: 
-            geodists=pickle.load(f)
-            geodists = torch.Tensor(geodists).cuda()
-            geodists[0,:] = np.inf
-            geodists[:,0] = np.inf
-            self.geodists = geodists
+        if opts.use_dp:
+            with open('tmp/geodists_sheep_5004.pkl', 'rb') as f: 
+                geodists=pickle.load(f)
+                geodists = torch.Tensor(geodists).cuda(self.device)
+                geodists[0,:] = np.inf
+                geodists[:,0] = np.inf
+                self.geodists = geodists
+        
+            with open('tmp/sheep_5004.pkl', 'rb') as f:
+                self.dp_verts = pickle.load(f)['vertices']
+                self.dp_verts = torch.Tensor(self.dp_verts).cuda(self.device)
+
+            self.nerf_dp = NeRF(in_channels_xyz=in_channels_xyz,
+                                in_channels_dir=0, raw_feat=True)
 
 
         if opts.N_importance>0:
@@ -334,6 +345,8 @@ class v2s_net(nn.Module):
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)
 
+        self.sils = self.masks.clone()
+
         ## TODO densepose to correspondence
         ## downsample
         #h_rszd,w_rszd=h//4,w//4
@@ -457,6 +470,7 @@ class v2s_net(nn.Module):
                                     self.frameid, 
                                     self.dataid)
 
+
         # Render
         rendered, rand_inds = self.nerf_render(rtk, kaug, frameid, opts.img_size)
         rendered_img = rendered['img_coarse']
@@ -473,6 +487,40 @@ class v2s_net(nn.Module):
 
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
+        
+        if opts.use_dp:
+            # cse to video canonical model: deform then rotate/translate
+            dp_verts_embedded = self.embedding_xyz(self.dp_verts)
+            dp_canonical_flo = self.nerf_dp(dp_verts_embedded)
+            dp_canonical_pts = dp_canonical_flo + self.dp_verts
+            
+            # project to image: apply deformation, root body pose, and projection
+            dp_px = canonical2ndc(self, dp_canonical_pts, rtk, kaug, frameid)
+               
+            # loss
+            _, xys = sample_xy(opts.img_size, bs, 0, self.device, 
+                                       return_all= True)
+            
+            dp_px = [dp_px[i][self.dps[i].long()][None] for i in range(bs)] # bs, h, w
+            dp_px = torch.cat(dp_px,0)
+            dp_px = dp_px[...,:2]
+            xys = xys.view(dp_px.shape)
+            dp_err = ((dp_px - xys)/opts.img_size).pow(2).sum(-1)
+            dp_loss = 0.1*dp_err[self.sils>0].mean() # eval on valid pts
+            total_loss = total_loss + dp_loss 
+            aux_out['dp_loss'] = dp_loss
+            
+         #   # visualize cse predictions
+         #   dp_pts = self.dp_verts[self.dps.long()] # bs, h, w
+         #   dp_pts_vis = dp_pts
+         #   dp_pts_vis = dp_pts_vis - dp_pts_vis.min(1)[0].min(1)[0][:,None,None]
+         #   dp_pts_vis = dp_pts_vis / dp_pts_vis.max(1)[0].max(1)[0][:,None,None]
+         #   cv2.imwrite('0.png', dp_pts_vis.cpu().numpy()[0]*255)  
+         #   trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
+         #      vertex_colors=self.imgs[0].view(-1,3).cpu()).export('0.obj')
+         #   trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
+         # vertex_colors=dp_pts_vis[0].view(-1,3).cpu()).export('1.obj')
+
         
         # flow loss
         if opts.use_corresp:

@@ -338,8 +338,8 @@ def raycast(xys, Rmat, Tmat, Kinv, near_far):
         zfar = torch.ones(bs,nsample,1).to(device) *  near_far[1]
     else:
         #TODO need a better way to bound raycast
-        #lbound, ubound=[-1.5,1.5]
-        lbound, ubound=[-5, 5]
+        lbound, ubound=[-1.5,1.5]
+        #lbound, ubound=[-5, 5]
 
         znear= Tmat[:,:,-1:].repeat(1,nsample,1)+lbound
         zfar = Tmat[:,:,-1:].repeat(1,nsample,1)+ubound
@@ -494,3 +494,31 @@ def warp_fw(opts, model, rt_dict, vertices, frameid):
         rt_dict['bones'] = bones_dfm
     vertices = pts_dfm.cpu().numpy()
     return vertices, rt_dict
+    
+def canonical2ndc(model, dp_canonical_pts, rtk, kaug, frameid):
+    """
+    dp_canonical_pts: 5004,3, pts in the canonical space of each video
+    dp_px: bs, 5004, 3
+    """
+    Rmat = rtk[:,:3,:3]
+    Tmat = rtk[:,:3,3]
+    Kmat = K2mat(rtk[:,3,:])
+    Kaug = K2inv(kaug) # p = Kaug Kmat P
+    Kinv = Kmatinv(Kaug.matmul(Kmat))
+    K = mat2K(Kmatinv(Kinv))
+    bs = Kinv.shape[0]
+    npts = dp_canonical_pts.shape[0]
+
+    frameid = frameid.long().to(model.device)[:,None]
+    time_embedded = model.embedding_time(frameid)
+    time_embedded = time_embedded.repeat(1,npts, 1)
+    dp_canonical_embedded = model.embedding_xyz(dp_canonical_pts)[None]
+    dp_canonical_embedded = dp_canonical_embedded.repeat(bs,1,1)
+    dp_canonical_embedded = torch.cat([dp_canonical_embedded, time_embedded], -1)
+
+    # projection
+    dp_deformed_flo = model.nerf_flowfw(dp_canonical_embedded)
+    dp_deformed_pts = dp_canonical_pts[None] + dp_deformed_flo
+    dp_cam_pts = obj_to_cam(dp_deformed_pts, Rmat, Tmat) 
+    dp_px = pinhole_cam(dp_cam_pts,K)
+    return dp_px 

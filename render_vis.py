@@ -133,7 +133,7 @@ def main():
 
     for i in range(len(all_mesh)):
         if args.vis_bones:
-            #all_mesh[i].visual.vertex_colors[:,-1]=192 # alpha
+            all_mesh[i].visual.vertex_colors[:,-1]=254 # necessary for color override
             num_original_verts.append( all_mesh[i].vertices.shape[0])
             num_original_faces.append( all_mesh[i].faces.shape[0]  )  
             try: bone=all_bone[i]

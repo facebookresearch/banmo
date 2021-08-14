@@ -313,14 +313,14 @@ def render_rays(models,
         weights_coarse, sigmas = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=True)
-        result = {'sil_coarse': weights_coarse.sum(1)}
+        result = {'sil_coarse': weights_coarse[:,:-1].sum(1)}
     else:
         rgb_coarse, depth_coarse, weights_coarse, sigmas = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=False)
         result = {'img_coarse': rgb_coarse,
                   'depth_coarse': depth_coarse,
-                  'sil_coarse': weights_coarse.sum(1),
+                  'sil_coarse': weights_coarse[:,:-1].sum(1),
                  }
 
     # compute correspondence: root space to target view space

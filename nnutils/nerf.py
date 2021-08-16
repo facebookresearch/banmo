@@ -39,8 +39,14 @@ class Embedding(nn.Module):
         """
         # consine features
         if self.N_freqs>0:
-            bs, input_dim = x.shape
+            shape = x.shape
+            bs = shape[0]
+            input_dim = shape[-1]
+            output_dim = input_dim*(1+self.N_freqs*self.nfuncs)
+            out_shape = shape[:-1] + ((output_dim),)
             device = x.device
+
+            x = x.view(-1,input_dim)
             out = []
             for freq in self.freq_bands:
                 for func in self.funcs:
@@ -54,10 +60,10 @@ class Embedding(nn.Module):
             window = 0.5 * (1 + torch.cos(np.pi * window + np.pi))
             window = window.view(1,-1, 1, 1)
             out = window * out
-            out = out.view(bs,-1)
+            out = out.view(-1,self.N_freqs*self.nfuncs*input_dim)
 
             out = torch.cat([x, out],-1)
-            print(self.alpha)
+            out = out.view(out_shape)
         else: out = x
         return out
 

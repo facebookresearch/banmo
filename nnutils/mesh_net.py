@@ -208,6 +208,11 @@ class v2s_net(nn.Module):
                 self.dp_verts = pickle.load(f)['vertices']
                 self.dp_verts = torch.Tensor(self.dp_verts).cuda(self.device)
 
+                # normalize
+                self.dp_verts -= self.dp_verts.mean(0)[None]
+                self.dp_verts /= self.dp_verts.abs().max()
+                self.dp_verts *= (self.near_far[0] + self.near_far[1]) / 2
+
             self.nerf_dp = NeRF(in_channels_xyz=in_channels_xyz,
                                 in_channels_dir=0, raw_feat=True)
 
@@ -289,12 +294,19 @@ class v2s_net(nn.Module):
         # render flow 
         # bs, nsamp, -1, x
         weights_coarse = results['weights_coarse']
-        # renormalize
-        weights_coarse = weights_coarse/(1e-9+weights_coarse.sum(-1)[...,None])
         weights_shape = weights_coarse.shape
         xyz_coarse_target = results['xyz_coarse_target']
         xyz_coarse_target = xyz_coarse_target.view(weights_shape+(3,))
         xy_coarse_target = xyz_coarse_target[...,:2]
+
+        # deal with negative z
+        invalid_ind = torch.logical_or(xyz_coarse_target[...,-1]<1e-5,
+                               xy_coarse_target.norm(2,-1).abs()>2*img_size)
+        weights_coarse[invalid_ind] = 0.
+        xy_coarse_target[invalid_ind] = 0.
+
+        # renormalize
+        weights_coarse = weights_coarse/(1e-9+weights_coarse.sum(-1)[...,None])
 
         # candidate motion vector
         xys_unsq = xys.view(weights_shape[:-1]+(1,2))
@@ -311,6 +323,46 @@ class v2s_net(nn.Module):
         results['flo_coarse'] = flo_coarse/img_size * 2
         del results['weights_coarse']
         del results['xyz_coarse_target']
+
+        if opts.use_dp:
+            # cse to video canonical model: deform then rotate/translate
+            dp_verts_embedded = self.embedding_xyz(self.dp_verts)
+            dp_canonical_flo = self.nerf_dp(dp_verts_embedded)
+            dp_canonical_pts = dp_canonical_flo + self.dp_verts
+            
+            # project to image: apply deformation, root body pose, and projection
+            dp_px = canonical2ndc(self, dp_canonical_pts, rtk, kaug, frameid)
+            dp_px = [dp_px[i][self.dps[i].long()][None] for i in range(bs)] # bs, h, w
+            dp_px = torch.cat(dp_px,0)
+            dp_valid_idx = (dp_px[...,-1]>1e-6) & \
+                           (dp_px[...,:2].norm(2,-1)<2*opts.img_size) & \
+                           (self.sils>0)
+            dp_px = dp_px[...,:2]
+
+            # loss
+            _, xys = sample_xy(opts.img_size, bs, 0, self.device, 
+                                       return_all= True)
+            xys = xys.view(dp_px.shape)
+
+            dp_err = ((dp_px - xys)/opts.img_size).pow(2).sum(-1)
+            dp_err = dp_err * dp_valid_idx.float()
+            
+            # visualize cse predictions
+            dp_pts = self.dp_verts[self.dps.long()] # bs, h, w
+            dp_pts_vis = dp_pts
+            dp_pts_vis = dp_pts_vis - dp_pts_vis.min(1)[0].min(1)[0][:,None,None]
+            dp_pts_vis = dp_pts_vis / dp_pts_vis.max(1)[0].max(1)[0][:,None,None]
+         #   cv2.imwrite('0.png', dp_pts_vis.cpu().numpy()[0]*255)  
+         #   trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
+         #      vertex_colors=self.imgs[0].view(-1,3).cpu()).export('0.obj')
+         #   trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
+         # vertex_colors=dp_pts_vis[0].view(-1,3).cpu()).export('1.obj')
+
+            results['dp_err'] = dp_err[...,None]
+            results['dp_valid_idx'] = dp_valid_idx[...,None]
+            results['dp_px'] = dp_px
+            results['dp_pts_vis'] = dp_pts_vis
+               
         
         return results, rand_inds
 
@@ -498,38 +550,12 @@ class v2s_net(nn.Module):
         aux_out['img_loss'] = img_loss
         
         if opts.use_dp:
-            # cse to video canonical model: deform then rotate/translate
-            dp_verts_embedded = self.embedding_xyz(self.dp_verts)
-            dp_canonical_flo = self.nerf_dp(dp_verts_embedded)
-            dp_canonical_pts = dp_canonical_flo + self.dp_verts
-            
-            # project to image: apply deformation, root body pose, and projection
-            dp_px = canonical2ndc(self, dp_canonical_pts, rtk, kaug, frameid)
-               
-            # loss
-            _, xys = sample_xy(opts.img_size, bs, 0, self.device, 
-                                       return_all= True)
-            
-            dp_px = [dp_px[i][self.dps[i].long()][None] for i in range(bs)] # bs, h, w
-            dp_px = torch.cat(dp_px,0)
-            dp_px = dp_px[...,:2]
-            xys = xys.view(dp_px.shape)
-            dp_err = ((dp_px - xys)/opts.img_size).pow(2).sum(-1)
-            dp_loss = 0.1*dp_err[self.sils>0].mean() # eval on valid pts
+            dp_err = rendered['dp_err']
+            dp_valid_idx = rendered['dp_valid_idx']
+            dp_loss = 0.1*dp_err[dp_valid_idx.float()>0].mean() # eval on valid pts
             total_loss = total_loss + dp_loss 
             aux_out['dp_loss'] = dp_loss
             
-         #   # visualize cse predictions
-         #   dp_pts = self.dp_verts[self.dps.long()] # bs, h, w
-         #   dp_pts_vis = dp_pts
-         #   dp_pts_vis = dp_pts_vis - dp_pts_vis.min(1)[0].min(1)[0][:,None,None]
-         #   dp_pts_vis = dp_pts_vis / dp_pts_vis.max(1)[0].max(1)[0][:,None,None]
-         #   cv2.imwrite('0.png', dp_pts_vis.cpu().numpy()[0]*255)  
-         #   trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
-         #      vertex_colors=self.imgs[0].view(-1,3).cpu()).export('0.obj')
-         #   trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
-         # vertex_colors=dp_pts_vis[0].view(-1,3).cpu()).export('1.obj')
-
         
         # flow loss
         if opts.use_corresp:
@@ -549,9 +575,9 @@ class v2s_net(nn.Module):
 
             if opts.root_opt and (not opts.use_cam):
                 warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
-                total_loss = (sil_loss+img_loss)*warmup_fac + flo_loss
+                total_loss = total_loss*warmup_fac + flo_loss
             else:
-                total_loss = sil_loss + img_loss + flo_loss
+                total_loss = total_loss + flo_loss
 
             aux_out['flo_loss'] = flo_loss
         

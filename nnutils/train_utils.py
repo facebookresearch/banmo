@@ -134,7 +134,7 @@ class v2s_trainer(Trainer):
            [opts.learning_rate, # params_nerf_coarse
             opts.learning_rate, # params_nerf_fine
             opts.learning_rate, # params_nerf_flowbw
-            0.1*opts.learning_rate, # params_nerf_root_rts
+            opts.learning_rate, # params_nerf_root_rts
             opts.learning_rate, # params_nerf_bone_rts
             opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
@@ -361,7 +361,7 @@ class v2s_trainer(Trainer):
 
             vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
             vol_o = F.softplus(vol_o)
-            threshold=torch.quantile(vol_o, 0.99)
+            threshold=torch.quantile(vol_o, 0.97)
             print('fraction occupied:', (vol_o > threshold).float().mean())
             vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
             vertices = (vertices - grid_size/2)/grid_size*2*bound

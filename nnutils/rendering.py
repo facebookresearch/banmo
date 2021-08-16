@@ -334,8 +334,6 @@ def render_rays(models,
     xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
     xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
         
-    if xyz_coarse_target.isnan().sum()>0: pdb.set_trace()
-                  
     result['xyz_coarse_target'] = xyz_coarse_target
     result['weights_coarse'] = weights_coarse
         

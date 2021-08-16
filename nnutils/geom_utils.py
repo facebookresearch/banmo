@@ -248,7 +248,7 @@ def pinhole_cam(in_verts, K):
 
     verts = verts.matmul(Kmat)
     verts_z = verts[:,:,2:3]
-    verts_xy = verts[:,:,:2] / verts_z
+    verts_xy = verts[:,:,:2] / (1e-6+verts_z) # deal with neg z
     
     verts = torch.cat([verts_xy,verts_z],-1)
     verts = verts.reshape(in_verts.shape)
@@ -509,16 +509,18 @@ def canonical2ndc(model, dp_canonical_pts, rtk, kaug, frameid):
     bs = Kinv.shape[0]
     npts = dp_canonical_pts.shape[0]
 
-    frameid = frameid.long().to(model.device)[:,None]
-    time_embedded = model.embedding_time(frameid)
-    time_embedded = time_embedded.repeat(1,npts, 1)
-    dp_canonical_embedded = model.embedding_xyz(dp_canonical_pts)[None]
-    dp_canonical_embedded = dp_canonical_embedded.repeat(bs,1,1)
-    dp_canonical_embedded = torch.cat([dp_canonical_embedded, time_embedded], -1)
-
     # projection
-    dp_deformed_flo = model.nerf_flowfw(dp_canonical_embedded)
-    dp_deformed_pts = dp_canonical_pts[None] + dp_deformed_flo
+    dp_canonical_pts = dp_canonical_pts[None]
+    if model.opts.flowbw:
+        time_embedded = model.embedding_time(frameid)
+        time_embedded = time_embedded.repeat(1,npts, 1)
+        dp_canonical_embedded = model.embedding_xyz(dp_canonical_pts)[None]
+        dp_canonical_embedded = dp_canonical_embedded.repeat(bs,1,1)
+        dp_canonical_embedded = torch.cat([dp_canonical_embedded, time_embedded], -1)
+        dp_deformed_flo = model.nerf_flowfw(dp_canonical_embedded)
+        dp_deformed_pts = dp_canonical_pts + dp_deformed_flo
+    else:
+        dp_deformed_pts = dp_canonical_pts.repeat(bs,1,1)
     dp_cam_pts = obj_to_cam(dp_deformed_pts, Rmat, Tmat) 
     dp_px = pinhole_cam(dp_cam_pts,K)
     return dp_px 

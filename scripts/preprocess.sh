@@ -33,7 +33,7 @@ for infile in $filedir/*$suffix; do
 #  # flow
 #  . activate viser
 #  cd /private/home/gengshany/code/viser/data_gen
-#  bash auto_gen.sh $seqname
+#  bash compute_flow.sh $seqname
 #  cd -
 #
 #  # save to zips

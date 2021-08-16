@@ -22,7 +22,7 @@ import pyrender
 from pyrender import IntrinsicsCamera,Mesh, Node, Scene,OffscreenRenderer
 import configparser
 import matplotlib
-cmap = matplotlib.cm.get_cmap('Spectral_r')
+cmap = matplotlib.cm.get_cmap('cool')
 
 parser = argparse.ArgumentParser(description='render mesh')
 parser.add_argument('--testdir', default='',
@@ -250,7 +250,8 @@ def main():
         if args.vp==-1:
             # static camera
             vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
-            vp_tmat = all_cam[0][:3,3] * 2
+            #vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0].dot(vp_rmat) # bev
+            vp_tmat = all_cam[0][:3,3] * 2.5
             vp_kmat = all_cam[0][3]
         elif args.vp==1:
             vp_rmat = cv2.Rodrigues(np.asarray([0,np.pi/2,0]))[0]

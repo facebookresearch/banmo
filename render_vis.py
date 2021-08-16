@@ -37,6 +37,8 @@ parser.add_argument('--cam_type', default='perspective',
                     help='camera model, orthographic or perspective')
 parser.add_argument('--vis_bones', dest='vis_bones',action='store_true',
                     help='whether show transparent surface and vis bones')
+parser.add_argument('--vis_cam', dest='vis_cam',action='store_true',
+                    help='whether show camera trajectory')
 parser.add_argument('--vis_traj', dest='vis_traj', action='store_true',
                     help='whether show trajectory of vertices')
 parser.add_argument('--append_img', default='no',
@@ -60,6 +62,17 @@ parser.add_argument('--gtdir', default='',
 args = parser.parse_args()
 
 gt_meshes =   [trimesh.load(i, process=False) for i in sorted( glob.glob('%s/*.obj'%(args.gtdir)) )]
+
+def obj2cam_vis(pts, Rmat, Tmat):
+    """
+    pts: ..., 3
+    Rmat: 1,3,3
+    Tmat: 1,3,3
+    """
+    pts_shape = pts.shape
+    pts = torch.Tensor(pts).cuda().reshape(1,-1,3)
+    pts = obj_to_cam(pts, Rmat,Tmat)
+    return pts.view(pts_shape).cpu().numpy()
 
 def draw_joints_on_image(rgb_img, joints, visibility, region_colors, marker_types):
     joints = joints[:, ::-1] # OpenCV works in (x, y) rather than (i, j)
@@ -122,7 +135,6 @@ def main():
     # add bones?
     num_original_verts = []
     num_original_faces = []
-    sphere_trajs = [] # K samples over T
     num_trajs = 0
     pts_trajs = []
     col_trajs = []
@@ -130,6 +142,8 @@ def main():
     pts_num = len(all_mesh[0].vertices)
     traj_num = min(1000, pts_num)
     traj_idx = np.random.choice(pts_num, traj_num)
+    mesh_cams = []
+    scene_scale = np.abs(all_mesh[0].vertices).max()
 
     for i in range(len(all_mesh)):
         if args.vis_bones:
@@ -140,6 +154,7 @@ def main():
             except: bone=trimesh.Trimesh()
             all_mesh[i] = trimesh.util.concatenate([all_mesh[i], bone])
     
+        # change color according to time 
         if args.vis_traj:
             pts_traj = np.zeros((traj_len, traj_num,2,3))
             col_traj = np.zeros((traj_len, traj_num,2,4))
@@ -152,6 +167,19 @@ def main():
             pts_trajs.append(pts_traj)
             col_trajs.append(col_traj)
     
+        # change color according to time 
+        if args.vis_cam:
+            elips_list = [] 
+            for j in range(i+1):
+                cam_rot  = all_cam[j][:3,:3].T
+                cam_tran = -cam_rot.dot(all_cam[j][:3,3:])[:,0]
+            
+                elips = trimesh.creation.uv_sphere(radius=0.02*scene_scale,count=[16, 16])
+                elips.vertices = elips.vertices + cam_tran
+                elips.visual.vertex_colors = cmap(float(j)/traj_len)
+                elips_list.append(elips)
+            mesh_cam = trimesh.util.concatenate(elips_list)
+            mesh_cams.append(mesh_cam)
 
     # store all the results
     input_size = all_anno[0][0].shape[:2]
@@ -222,7 +250,7 @@ def main():
         if args.vp==-1:
             # static camera
             vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
-            vp_tmat = all_cam[0][:3,3]
+            vp_tmat = all_cam[0][:3,3] * 2
             vp_kmat = all_cam[0][3]
         elif args.vp==1:
             vp_rmat = cv2.Rodrigues(np.asarray([0,np.pi/2,0]))[0]
@@ -256,11 +284,10 @@ def main():
             
         # project trajectories to image
         if args.vis_traj:
-            pts_traj = pts_trajs[i]
-            pts_traj_shape = pts_traj.shape
-            pts_traj = torch.Tensor(pts_traj).cuda().reshape(1,-1,3)
-            pts_traj = obj_to_cam(pts_traj, Rmat,Tmat)
-            pts_trajs[i] = pts_traj.view(pts_traj_shape).cpu().numpy()
+            pts_trajs[i] = obj2cam_vis(pts_trajs[i], Rmat, Tmat)
+
+        if args.vis_cam:
+            mesh_cams[i].vertices = obj2cam_vis(mesh_cams[i].vertices, Rmat, Tmat)
 
         # compute error if ground-truth is given
         if len(args.gtdir)>0:
@@ -319,6 +346,11 @@ def main():
             colors = col_trajs[i].reshape(-1,4)#np.random.uniform(size=pts.shape)
             m = Mesh([pyrender.Primitive(pts,mode=1,color_0=colors)])
             scene.add_node( Node(mesh=m)) 
+            
+        if args.vis_cam:
+            mesh_cam=Mesh.from_trimesh(mesh_cams[i],smooth=smooth)
+            mesh_cam._primitives[0].material.RoughnessFactor=1.
+            scene.add_node( Node(mesh=mesh_cam))
 
         floor_mesh = trimesh.load('./database/misc/wood.obj',process=False)
         floor_mesh.vertices = np.concatenate([floor_mesh.vertices[:,:1], floor_mesh.vertices[:,2:3], floor_mesh.vertices[:,1:2]],-1 )

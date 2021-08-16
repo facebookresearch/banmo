@@ -121,6 +121,8 @@ flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
 flags.DEFINE_integer('num_test_views', 0, 'number of test views, 0: use all viewsf')
 flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
+flags.DEFINE_bool('anneal_freq', False, 'whether to use frequency annealing')
+flags.DEFINE_integer('alpha', None, 'maximum frequency band')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -142,11 +144,11 @@ class v2s_net(nn.Module):
         except: self.near_far = None
 
         # set nerf model
-        num_freqs = 10
-        in_channels_xyz=3+3*num_freqs*2
+        self.num_freqs = 10
+        in_channels_xyz=3+3*self.num_freqs*2
         self.nerf_coarse = NeRF(in_channels_xyz=in_channels_xyz)
-        self.embedding_xyz = Embedding(3,num_freqs) # 8 is the default number
-        self.embedding_dir = Embedding(3,4) # 4 is the default number
+        self.embedding_xyz = Embedding(3,self.num_freqs,alpha=opts.alpha)
+        self.embedding_dir = Embedding(3,4,             alpha=opts.alpha)
         self.embeddings = {'xyz':self.embedding_xyz, 'dir':self.embedding_dir}
         self.nerf_models= {'coarse':self.nerf_coarse}
 
@@ -173,8 +175,8 @@ class v2s_net(nn.Module):
             self.nerf_models['bones'] = self.bones
 
             self.nerf_bone_rts = nn.Sequential(self.embedding_time,
-                                RTHead(is_bone=True, in_channels_xyz=max_t, D=4,
-                                in_channels_dir=0,
+                                RTHead(is_bone=True, use_cam=opts.use_cam, 
+                                in_channels_xyz=max_t, D=4, in_channels_dir=0,
                                 out_channels=7*self.num_bones, raw_feat=True))
 
         # optimize camera
@@ -184,8 +186,8 @@ class v2s_net(nn.Module):
                                                    CodePredictor(n_bones=1, n_hypo=1))
             else:
                 self.nerf_root_rts = nn.Sequential(self.embedding_time,
-                                RTHead(is_bone=False, in_channels_xyz=max_t, D=4,
-                                in_channels_dir=0,
+                                RTHead(is_bone=False, use_cam=opts.use_cam, 
+                                in_channels_xyz=max_t, D=4, in_channels_dir=0,
                                 out_channels=7, raw_feat=True))
 
                 fx,fy,px,py=[int(float(i)) for i in \
@@ -447,6 +449,13 @@ class v2s_net(nn.Module):
             self.rtk[:,:3,:3] = rmat
             self.rtk[:,:3,3] = tmat
             self.rtk[:,3,:] = self.ks_param #TODO kmat
+        
+        if self.opts.anneal_freq:
+            alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
+            alpha = min(max(4, alpha),self.num_freqs) # alpha from 4 to 10
+            self.embedding_xyz.alpha = alpha 
+            self.embedding_dir.alpha = alpha 
+
         return bs
 
     def forward(self, batch):

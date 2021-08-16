@@ -84,6 +84,8 @@ class v2s_trainer(Trainer):
     
     def init_training(self):
         opts = self.opts
+        self.model.final_steps = opts.num_epochs * len(self.dataloader)
+
         params_nerf_coarse=[]
         params_nerf_fine=[]
         params_nerf_flowbw=[]
@@ -132,14 +134,14 @@ class v2s_trainer(Trainer):
            [opts.learning_rate, # params_nerf_coarse
             opts.learning_rate, # params_nerf_fine
             opts.learning_rate, # params_nerf_flowbw
-            opts.learning_rate, # params_nerf_root_rts
+            0.1*opts.learning_rate, # params_nerf_root_rts
             opts.learning_rate, # params_nerf_bone_rts
             opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
             opts.learning_rate, # params_ks
             opts.learning_rate, # params_dp
             ],
-            opts.num_epochs * len(self.dataloader),
+            self.model.final_steps,
             pct_start=2./opts.num_epochs, # use 2 epochs to warm up
             cycle_momentum=False, 
             anneal_strategy='linear',
@@ -231,7 +233,7 @@ class v2s_trainer(Trainer):
         opts = self.opts
         if opts.local_rank==0:
             log = SummaryWriter('%s/%s'%(opts.checkpoint_dir,opts.logname), comment=opts.logname)
-        total_steps = 0
+        self.model.total_steps = 0
         dataset_size = len(self.dataloader)
         torch.manual_seed(8)  # do it again
         torch.cuda.manual_seed(1)
@@ -261,7 +263,6 @@ class v2s_trainer(Trainer):
             self.model.train()
             for i, batch in enumerate(self.dataloader):
                 self.model.iters=i
-                self.model.total_steps = total_steps
 
                 if self.opts.debug:
                     torch.cuda.synchronize()
@@ -297,14 +298,15 @@ class v2s_trainer(Trainer):
                 #for param_group in self.optimizer.param_groups:
                 #    print(param_group['lr'])
 
-                total_steps += 1
+                self.model.total_steps += 1
                 epoch_iter += 1
 
                 if opts.local_rank==0: 
-                    self.save_logs(log, aux_out, total_steps, epoch)
+                    self.save_logs(log, aux_out, self.model.total_steps, epoch)
 
             if (epoch+1) % opts.save_epoch_freq == 0:
-                print('saving the model at the end of epoch {:d}, iters {:d}'.format(epoch, total_steps))
+                print('saving the model at the end of epoch {:d}, iters {:d}'.\
+                                         format(epoch, self.model.total_steps))
                 self.save_network('latest')
                 self.save_network(epoch+1)
    
@@ -332,7 +334,6 @@ class v2s_trainer(Trainer):
         if model.near_far is not None: 
             bound=np.mean(model.near_far) 
         else: bound=1.5
-        threshold=20
 
         if mesh_dict_in is None:
             pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
@@ -360,6 +361,7 @@ class v2s_trainer(Trainer):
 
             vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
             vol_o = F.softplus(vol_o)
+            threshold=torch.quantile(vol_o, 0.99)
             print('fraction occupied:', (vol_o > threshold).float().mean())
             vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
             vertices = (vertices - grid_size/2)/grid_size*2*bound

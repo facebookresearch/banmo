@@ -28,6 +28,6 @@ def run_cmd(run_cmd):
     os.system(run_cmd)
 
     
-executor.update_parameters(timeout_min=600, nodes=nodes, gpus_per_node=numgpu, cpus_per_task=4*numgpu, slurm_partition=partition, slurm_comment= '', name="text")  # timeout in min
+executor.update_parameters(timeout_min=600, nodes=nodes, gpus_per_node=numgpu, cpus_per_task=8*numgpu, slurm_partition=partition, slurm_comment= '', name="text")  # timeout in min
 #run_cmd(cmd_str )
 job = executor.submit(run_cmd,cmd_str)

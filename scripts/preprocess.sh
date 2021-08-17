@@ -1,6 +1,6 @@
 rootdir=/private/home/gengshany/dropbox/GengshanYang_project/test_videos/
 tmpdir=/private/home/gengshany/data/tmp/
-prefix=cat_5
+prefix=cat_6
 filedir=$rootdir/$prefix
 outdir=$rootdir/output
 suffix=.MOV
@@ -17,18 +17,18 @@ for infile in $filedir/*$suffix; do
   echo $infile  
   seqname=$prefix$(printf "%02d" $counter)
 
-  # extract frames
-  rm $outdir/*
-  ffmpeg -i $infile -vf fps=10 $outdir/%05d.jpg
-
-  # segmentation
-  todir=$tmpdir/$seqname
-  rm $todir -rf
-  mkdir $todir
-  mkdir $todir/images/
-  mkdir $todir/masks/
-  cp $outdir/* $todir/images
-  python scripts/densepose.py $seqname
+#  # extract frames
+#  rm $outdir/*
+#  ffmpeg -i $infile -vf fps=10 $outdir/%05d.jpg
+#
+#  # segmentation
+#  todir=$tmpdir/$seqname
+#  rm $todir -rf
+#  mkdir $todir
+#  mkdir $todir/images/
+#  mkdir $todir/masks/
+#  cp $outdir/* $todir/images
+#  python scripts/densepose.py $seqname
 
 #  # flow
 #  . activate viser
@@ -36,10 +36,10 @@ for infile in $filedir/*$suffix; do
 #  bash compute_flow.sh $seqname
 #  cd -
 #
-#  # save to zips
-#  cd /private/home/gengshany/code/viser/database/DAVIS/
-#  rm ~/dropbox/viser/$seqname.zip
-#  zip ~/dropbox/viser/$seqname.zip -r  */Full-Resolution/$seqname/
-#  cd -
+  # save to zips
+  cd /private/home/gengshany/code/viser/database/DAVIS/
+  rm ~/dropbox/viser/$seqname.zip
+  zip ~/dropbox/viser/$seqname.zip -r  */Full-Resolution/$seqname/
+  cd -
   counter=$((counter+1))
 done

@@ -122,7 +122,8 @@ flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from n
 flags.DEFINE_integer('num_test_views', 0, 'number of test views, 0: use all viewsf')
 flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
 flags.DEFINE_bool('anneal_freq', False, 'whether to use frequency annealing')
-flags.DEFINE_integer('alpha', None, 'maximum frequency band')
+flags.DEFINE_integer('alpha', None, 'maximum frequency for fourier features')
+flags.DEFINE_integer('freq_decay', None, 'maximum frequency for fourier feature regularization')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -348,10 +349,13 @@ class v2s_net(nn.Module):
             dp_err = dp_err * dp_valid_idx.float()
             
             # visualize cse predictions
-            dp_pts = self.dp_verts[self.dps.long()] # bs, h, w
-            dp_pts_vis = dp_pts
+            dp_pts_vis = self.dp_verts[self.dps.long()] # bs, h, w
             dp_pts_vis = dp_pts_vis - dp_pts_vis.min(1)[0].min(1)[0][:,None,None]
             dp_pts_vis = dp_pts_vis / dp_pts_vis.max(1)[0].max(1)[0][:,None,None]
+            
+            dp_can_vis = dp_canonical_pts[self.dps.long()] # bs, h, w
+            dp_can_vis = dp_can_vis - dp_can_vis.min(1)[0].min(1)[0][:,None,None]
+            dp_can_vis = dp_can_vis / dp_can_vis.max(1)[0].max(1)[0][:,None,None]
          #   cv2.imwrite('0.png', dp_pts_vis.cpu().numpy()[0]*255)  
          #   trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
          #      vertex_colors=self.imgs[0].view(-1,3).cpu()).export('0.obj')
@@ -360,7 +364,7 @@ class v2s_net(nn.Module):
 
             results['dp_err'] = dp_err[...,None]
             results['dp_valid_idx'] = dp_valid_idx[...,None]
-            results['dp_px'] = dp_px
+            results['dp_can_vis'] = dp_can_vis
             results['dp_pts_vis'] = dp_pts_vis
                
         
@@ -477,7 +481,10 @@ class v2s_net(nn.Module):
         if not self.opts.use_cam:
             self.rtk[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(self.device)
             self.rtk[:,:2,3] = 0.
-            self.rtk[:,2,3] = 3. # TODO heuristics of depth=3xobject size
+            if self.near_far is None:
+                self.rtk[:,2,3] = 3. # TODO heuristics of depth=3xobject size
+            else:
+                self.rtk[:,2,3] = np.asarray(self.near_far).mean()
        
         if self.opts.root_opt:
             frameid = self.frameid.long().to(self.device)
@@ -504,7 +511,7 @@ class v2s_net(nn.Module):
         
         if self.opts.anneal_freq:
             alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
-            alpha = min(max(4, alpha),self.num_freqs) # alpha from 4 to 10
+            alpha = min(max(0, alpha),self.num_freqs) # alpha from 0 to 10
             self.embedding_xyz.alpha = alpha 
             self.embedding_dir.alpha = alpha 
 
@@ -592,6 +599,16 @@ class v2s_net(nn.Module):
             rig_loss = 0.0001*rendered['frame_disp3d'].mean()
             total_loss = total_loss + rig_loss
             aux_out['rig_loss'] = rig_loss
+
+        if opts.freq_decay:
+            freq_decay_loss = 0.
+            for embed_str in self.nerf_coarse.weights_reg:
+                embed_weight = getattr(self.nerf_coarse, embed_str)[0].weight
+                embed_weight = embed_weight[:,:self.nerf_coarse.in_channels_xyz]
+                embed_weight = embed_weight[:,3:] # after xyz
+                freq_decay_loss += opts.freq_decay*embed_weight.abs().mean()
+            total_loss = total_loss + freq_decay_loss
+            aux_out['freq_decay_loss'] = freq_decay_loss
 
         aux_out['total_loss'] = total_loss
         return total_loss, aux_out

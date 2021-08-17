@@ -9,20 +9,15 @@ python extract.py --seqname $seqname \
                   --model_path $model_path \
                   $add_args
 python render_vis.py --testdir $testdir \
-                     --outpath $prefix-vid \
+                     --outpath $prefix-frz \
                      --seqname $seqname \
-                     --append_img yes \
-                     --append_render no
+                     --freeze \
+                     --vis_cam
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-bne \
                      --seqname $seqname \
                      --vp -1 \
-                     --vis_bones \
-                     --vis_cam
-python render_vis.py --testdir $testdir \
-                     --outpath $prefix-frz \
-                     --seqname $seqname \
-                     --freeze
+                     --vis_bones
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj0 \
                      --seqname $seqname \
@@ -38,6 +33,11 @@ python render_vis.py --testdir $testdir \
                      --seqname $seqname \
                      --vp 2 \
                      --vis_traj
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-vid \
+                     --seqname $seqname \
+                     --append_img yes \
+                     --append_render no
 #python render_vis.py --testdir $testdir \
 #                     --outpath $prefix-rst \
 #                     --seqname $seqname \

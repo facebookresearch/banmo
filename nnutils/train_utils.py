@@ -361,7 +361,7 @@ class v2s_trainer(Trainer):
 
             vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
             vol_o = F.softplus(vol_o)
-            threshold=torch.quantile(vol_o, 0.97)
+            threshold=torch.quantile(vol_o, 1-0.4*64**2/grid_size**2) # empirical value
             print('fraction occupied:', (vol_o > threshold).float().mean())
             vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
             vertices = (vertices - grid_size/2)/grid_size*2*bound

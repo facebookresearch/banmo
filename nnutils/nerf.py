@@ -89,11 +89,14 @@ class NeRF(nn.Module):
         self.skips = skips
 
         # xyz encoding layers
+        self.weights_reg = []
         for i in range(D):
             if i == 0:
                 layer = nn.Linear(in_channels_xyz, W)
+                self.weights_reg.append(f"xyz_encoding_{i+1}")
             elif i in skips:
                 layer = nn.Linear(W+in_channels_xyz, W)
+                self.weights_reg.append(f"xyz_encoding_{i+1}")
             else:
                 layer = nn.Linear(W, W)
             layer = nn.Sequential(layer, nn.ReLU(True))

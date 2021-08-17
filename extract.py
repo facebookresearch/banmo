@@ -18,7 +18,7 @@ from ext_utils.util_flow import write_pfm
 from ext_utils.flowlib import cat_imgflo 
 opts = flags.FLAGS
                 
-def save_output(rendered_seq, aux_seq, seqname):
+def save_output(rendered_seq, aux_seq, seqname, save_flo):
     save_dir = '%s/%s'%(opts.model_path.rsplit('/',1)[0],seqname)
     length = len(aux_seq['mesh'])
     aux_seq['mesh_rest'].export('%s-mesh-rest.obj'%save_dir)
@@ -64,19 +64,19 @@ def save_output(rendered_seq, aux_seq, seqname):
             
         img_gt = rendered_seq['img'][i]
         flo_gt = rendered_seq['flo'][i]
-        imgflo_gt = cat_imgflo(img_gt, flo_gt)
-        cv2.imwrite('%s-imgflo-gt-%05d.jpg'%(save_dir, idx), imgflo_gt)
-        flo_gt_vid.append(imgflo_gt)
+        if save_flo: img_gt = cat_imgflo(img_gt, flo_gt)
+        cv2.imwrite('%s-img-gt-%05d.jpg'%(save_dir, idx), img_gt)
+        flo_gt_vid.append(img_gt)
         
         img_p = rendered_seq['img_coarse'][i]
         flo_p = rendered_seq['flo_coarse'][i]
-        imgflo_p = cat_imgflo(img_p, flo_p)
-        cv2.imwrite('%s-imgflo-p-%05d.jpg'%(save_dir, idx), imgflo_p)
-        flo_p_vid.append(imgflo_p)
+        if save_flo: img_p = cat_imgflo(img_p, flo_p)
+        cv2.imwrite('%s-img-p-%05d.jpg'%(save_dir, idx), img_p)
+        flo_p_vid.append(img_p)
 
     fps = 1./(5./len(flo_p_vid))
-    imageio.mimsave('%s-imgflo-p.gif' %(save_dir), flo_p_vid, fps=fps)
-    imageio.mimsave('%s-imgflo-gt.gif'%(save_dir), flo_gt_vid,fps=fps)
+    imageio.mimsave('%s-img-p.gif' %(save_dir), flo_p_vid, fps=fps)
+    imageio.mimsave('%s-img-gt.gif'%(save_dir), flo_gt_vid,fps=fps)
 
 def transform_shape(mesh,rtk):
     """
@@ -102,7 +102,7 @@ def main(_):
     rendered_seq, aux_seq = trainer.eval(num_view=opts.num_test_views,
                                                     dynamic_mesh=dynamic_mesh) 
     rendered_seq = tensor2array(rendered_seq)
-    save_output(rendered_seq, aux_seq, seqname)
+    save_output(rendered_seq, aux_seq, seqname, save_flo=opts.use_corresp)
 
 if __name__ == '__main__':
     app.run(main)

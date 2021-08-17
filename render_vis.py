@@ -142,7 +142,6 @@ def main():
     pts_num = len(all_mesh[0].vertices)
     traj_num = min(1000, pts_num)
     traj_idx = np.random.choice(pts_num, traj_num)
-    mesh_cams = []
     scene_scale = np.abs(all_mesh[0].vertices).max()
 
     for i in range(len(all_mesh)):
@@ -170,7 +169,7 @@ def main():
         # change color according to time 
         if args.vis_cam:
             elips_list = [] 
-            for j in range(i+1):
+            for j in range(traj_len):
                 cam_rot  = all_cam[j][:3,:3].T
                 cam_tran = -cam_rot.dot(all_cam[j][:3,3:])[:,0]
             
@@ -179,7 +178,6 @@ def main():
                 elips.visual.vertex_colors = cmap(float(j)/traj_len)
                 elips_list.append(elips)
             mesh_cam = trimesh.util.concatenate(elips_list)
-            mesh_cams.append(mesh_cam)
 
     # store all the results
     input_size = all_anno[0][0].shape[:2]
@@ -250,8 +248,8 @@ def main():
         if args.vp==-1:
             # static camera
             vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
-            #vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0].dot(vp_rmat) # bev
-            vp_tmat = all_cam[0][:3,3] * 2.5
+#            vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0].dot(vp_rmat) # bev
+            vp_tmat = all_cam[0][:3,3]
             vp_kmat = all_cam[0][3]
         elif args.vp==1:
             vp_rmat = cv2.Rodrigues(np.asarray([0,np.pi/2,0]))[0]
@@ -288,7 +286,8 @@ def main():
             pts_trajs[i] = obj2cam_vis(pts_trajs[i], Rmat, Tmat)
 
         if args.vis_cam:
-            mesh_cams[i].vertices = obj2cam_vis(mesh_cams[i].vertices, Rmat, Tmat)
+            mesh_cam_transformed = mesh_cam.copy()
+            mesh_cam_transformed.vertices = obj2cam_vis(mesh_cam_transformed.vertices, Rmat, Tmat)
 
         # compute error if ground-truth is given
         if len(args.gtdir)>0:
@@ -349,9 +348,9 @@ def main():
             scene.add_node( Node(mesh=m)) 
             
         if args.vis_cam:
-            mesh_cam=Mesh.from_trimesh(mesh_cams[i],smooth=smooth)
-            mesh_cam._primitives[0].material.RoughnessFactor=1.
-            scene.add_node( Node(mesh=mesh_cam))
+            mesh_cam_transformed=Mesh.from_trimesh(mesh_cam_transformed,smooth=smooth)
+            mesh_cam_transformed._primitives[0].material.RoughnessFactor=1.
+            scene.add_node( Node(mesh=mesh_cam_transformed))
 
         floor_mesh = trimesh.load('./database/misc/wood.obj',process=False)
         floor_mesh.vertices = np.concatenate([floor_mesh.vertices[:,:1], floor_mesh.vertices[:,2:3], floor_mesh.vertices[:,1:2]],-1 )

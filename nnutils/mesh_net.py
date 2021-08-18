@@ -119,6 +119,7 @@ flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
 flags.DEFINE_integer('num_test_views', 0, 'number of test views, 0: use all viewsf')
 flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
+flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
 flags.DEFINE_bool('anneal_freq', False, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', None, 'maximum frequency for fourier features')
 flags.DEFINE_integer('freq_decay', None, 'maximum frequency for fourier feature regularization')
@@ -208,14 +209,15 @@ class v2s_net(nn.Module):
                 self.ks_param = nn.Parameter(self.ks)
 
         # densepose
-        if opts.use_dp:
+        if opts.flow_dp:
             with open('tmp/geodists_sheep_5004.pkl', 'rb') as f: 
                 geodists=pickle.load(f)
                 geodists = torch.Tensor(geodists).cuda(self.device)
                 geodists[0,:] = np.inf
                 geodists[:,0] = np.inf
                 self.geodists = geodists
-        
+
+        if opts.use_dp:
             with open('tmp/sheep_5004.pkl', 'rb') as f:
                 dp = pickle.load(f)
                 self.dp_verts = dp['vertices']
@@ -427,72 +429,71 @@ class v2s_net(nn.Module):
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)
 
+        if self.opts.flow_dp:
+            # densepose to correspondence
+            # downsample
+            h_rszd,w_rszd=h//4,w//4
+            hw_rszd = h_rszd*w_rszd
+            dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), mode='nearest')[:,0]
+            dps = dps.view(2,bs,-1).long()
+            dps_refr = dps.view(2*bs,-1)
+            dps_targ = dps.flip(0).view(2*bs,-1)
+            for idx in range(2*bs):
+                dp_refr = dps_refr[idx].view(-1,1).repeat(1,hw_rszd).view(-1,1)
+                dp_targ = dps_targ[idx].view(1,-1).repeat(hw_rszd,1).view(-1,1)
+                match = self.geodists[dp_refr, dp_targ]
+                dis_geo,match = match.view(hw_rszd, hw_rszd).min(1)
+                match[dis_geo>0.1] = 0
 
-        ## TODO densepose to correspondence
-        ## downsample
-        #h_rszd,w_rszd=h//4,w//4
-        #hw_rszd = h_rszd*w_rszd
-        #dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), mode='nearest')[:,0]
-        #dps = dps.view(2,bs,-1).long()
-        #dps_refr = dps.view(2*bs,-1)
-        #dps_targ = dps.flip(0).view(2*bs,-1)
-        #for idx in range(2*bs):
-        #    dp_refr = dps_refr[idx].view(-1,1).repeat(1,hw_rszd).view(-1,1)
-        #    dp_targ = dps_targ[idx].view(1,-1).repeat(hw_rszd,1).view(-1,1)
-        #    match = self.geodists[dp_refr, dp_targ]
-        #    dis_geo,match = match.view(hw_rszd, hw_rszd).min(1)
-        #    match[dis_geo>0.1] = 0
+                # cx,cy
+                tar_coord = torch.cat([match[:,None]%w_rszd, match[:,None]//w_rszd],-1)
+                tar_coord = tar_coord.view(h_rszd, w_rszd, 2).float()
+                ref_coord = torch.Tensor(np.meshgrid(range(w_rszd), range(h_rszd)))
+                ref_coord = ref_coord.to(self.device).permute(1,2,0).view(-1,2)
+                ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
+                flo_dp = (tar_coord - ref_coord) / w_rszd * 2
+                flo_dp = flo_dp.permute(2,0,1)
+                flo_dp = F.interpolate(flo_dp[None], (h,w), mode='bilinear')[0]
+                self.flow[idx] = flo_dp
 
-        #    # cx,cy
-        #    tar_coord = torch.cat([match[:,None]%w_rszd, match[:,None]//w_rszd],-1)
-        #    tar_coord = tar_coord.view(h_rszd, w_rszd, 2).float()
-        #    ref_coord = torch.Tensor(np.meshgrid(range(w_rszd), range(h_rszd)))
-        #    ref_coord = ref_coord.to(self.device).permute(1,2,0).view(-1,2)
-        #    ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
-        #    flo_dp = (tar_coord - ref_coord) / w_rszd * 2
-        #    flo_dp = flo_dp.permute(2,0,1)
-        #    flo_dp = F.interpolate(flo_dp[None], (h,w), mode='bilinear')[0]
-        #    self.flow[idx] = flo_dp
+            # clean up flow
+            self.occ = []
+            for idx in range(bs):
+                flo_refr = self.flow[idx]
+                flo_targ = self.flow[idx+bs]
+                img_refr = self.imgs[idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
+                img_targ= self.imgs[bs+idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
+                flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
+                flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
+                flo_refr_px = flo_refr * w / 2
+                flo_targ_px = flo_targ * w / 2
 
-        ## clean up flow
-        #self.occ = []
-        #for idx in range(bs):
-        #    flo_refr = self.flow[idx]
-        #    flo_targ = self.flow[idx+bs]
-        #    img_refr = self.imgs[idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
-        #    img_targ= self.imgs[bs+idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
-        #    flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
-        #    flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
-        #    flo_refr_px = flo_refr * w / 2
-        #    flo_targ_px = flo_targ * w / 2
+                #fb check
+                x0,y0  =np.meshgrid(range(w),range(h))
+                hp0 = np.stack([x0,y0],-1) # screen coord
 
-        #    #fb check
-        #    x0,y0  =np.meshgrid(range(w),range(h))
-        #    hp0 = np.stack([x0,y0],-1) # screen coord
+                flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
+                flo_fb = flo_fb*2/w
+                fberr_fw = np.linalg.norm(flo_fb, 2,-1)
+                self.occ.append(torch.Tensor(fberr_fw[None]))
 
-        #    flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
-        #    flo_fb = flo_fb*2/w
-        #    fberr_fw = np.linalg.norm(flo_fb, 2,-1)
-        #    self.occ.append(torch.Tensor(fberr_fw[None]))
+                flo_bf = warp_flow(hp0 + flo_refr_px, flo_targ_px) - hp0
+                flo_bf = flo_bf*2/w
+                fberr_bw = np.linalg.norm(flo_bf, 2,-1)
+                self.occ.append(torch.Tensor(fberr_bw[None]))
 
-        #    flo_bf = warp_flow(hp0 + flo_refr_px, flo_targ_px) - hp0
-        #    flo_bf = flo_bf*2/w
-        #    fberr_bw = np.linalg.norm(flo_bf, 2,-1)
-        #    self.occ.append(torch.Tensor(fberr_bw[None]))
-
-        #    # vis
-        #    thrd = 0.03
-        #    flo_refr[:,:,0] = (flo_refr[:,:,0] + 2)/2
-        #    flo_targ[:,:,0] = (flo_targ[:,:,0] - 2)/2
-        #    flo_refr[(fberr_fw>thrd)]=0.
-        #    flo_targ[(fberr_bw>thrd)]=0.
-        #    img = np.concatenate([img_refr, img_targ], 1)
-        #    flo = np.concatenate([flo_refr, flo_targ], 1)
-        #    imgflo = cat_imgflo(img, flo)
-        #    cv2.imwrite('tmp/imgflo-%05d.jpg'%(idx), imgflo)
-        #self.occ = torch.cat(self.occ, 0).to(self.device)
-        #self.occ = self.occ.view(-1,2,h,w).permute(1,0,2,3).reshape(-1,h,w)
-        #pdb.set_trace()
+            #    # vis
+            #    thrd = 0.03
+            #    flo_refr[:,:,0] = (flo_refr[:,:,0] + 2)/2
+            #    flo_targ[:,:,0] = (flo_targ[:,:,0] - 2)/2
+            #    flo_refr[(fberr_fw>thrd)]=0.
+            #    flo_targ[(fberr_bw>thrd)]=0.
+            #    img = np.concatenate([img_refr, img_targ], 1)
+            #    flo = np.concatenate([flo_refr, flo_targ], 1)
+            #    imgflo = cat_imgflo(img, flo)
+            #    cv2.imwrite('tmp/imgflo-%05d.jpg'%(idx), imgflo)
+            self.occ = torch.cat(self.occ, 0).to(self.device)
+            self.occ = self.occ.view(-1,2,h,w).permute(1,0,2,3).reshape(-1,h,w)
  
         ## TODO
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]

@@ -109,7 +109,7 @@ class v2s_trainer(Trainer):
         params_bones=[]
         params_ks=[]
         params_nerf_dp=[]
-        params_sim3_dp=[]
+        params_sim3_j2c=[]
         for name,p in self.model.named_parameters():
             if 'nerf_coarse' in name:
                 params_nerf_coarse.append(p)
@@ -129,8 +129,8 @@ class v2s_trainer(Trainer):
                 params_ks.append(p)
             elif 'nerf_dp' == name:
                 params_nerf_dp.append(p)
-            elif 'sim3_dp' == name:
-                params_sim3_dp.append(p)
+            elif 'sim3_j2c' == name:
+                params_sim3_j2c.append(p)
             else: continue
             print(name)
                 
@@ -144,7 +144,7 @@ class v2s_trainer(Trainer):
              {'params': params_bones},
              {'params': params_ks},
              {'params': params_nerf_dp},
-             {'params': params_sim3_dp},
+             {'params': params_sim3_j2c},
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
@@ -158,7 +158,7 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_bones
             opts.learning_rate, # params_ks
             opts.learning_rate, # params_nerf_dp
-            opts.learning_rate, # params_sim3_dp
+            opts.learning_rate, # params_sim3_j2c
             ],
             self.model.final_steps,
             pct_start=2./opts.num_epochs, # use 2 epochs to warm up
@@ -241,6 +241,8 @@ class v2s_trainer(Trainer):
 
                 # save cams
                 aux_seq['rtk'].append(self.model.rtk[0].cpu().numpy())
+
+                #TODO need to save a video-specific sim3
                 
                 # save image list
                 impath = self.model.impath[self.model.frameid[0].long()]

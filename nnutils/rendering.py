@@ -254,7 +254,7 @@ def render_rays(models,
         flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, code=time_embedded)
         xyz_coarse_sampled=xyz_coarse_sampled + flow_bw
         
-        # cycle loss
+        # cycle loss (in the joint canonical space)
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
         flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, code=time_embedded)
         frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
@@ -284,6 +284,7 @@ def render_rays(models,
                                     code=time_embedded_target)
             xyz_coarse_target=xyz_coarse_sampled + flow_fw
 
+
     elif 'bones' in models.keys():
         # backward skinning
         bones = models['bones']
@@ -292,7 +293,7 @@ def render_rays(models,
         xyz_coarse_sampled, skin, bones_dfm = lbs(bones, 
                                                   bone_rts_fw, 
                                                   xyz_coarse_sampled)
-        # cycle loss
+        # cycle loss (in the joint canonical space)
         xyz_coarse_frame_cyc,_,_ = lbs(bones, bone_rts_fw,
                                        xyz_coarse_sampled,backward=False)
         frame_cyc_dis = (xyz_coarse_frame - xyz_coarse_frame_cyc).norm(2,-1)
@@ -318,6 +319,7 @@ def render_rays(models,
             bone_rts_target = rays['bone_rts_target']
             xyz_coarse_target,_,_ = lbs(bones, bone_rts_target, 
                                     xyz_coarse_sampled,backward=False)
+            
 
     if test_time:
         weights_coarse, sigmas = \
@@ -332,6 +334,10 @@ def render_rays(models,
                   'depth_coarse': depth_coarse,
                   'sil_coarse': weights_coarse[:,:-1].sum(1),
                  }
+    
+    # similarity transform to the video canoical space
+    xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat_j2c, Tmat_j2c)
+    xyz_coarse_target = xyz_coarse_target * Smat_j2c
 
     # compute correspondence: root space to target view space
     # RT: root space to camera space

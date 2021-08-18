@@ -151,8 +151,8 @@ class v2s_net(nn.Module):
         except: self.near_far = None
         
         # video specific sim3: from video to joint canonical space
-        self.sim3_dp= generate_bones(self.num_vid, self.num_vid, 0, self.device)
-        self.sim3_dp = nn.Parameter(self.sim3_dp)
+        self.sim3_j2c= generate_bones(self.num_vid, self.num_vid, 0, self.device)
+        self.sim3_j2c = nn.Parameter(self.sim3_j2c)
 
         # set nerf model
         self.num_freqs = 10
@@ -280,7 +280,7 @@ class v2s_net(nn.Module):
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
         # pass the canonical to joint space transforms
-        rays['sim3_j2c'] = self.sim3_dp[self.dataid.long()]
+        rays['sim3_j2c'] = self.sim3_j2c[self.dataid.long()]
         rays['sim3_j2c'] = rays['sim3_j2c'][:,None].repeat(1,rays['nsample'],1)
 
         # render rays

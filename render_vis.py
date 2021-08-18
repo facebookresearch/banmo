@@ -225,8 +225,8 @@ def main():
             img_size = max(refimg.shape)
             if args.freeze: refmesh = all_mesh[0]
             elif args.rest: refmesh = mesh_rest
-            refmesh.vertices -= refmesh.vertices.mean(0)[None]
-            refmesh.vertices /= 1.2*np.abs(refmesh.vertices).max()
+            #refmesh.vertices -= refmesh.vertices.mean(0)[None]
+            #refmesh.vertices /= 1.2*np.abs(refmesh.vertices).max()
             refcam = all_cam[0].copy()
             rot_turntb = cv2.Rodrigues(np.asarray([0.,i*2*np.pi/size,0.]))[0]
             refcam[:3,:3] = rot_turntb.dot( refcam[:3,:3] ) 

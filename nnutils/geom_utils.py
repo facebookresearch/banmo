@@ -44,6 +44,21 @@ def rts_invert(rts_in):
     rts_i = rts_i.view(rts_in.shape)
     return rts_i
 
+def vec_to_sim3(vec):
+    """
+    vec:      ...,10
+    center:   ...,3
+    orient:   ...,3,3
+    scale:    ...,3
+    """
+    center = vec[...,:3]
+    orient = vec[...,3:7] # real first
+    orient = F.normalize(orient, 2,-1)
+    orient = transforms.quaternion_to_matrix(orient) # real first
+    scale =  vec[...,7:10].exp()
+    return center, orient, scale
+    
+
 def skinning(bones, pts):
     """
     bone: bs,B,10  - B gaussian ellipsoids
@@ -55,13 +70,9 @@ def skinning(bones, pts):
     bones = bones.view(-1,B,10)
     pts = pts.view(-1,N,3)
     bs = pts.shape[0]
-    
-    center = bones[:,:,:3]
-    orient = bones[:,:,3:7] # real first
-    orient = F.normalize(orient, 2,-1)
-    orient = transforms.quaternion_to_matrix(orient) # real first
+   
+    center, orient, scale = vec_to_sim3(bones) 
     orient = orient.permute(0,1,3,2) # transpose R
-    scale =  bones[:,:,7:10].exp()
 
     # mahalanobis distance [(p-v)^TR^T]S[R(p-v)]
     # transform a vector to the local coordinate

@@ -27,7 +27,7 @@ from nnutils.nerf import Embedding, NeRF, RTHead
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
-                                canonical2ndc
+                                canonical2ndc, obj_to_cam, vec_to_sim3
 from nnutils.rendering import render_rays
 from ext_utils.flowlib import cat_imgflo 
 from ext_utils.flowlib import warp_flow
@@ -206,7 +206,9 @@ class v2s_net(nn.Module):
                 self.geodists = geodists
         
             with open('tmp/sheep_5004.pkl', 'rb') as f:
-                self.dp_verts = pickle.load(f)['vertices']
+                dp = pickle.load(f)
+                self.dp_verts = dp['vertices']
+                self.dp_faces = dp['faces']
                 self.dp_verts = torch.Tensor(self.dp_verts).cuda(self.device)
 
                 # normalize
@@ -216,6 +218,8 @@ class v2s_net(nn.Module):
 
             self.nerf_dp = NeRF(in_channels_xyz=in_channels_xyz,
                                 in_channels_dir=0, raw_feat=True)
+            self.sim3_dp= generate_bones(1, 1, 0, self.device)
+            self.sim3_dp = nn.Parameter(self.sim3_dp)
 
 
         if opts.N_importance>0:
@@ -329,7 +333,12 @@ class v2s_net(nn.Module):
             # cse to video canonical model: deform then rotate/translate
             dp_verts_embedded = self.embedding_xyz(self.dp_verts)
             dp_canonical_flo = self.nerf_dp(dp_verts_embedded)
+            dp_canonical_flo = 0.
             dp_canonical_pts = dp_canonical_flo + self.dp_verts
+             
+            Tmat, Rmat, Smat = vec_to_sim3(self.sim3_dp)
+            dp_canonical_pts = dp_canonical_pts*Smat
+            dp_canonical_pts = obj_to_cam(dp_canonical_pts, Rmat, Tmat)
             
             # project to image: apply deformation, root body pose, and projection
             dp_px = canonical2ndc(self, dp_canonical_pts, rtk, kaug, frameid)
@@ -349,23 +358,30 @@ class v2s_net(nn.Module):
             dp_err = dp_err * dp_valid_idx.float()
             
             # visualize cse predictions
-            dp_pts_vis = self.dp_verts[self.dps.long()] # bs, h, w
-            dp_pts_vis = dp_pts_vis - dp_pts_vis.min(1)[0].min(1)[0][:,None,None]
-            dp_pts_vis = dp_pts_vis / dp_pts_vis.max(1)[0].max(1)[0][:,None,None]
-            
-            dp_can_vis = dp_canonical_pts[self.dps.long()] # bs, h, w
-            dp_can_vis = dp_can_vis - dp_can_vis.min(1)[0].min(1)[0][:,None,None]
-            dp_can_vis = dp_can_vis / dp_can_vis.max(1)[0].max(1)[0][:,None,None]
-         #   cv2.imwrite('0.png', dp_pts_vis.cpu().numpy()[0]*255)  
-         #   trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
-         #      vertex_colors=self.imgs[0].view(-1,3).cpu()).export('0.obj')
-         #   trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
-         # vertex_colors=dp_pts_vis[0].view(-1,3).cpu()).export('1.obj')
+            def pts_vis(pts, index):
+                """
+                pts: N,3
+                index: ...
+                vis_idx: ..., 3
+                """
+                vis = pts
+                vis = vis - vis.min(0)[0][None]
+                vis = vis / vis.max(0)[0][None]
+                vis_idx = vis[index.long()] # bs, h, w, 3
+                return vis, vis_idx
 
+            dp_can_vis, dp_can_vis_px = pts_vis(dp_canonical_pts, self.dps)
+            dp_pts_vis, dp_pts_vis_px          = pts_vis(self.dp_verts,    self.dps)
             results['dp_err'] = dp_err[...,None]
             results['dp_valid_idx'] = dp_valid_idx[...,None]
-            results['dp_can_vis'] = dp_can_vis
-            results['dp_pts_vis'] = dp_pts_vis
+            results['dp_can_vis'] = dp_can_vis_px
+            results['dp_pts_vis'] = dp_pts_vis_px
+         
+            #pdb.set_trace()
+            #trimesh.Trimesh(self.dp_verts.cpu(), self.dp_faces,
+            #        vertex_colors=dp_pts_vis.cpu()).export('0.obj')
+            #trimesh.Trimesh(dp_canonical_pts.cpu(), self.dp_faces,
+            #        vertex_colors=dp_pts_vis.cpu()).export('1.obj')
                
         
         return results, rand_inds
@@ -403,7 +419,6 @@ class v2s_net(nn.Module):
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)
 
-        self.sils = self.masks.clone()
 
         ## TODO densepose to correspondence
         ## downsample
@@ -473,9 +488,12 @@ class v2s_net(nn.Module):
  
         ## TODO
         #self.frameid = self.frameid + (self.dataid*20)
+        self.sils = self.masks.clone()
         if self.opts.bg: self.masks[:] = 1
         self.masks = (self.masks*self.vis2d)>0
         self.masks = self.masks.float()
+        self.sils = (self.sils*self.vis2d)>0
+        self.sils =  self.sils.float()
 
         bs = self.imgs.shape[0]
         if not self.opts.use_cam:
@@ -511,7 +529,7 @@ class v2s_net(nn.Module):
         
         if self.opts.anneal_freq:
             alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
-            alpha = min(max(0, alpha),self.num_freqs) # alpha from 0 to 10
+            alpha = min(max(3, alpha),self.num_freqs) # alpha from 3 to 10
             self.embedding_xyz.alpha = alpha 
             self.embedding_dir.alpha = alpha 
 

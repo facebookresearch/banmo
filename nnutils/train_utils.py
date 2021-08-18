@@ -94,7 +94,8 @@ class v2s_trainer(Trainer):
         params_embed=[]
         params_bones=[]
         params_ks=[]
-        params_dp=[]
+        params_nerf_dp=[]
+        params_sim3_dp=[]
         for name,p in self.model.named_parameters():
             if 'nerf_coarse' in name:
                 params_nerf_coarse.append(p)
@@ -113,7 +114,9 @@ class v2s_trainer(Trainer):
             elif 'ks' == name:
                 params_ks.append(p)
             elif 'nerf_dp' == name:
-                params_dp.append(p)
+                params_nerf_dp.append(p)
+            elif 'sim3_dp' == name:
+                params_sim3_dp.append(p)
             else: continue
             print(name)
                 
@@ -126,7 +129,8 @@ class v2s_trainer(Trainer):
              {'params': params_embed},
              {'params': params_bones},
              {'params': params_ks},
-             {'params': params_dp},
+             {'params': params_nerf_dp},
+             {'params': params_sim3_dp},
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
@@ -139,7 +143,8 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
             opts.learning_rate, # params_ks
-            opts.learning_rate, # params_dp
+            opts.learning_rate, # params_nerf_dp
+            opts.learning_rate, # params_sim3_dp
             ],
             self.model.final_steps,
             pct_start=2./opts.num_epochs, # use 2 epochs to warm up
@@ -361,7 +366,10 @@ class v2s_trainer(Trainer):
 
             vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
             vol_o = F.softplus(vol_o)
-            threshold=torch.quantile(vol_o, 1-0.4*64**2/grid_size**2) # empirical value
+            if opts.bg: 
+                percentage_th = 0.4*64**2/grid_size**2
+                threshold=torch.quantile(vol_o, 1-percentage_th) # empirical value
+            else: threshold = 20
             print('fraction occupied:', (vol_o > threshold).float().mean())
             vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
             vertices = (vertices - grid_size/2)/grid_size*2*bound

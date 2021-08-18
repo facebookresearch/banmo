@@ -4,7 +4,7 @@ import sys
 import pdb
 
 partition='devlab'
-#partition='learnfair'
+#partition='learnlab'
 executor = submitit.AutoExecutor(folder="/private/home/gengshany/newStart")  # submission interface (logs are dumped in the folder)
 
 cmd_str = "bash"

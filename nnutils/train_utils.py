@@ -53,11 +53,12 @@ class v2s_trainer(Trainer):
             with open(log_file, 'w') as f:
                 for k in dir(opts): f.write('{}: {}\n'.format(k, opts.__getattr__(k)))
 
-    def define_model(self, no_ddp=False, half_bones=False):
+    def define_model(self, data_info, no_ddp=False, half_bones=False):
         opts = self.opts
         img_size = (opts.img_size, opts.img_size)
         self.device = torch.device('cuda:{}'.format(opts.local_rank))
-        self.model = mesh_net.v2s_net(img_size, opts, half_bones=half_bones)
+        self.model = mesh_net.v2s_net(img_size, opts, data_info,
+                                     half_bones=half_bones)
 
         if opts.model_path!='':
             self.load_network(opts.model_path)
@@ -81,6 +82,19 @@ class v2s_trainer(Trainer):
     def init_dataset(self):
         self.dataloader = frameloader.data_loader(self.opts)
         self.evalloader = frameloader.eval_loader(self.opts)
+
+        data_info = {}
+        # compute data offset
+        dataset_list = self.evalloader.dataset.datasets
+        data_offset = [0]
+        impath = []
+        for dataset in dataset_list:
+            #data_offset.append( 100 )
+            impath += dataset.imglist
+            data_offset.append(len(dataset.imglist))
+        data_info['offset'] = np.asarray(data_offset)[:-1]
+        data_info['impath'] = impath
+        return data_info
     
     def init_training(self):
         opts = self.opts
@@ -190,44 +204,47 @@ class v2s_trainer(Trainer):
             aux_seq = {'mesh_rest': mesh_dict_rest['mesh'],
                        'mesh':[],
                        'rtk':[],
-                       'idx':[],
+                       'impath':[],
                        'bone':[],}
-            for i,batch in enumerate(self.evalloader):
-                if i in idx_render:
-                    print('extracting frame %d'%(i))
-                    rendered = self.render_vid(self.model, batch)
-                    for k, v in rendered.items():
-                        rendered_seq[k] += [v]
+
+            for i in idx_render:
+                batch = self.evalloader.dataset[i]
+                batch = self.evalloader.collate_fn([batch])
+                print('extracting frame %d'%(i))
+                rendered = self.render_vid(self.model, batch)
+                for k, v in rendered.items():
+                    rendered_seq[k] += [v]
 
 
-                    # save images
-                    rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:1]]
-                    rendered_seq['sil'] += [self.model.masks[...,None]      [:1]]
-                    rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:1]]
-                    rendered_seq['dpc'] += [self.model.dps[...,None]      [:1]]
-                    rendered_seq['occ'] += [self.model.occ[...,None]      [:1]]
-                    rendered_seq['flo_coarse'][-1] *= rendered_seq['sil_coarse'][-1]
+                # save images
+                rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:1]]
+                rendered_seq['sil'] += [self.model.masks[...,None]      [:1]]
+                rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:1]]
+                rendered_seq['dpc'] += [self.model.dps[...,None]      [:1]]
+                rendered_seq['occ'] += [self.model.occ[...,None]      [:1]]
+                rendered_seq['flo_coarse'][-1] *= rendered_seq['sil_coarse'][-1]
 
-                    # run marching cubes
-                    if dynamic_mesh:
-                        if not opts.queryfw:
-                           mesh_dict_rest=None 
-                        mesh_dict = self.extract_mesh(self.model,opts.chunk,
-                                            opts.sample_grid3d, 
-                                        frameid=i, mesh_dict_in=mesh_dict_rest)
-                        aux_seq['mesh'].append(mesh_dict['mesh'])
+                # run marching cubes
+                if dynamic_mesh:
+                    if not opts.queryfw:
+                       mesh_dict_rest=None 
+                    mesh_dict = self.extract_mesh(self.model,opts.chunk,
+                                        opts.sample_grid3d, 
+                                    frameid=i, mesh_dict_in=mesh_dict_rest)
+                    aux_seq['mesh'].append(mesh_dict['mesh'])
 
-                        # save bones
-                        if 'bones' in mesh_dict.keys():
-                            aux_seq['bone'].append(mesh_dict['bones'][0].cpu().numpy())
-                    else:
-                        aux_seq['mesh'].append(mesh_dict_rest['mesh'])
+                    # save bones
+                    if 'bones' in mesh_dict.keys():
+                        aux_seq['bone'].append(mesh_dict['bones'][0].cpu().numpy())
+                else:
+                    aux_seq['mesh'].append(mesh_dict_rest['mesh'])
 
-                    # save cams
-                    aux_seq['rtk'].append(self.model.rtk[0].cpu().numpy())
-                    
-                    # save image list
-                    aux_seq['idx'].append(self.model.frameid[0])
+                # save cams
+                aux_seq['rtk'].append(self.model.rtk[0].cpu().numpy())
+                
+                # save image list
+                impath = self.model.impath[self.model.frameid[0].long()]
+                aux_seq['impath'].append(impath)
 
             for k,v in rendered_seq.items():
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)

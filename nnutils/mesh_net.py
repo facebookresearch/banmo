@@ -38,8 +38,6 @@ flags.DEFINE_integer('ngpu', 1, 'number of gpus to use')
 flags.DEFINE_float('random_geo', 1, 'Random geometric augmentation')
 flags.DEFINE_string('seqname', 'syn-spot-40', 'name of the sequence')
 flags.DEFINE_integer('img_size', 256, 'image size')
-flags.DEFINE_float('padding_frac', 0.05, 'bbox is increased by this fraction of max_dim')
-flags.DEFINE_float('jitter_frac', 0.05, 'bbox is jittered by this fraction of max_dim')
 flags.DEFINE_enum('split', 'train', ['train', 'val', 'all', 'test'], 'eval split')
 flags.DEFINE_integer('num_kps', 15, 'The dataloader should override these.')
 flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
@@ -130,7 +128,7 @@ flags.DEFINE_bool('use_viser', False, 'whether to use viser')
 flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 
 class v2s_net(nn.Module):
-    def __init__(self, input_shape, opts, half_bones):
+    def __init__(self, input_shape, opts, data_info, half_bones):
         super(v2s_net, self).__init__()
         self.opts = opts
         self.cnn_shape = (opts.cnn_shape,opts.cnn_shape)
@@ -138,11 +136,23 @@ class v2s_net(nn.Module):
         self.config = configparser.RawConfigParser()
         self.config.read('configs/%s.config'%opts.seqname)
 
+        # multi-video mode
+        self.num_vid =  len(self.config.sections())-1
+        self.data_offset = data_info['offset']
+        self.impath      = data_info['impath']
+
         # get near-far plane
         try:
-            self.near_far = [float(i) for i in\
-                         self.config.get('data_0', 'near_far').split(',')]
+            self.near_far = []
+            for nvid in range(self.num_vid):
+                self.near_far.append( [float(i) for i in\
+                        self.config.get('data_%d'%nvid, 'near_far').split(',')])
+            self.near_far = np.asarray(self.near_far).astype(np.float32) #TODO need to save it
         except: self.near_far = None
+        
+        # video specific sim3: from video to joint canonical space
+        self.sim3_dp= generate_bones(self.num_vid, self.num_vid, 0, self.device)
+        self.sim3_dp = nn.Parameter(self.sim3_dp)
 
         # set nerf model
         self.num_freqs = 10
@@ -191,6 +201,7 @@ class v2s_net(nn.Module):
                                 in_channels_xyz=max_t, D=4, in_channels_dir=0,
                                 out_channels=7, raw_feat=True))
 
+                # TODO: change according to multiple video
                 fx,fy,px,py=[int(float(i)) for i in \
                             self.config.get('data_0', 'ks').split(',')]
                 self.ks = torch.Tensor([fx,fy,px,py]).to(self.device)
@@ -214,13 +225,10 @@ class v2s_net(nn.Module):
                 # normalize
                 self.dp_verts -= self.dp_verts.mean(0)[None]
                 self.dp_verts /= self.dp_verts.abs().max()
-                self.dp_verts *= (self.near_far[0] + self.near_far[1]) / 2
+                self.dp_verts *= (self.near_far[:,1] - self.near_far[:,0]).mean()/2
 
             self.nerf_dp = NeRF(in_channels_xyz=in_channels_xyz,
                                 in_channels_dir=0, raw_feat=True)
-            self.sim3_dp= generate_bones(1, 1, 0, self.device)
-            self.sim3_dp = nn.Parameter(self.sim3_dp)
-
 
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
@@ -246,7 +254,8 @@ class v2s_net(nn.Module):
 
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
-        rays = raycast(xys, Rmat, Tmat, Kinv, self.near_far)
+        near_far = self.near_far[self.dataid.long()]
+        rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
 
         # update rays
         if bs>1:
@@ -269,6 +278,10 @@ class v2s_net(nn.Module):
         elif opts.lbs:
             bone_rts = self.nerf_bone_rts(frameid)
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
+
+        # pass the canonical to joint space transforms
+        rays['sim3_j2c'] = self.sim3_dp[self.dataid.long()]
+        rays['sim3_j2c'] = rays['sim3_j2c'][:,None].repeat(1,rays['nsample'],1)
 
         # render rays
         bs_rays = rays['bs']
@@ -333,13 +346,8 @@ class v2s_net(nn.Module):
             # cse to video canonical model: deform then rotate/translate
             dp_verts_embedded = self.embedding_xyz(self.dp_verts)
             dp_canonical_flo = self.nerf_dp(dp_verts_embedded)
-            dp_canonical_flo = 0.
             dp_canonical_pts = dp_canonical_flo + self.dp_verts
              
-            Tmat, Rmat, Smat = vec_to_sim3(self.sim3_dp)
-            dp_canonical_pts = dp_canonical_pts*Smat
-            dp_canonical_pts = obj_to_cam(dp_canonical_pts, Rmat, Tmat)
-            
             # project to image: apply deformation, root body pose, and projection
             dp_px = canonical2ndc(self, dp_canonical_pts, rtk, kaug, frameid)
             dp_px = [dp_px[i][self.dps[i].long()][None] for i in range(bs)] # bs, h, w
@@ -487,7 +495,7 @@ class v2s_net(nn.Module):
         #pdb.set_trace()
  
         ## TODO
-        #self.frameid = self.frameid + (self.dataid*20)
+        self.frameid = self.frameid + self.data_offset[self.dataid.long()]
         self.sils = self.masks.clone()
         if self.opts.bg: self.masks[:] = 1
         self.masks = (self.masks*self.vis2d)>0
@@ -502,7 +510,7 @@ class v2s_net(nn.Module):
             if self.near_far is None:
                 self.rtk[:,2,3] = 3. # TODO heuristics of depth=3xobject size
             else:
-                self.rtk[:,2,3] = np.asarray(self.near_far).mean()
+                self.rtk[:,2,3] = self.near_far.mean() # TODO need to deal with multi-videl
        
         if self.opts.root_opt:
             frameid = self.frameid.long().to(self.device)

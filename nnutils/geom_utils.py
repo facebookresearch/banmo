@@ -31,6 +31,17 @@ def bone_transform(bones_in, rts):
     bones = torch.cat([center,orient,scale],-1)
     return bones 
 
+def rtmat_invert(Rmat, Tmat):
+    """
+    Rmat: ...,3,3   - rotations
+    Tmat: ...,3   - translations
+    """
+    rts = torch.cat([Rmat, Tmat[...,None]],-1)
+    rts_i = rts_invert(rts)
+    Rmat_i = rts_i[...,:3,:3] # bs, B, 3,3
+    Tmat_i = rts_i[...,:3,3]
+    return Rmat_i, Tmat_i
+
 def rts_invert(rts_in):
     """
     rts: ...,3,4   - B ririd transforms
@@ -345,8 +356,8 @@ def raycast(xys, Rmat, Tmat, Kinv, near_far):
     ray_origins = -Tmat.matmul(Rmat) # transpose -> right multiply
 
     if near_far is not None:
-        znear= torch.ones(bs,nsample,1).to(device) *  near_far[0]
-        zfar = torch.ones(bs,nsample,1).to(device) *  near_far[1]
+        znear= (torch.ones(bs,nsample,1) * near_far[:,0,None,None]).to(device) 
+        zfar = (torch.ones(bs,nsample,1) * near_far[:,1,None,None]).to(device) 
     else:
         #TODO need a better way to bound raycast
         lbound, ubound=[-1.5,1.5]

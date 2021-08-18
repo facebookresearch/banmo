@@ -23,6 +23,7 @@ from pyrender import IntrinsicsCamera,Mesh, Node, Scene,OffscreenRenderer
 import configparser
 import matplotlib
 cmap = matplotlib.cm.get_cmap('cool')
+from utils.io import config_to_dataloader
 
 parser = argparse.ArgumentParser(description='render mesh')
 parser.add_argument('--testdir', default='',
@@ -104,13 +105,15 @@ def main():
     all_cam = []
     all_fr = []
 
-    config = configparser.RawConfigParser()
-    config.read('configs/template.config')
-    datapath = '%s/%s'%(str(config.get('data', 'datapath')), args.seqname)
-    init_frame = int(config.get('data', 'init_frame'))
-    end_frame = int(config.get('data', 'end_frame'))
-    dframe = int(config.get('data', 'dframe'))
-    for name in sorted(glob.glob('%s/*'%datapath))[init_frame:end_frame][::dframe]:
+    opts_dict = {}
+    opts_dict['seqname'] = args.seqname
+    opts_dict['img_size'] = 512 # dummy value
+    datasets = config_to_dataloader(opts_dict,is_eval=True)
+    imglist = []
+    for dataset in datasets.datasets:
+        imglist += dataset.imglist[:-1] # excluding the last frame
+
+    for name in imglist:
         rgb_img = cv2.imread(name)
         try: sil_img = cv2.imread(name.replace('JPEGImages', 'Annotations').replace('.jpg', '.png'),0)[:,:,None]
         except: sil_img = np.zeros(rgb_img.shape)[:,:,0]

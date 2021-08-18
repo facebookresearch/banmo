@@ -54,11 +54,9 @@ class BaseDataset(Dataset):
         # self.anno
         # self.anno_sfm
         self.opts = opts
-        self.img_size = opts.img_size
-        self.jitter_frac = opts.jitter_frac
-        self.padding_frac = opts.padding_frac
+        self.img_size = opts['img_size']
+        self.random_geo = 1.
         self.filter_key = filter_key
-        self.random_geo = opts.random_geo
         self.flip=0
     
     def mirror_image(self, img, mask):
@@ -216,7 +214,7 @@ class BaseDataset(Dataset):
         length = (int(crop_factor*length[0]), int(crop_factor*length[1]))
         lengthn= (int(crop_factor*lengthn[0]),int(crop_factor*lengthn[1]))
 
-        maxw=self.opts.img_size;maxh=self.opts.img_size
+        maxw=self.img_size;maxh=self.img_size
         orisize = (2*length[0], 2*length[1])
         orisizen= (2*lengthn[0], 2*lengthn[1])
         alp =  [orisize[0]/maxw  ,orisize[1]/maxw]

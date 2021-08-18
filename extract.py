@@ -19,14 +19,17 @@ from ext_utils.flowlib import cat_imgflo
 opts = flags.FLAGS
                 
 def save_output(rendered_seq, aux_seq, seqname, save_flo):
-    save_dir = '%s/%s'%(opts.model_path.rsplit('/',1)[0],seqname)
+    save_dir = '%s/'%(opts.model_path.rsplit('/',1)[0])
     length = len(aux_seq['mesh'])
-    aux_seq['mesh_rest'].export('%s-mesh-rest.obj'%save_dir)
+    aux_seq['mesh_rest'].export('%s/mesh-rest.obj'%save_dir)
 
     flo_gt_vid = []
     flo_p_vid = []
     for i in range(length):
-        idx = int(aux_seq['idx'][i])
+        impath = aux_seq['impath'][i]
+        seqname = impath.split('/')[-2]
+        save_prefix = '%s/%s'%(save_dir,seqname)
+        idx = int(impath.split('/')[-1].split('.')[-2])
         mesh = aux_seq['mesh'][i]
         rtk = aux_seq['rtk'][i]
 
@@ -57,26 +60,26 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
             colormap = label_colormap()[:B]
             colormap= np.tile(colormap[:,None], (1,N_elips,1)).reshape((-1,3))
             elips.visual.vertex_colors[:len(colormap),:3] = colormap
-            elips.export('%s-bone-%05d.obj'%(save_dir, idx))
+            elips.export('%s-bone-%05d.obj'%(save_prefix, idx))
         
-        mesh.export('%s-mesh-%05d.obj'%(save_dir, idx))
-        np.savetxt('%s-cam-%05d.txt'%(save_dir, idx), rtk)
+        mesh.export('%s-mesh-%05d.obj'%(save_prefix, idx))
+        np.savetxt('%s-cam-%05d.txt'  %(save_prefix, idx), rtk)
             
         img_gt = rendered_seq['img'][i]
         flo_gt = rendered_seq['flo'][i]
         if save_flo: img_gt = cat_imgflo(img_gt, flo_gt)
-        cv2.imwrite('%s-img-gt-%05d.jpg'%(save_dir, idx), img_gt)
+        cv2.imwrite('%s-img-gt-%05d.jpg'%(save_prefix, idx), img_gt)
         flo_gt_vid.append(img_gt)
         
         img_p = rendered_seq['img_coarse'][i]
         flo_p = rendered_seq['flo_coarse'][i]
         if save_flo: img_p = cat_imgflo(img_p, flo_p)
-        cv2.imwrite('%s-img-p-%05d.jpg'%(save_dir, idx), img_p)
+        cv2.imwrite('%s-img-p-%05d.jpg'%(save_prefix, idx), img_p)
         flo_p_vid.append(img_p)
 
     fps = 1./(5./len(flo_p_vid))
-    imageio.mimsave('%s-img-p.gif' %(save_dir), flo_p_vid, fps=fps)
-    imageio.mimsave('%s-img-gt.gif'%(save_dir), flo_gt_vid,fps=fps)
+    imageio.mimsave('%s-img-p.gif' %(save_prefix), flo_p_vid, fps=fps)
+    imageio.mimsave('%s-img-gt.gif'%(save_prefix), flo_gt_vid,fps=fps)
 
 def transform_shape(mesh,rtk):
     """
@@ -94,8 +97,8 @@ def transform_shape(mesh,rtk):
 
 def main(_):
     trainer = v2s_trainer(opts)
-    trainer.init_dataset()    
-    trainer.define_model(no_ddp=True, half_bones=True)
+    data_info = trainer.init_dataset()    
+    trainer.define_model(data_info, no_ddp=True, half_bones=True)
     seqname=opts.seqname
 
     dynamic_mesh = opts.flowbw or opts.lbs

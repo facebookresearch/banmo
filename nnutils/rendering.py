@@ -5,7 +5,8 @@ import torch.nn.functional as F
 from pytorch3d import transforms
 from torchsearchsorted import searchsorted
 
-from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam
+from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
+                               vec_to_sim3, rtmat_invert
 
 __all__ = ['render_rays']
 
@@ -218,6 +219,15 @@ def render_rays(models,
     # produce points in the root body space
     xyz_coarse_sampled = rays_o.unsqueeze(1) + \
                          rays_d.unsqueeze(1) * z_vals.unsqueeze(2) # (N_rays, N_samples, 3)
+
+    # similarity transform to the joint canoical space
+    sim3_j2c = rays['sim3_j2c'][:,None]
+    Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(sim3_j2c)
+    Smat_j2c = Smat_j2c.mean(-1)[...,None]
+    Rmat_c2j, Tmat_c2j = rtmat_invert(Rmat_j2c, Tmat_j2c)
+
+    xyz_coarse_sampled = xyz_coarse_sampled / Smat_j2c
+    xyz_coarse_sampled = obj_to_cam(xyz_coarse_sampled, Rmat_c2j, Tmat_c2j)
 
     # root space point correspondence in t2
     xyz_coarse_target = xyz_coarse_sampled.clone()

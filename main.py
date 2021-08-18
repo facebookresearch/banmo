@@ -32,8 +32,8 @@ def main(_):
     torch.manual_seed(0)
     
     trainer = v2s_trainer(opts)
-    trainer.init_dataset()    
-    trainer.define_model()
+    data_info = trainer.init_dataset()    
+    trainer.define_model(data_info)
     trainer.init_training()
     trainer.train()
 

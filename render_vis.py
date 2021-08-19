@@ -103,6 +103,7 @@ def main():
     all_mesh = []
     all_bone = []
     all_cam = []
+    all_scale = []
     all_fr = []
 
     opts_dict = {}
@@ -129,6 +130,9 @@ def main():
             
             cam = np.loadtxt('%s/%s-cam-%05d.txt'%(args.testdir, seqname, fr))
             all_cam.append(cam)
+            
+            scale = np.loadtxt('%s/%s-scale-%05d.txt'%(args.testdir, seqname, fr))
+            all_scale.append(scale)
 
             bone = trimesh.load('%s/%s-bone-%05d.obj'%(args.testdir, seqname,fr),process=False)
             all_bone.append(bone)
@@ -275,7 +279,10 @@ def main():
         Rmat =  torch.Tensor(refcam_vp[None,:3,:3]).cuda()
         Tmat =  torch.Tensor(refcam_vp[None,:3,3]).cuda()
         ppoint =refcam_vp[3,2:]
-        scale = refcam_vp[3,:2]
+        focal = refcam_vp[3,:2]
+
+        verts = verts * float(all_scale[i])
+
         verts = obj_to_cam(verts, Rmat, Tmat)
         r = OffscreenRenderer(img_size, img_size)
         colors = refmesh.visual.vertex_colors
@@ -367,8 +374,8 @@ def main():
        
         if args.cam_type=='perspective': 
             cam = IntrinsicsCamera(
-                    scale[0],
-                    scale[0],
+                    focal[0],
+                    focal[0],
                     ppoint[0],
                     ppoint[1],
                     znear=1e-3,zfar=1000)

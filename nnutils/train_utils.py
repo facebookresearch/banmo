@@ -34,7 +34,8 @@ from collections import defaultdict
 from pytorch3d import transforms
 from torch.nn.utils import clip_grad_norm_
 
-from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw
+from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
+                               obj_to_cam
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
@@ -204,6 +205,7 @@ class v2s_trainer(Trainer):
             aux_seq = {'mesh_rest': mesh_dict_rest['mesh'],
                        'mesh':[],
                        'rtk':[],
+                       'sim3_j2c':[],
                        'impath':[],
                        'bone':[],}
 
@@ -231,18 +233,22 @@ class v2s_trainer(Trainer):
                     mesh_dict = self.extract_mesh(self.model,opts.chunk,
                                         opts.sample_grid3d, 
                                     frameid=i, mesh_dict_in=mesh_dict_rest)
-                    aux_seq['mesh'].append(mesh_dict['mesh'])
+                    mesh=mesh_dict['mesh']
+                    mesh.visual.vertex_colors = mesh_dict_rest['mesh'].\
+                               visual.vertex_colors # assign rest surface color
 
                     # save bones
                     if 'bones' in mesh_dict.keys():
-                        aux_seq['bone'].append(mesh_dict['bones'][0].cpu().numpy())
+                        bone = mesh_dict['bones'][0].cpu().numpy()
+                        aux_seq['bone'].append(bone)
                 else:
-                    aux_seq['mesh'].append(mesh_dict_rest['mesh'])
+                    mesh=mesh_dict_rest['mesh']
+                aux_seq['mesh'].append(mesh)
 
                 # save cams
                 aux_seq['rtk'].append(self.model.rtk[0].cpu().numpy())
-
-                #TODO need to save a video-specific sim3
+                sim3_j2c = self.model.sim3_j2c[self.model.dataid[0].long()]
+                aux_seq['sim3_j2c'].append(sim3_j2c.cpu().numpy())
                 
                 # save image list
                 impath = self.model.impath[self.model.frameid[0].long()]
@@ -392,14 +398,25 @@ class v2s_trainer(Trainer):
             print('fraction occupied:', (vol_o > threshold).float().mean())
             vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
             vertices = (vertices - grid_size/2)/grid_size*2*bound
-        
             mesh = trimesh.Trimesh(vertices, triangles)
+       
             # mesh post-processing 
             if not opts.bg and len(mesh.vertices)>0:
                 mesh = [i for i in mesh.split(only_watertight=False)]
                 mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
                 mesh = mesh[-1]
             #    mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
+            
+            ##TODO
+            #verts = torch.Tensor(mesh.vertices).to(model.device)
+            #verts_embedded = model.embedding_xyz(verts)
+            #dp_verts = verts + model.nerf_dp(verts_embedded)
+            #mesh.vertices = dp_verts.cpu().numpy()
+
+            vis = mesh.vertices
+            vis = vis - vis.min(0)[0][None]
+            vis = vis / vis.max(0)[0][None]
+            mesh.visual.vertex_colors[:,:3] = vis*255
 
         # forward warping
         if frameid is not None and opts.queryfw:

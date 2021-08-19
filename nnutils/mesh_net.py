@@ -229,8 +229,10 @@ class v2s_net(nn.Module):
                 self.dp_verts /= self.dp_verts.abs().max()
                 self.dp_verts *= (self.near_far[:,1] - self.near_far[:,0]).mean()/2
 
+            # deformation from joint canonincal space to dp space
             self.nerf_dp = NeRF(in_channels_xyz=in_channels_xyz,
                                 in_channels_dir=0, raw_feat=True)
+            self.nerf_models['nerf_dp'] = self.nerf_dp
 
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
@@ -345,47 +347,30 @@ class v2s_net(nn.Module):
         del results['xyz_coarse_target']
 
         if opts.use_dp:
-            # cse to video canonical model: deform then rotate/translate
-            dp_verts_embedded = self.embedding_xyz(self.dp_verts)
-            dp_canonical_flo = self.nerf_dp(dp_verts_embedded)
-            dp_canonical_pts = dp_canonical_flo + self.dp_verts
-             
-            # project to image: apply deformation, root body pose, and projection
-            dp_px = canonical2ndc(self, dp_canonical_pts, rtk, kaug, frameid)
-            dp_px = [dp_px[i][self.dps[i].long()][None] for i in range(bs)] # bs, h, w
-            dp_px = torch.cat(dp_px,0)
-            dp_valid_idx = (dp_px[...,-1]>1e-6) & \
-                           (dp_px[...,:2].norm(2,-1)<2*opts.img_size) & \
-                           (self.sils>0)
-            dp_px = dp_px[...,:2]
-
-            # loss
-            _, xys = sample_xy(opts.img_size, bs, 0, self.device, 
-                                       return_all= True)
-            xys = xys.view(dp_px.shape)
-
-            dp_err = ((dp_px - xys)/opts.img_size).pow(2).sum(-1)
-            dp_err = dp_err * dp_valid_idx.float()
-            
             # visualize cse predictions
-            def pts_vis(pts, index):
+            def pts_vis(pts_pred, pts, gt_index):
                 """
+                pts_pred: ..., 3
                 pts: N,3
                 index: ...
                 vis_idx: ..., 3
                 """
                 vis = pts
-                vis = vis - vis.min(0)[0][None]
-                vis = vis / vis.max(0)[0][None]
-                vis_idx = vis[index.long()] # bs, h, w, 3
-                return vis, vis_idx
+                vmin = vis.min(0)[0][None]
+                vis = vis - vmin
+                vmax = vis.max(0)[0][None]
+                vis = vis / vmax
+                vis_gt = vis[gt_index.long()] # bs, h, w, 3
 
-            dp_can_vis, dp_can_vis_px = pts_vis(dp_canonical_pts, self.dps)
-            dp_pts_vis, dp_pts_vis_px          = pts_vis(self.dp_verts,    self.dps)
-            results['dp_err'] = dp_err[...,None]
-            results['dp_valid_idx'] = dp_valid_idx[...,None]
-            results['dp_can_vis'] = dp_can_vis_px
-            results['dp_pts_vis'] = dp_pts_vis_px
+                vis_pred = pts_pred
+                vis_pred = vis_pred - vmin
+                vis_pred = vis_pred / vmax
+                return vis_gt, vis_pred
+
+            dp_pts = results['dp_render']
+            dp_vis_gt, dp_vis_pred = pts_vis(dp_pts, self.dp_verts, self.dps)
+            results['dp_vis_gt'] = dp_vis_gt
+            results['dp_vis_pred'] = dp_vis_pred
          
             #pdb.set_trace()
             #trimesh.Trimesh(self.dp_verts.cpu(), self.dp_faces,
@@ -584,10 +569,12 @@ class v2s_net(nn.Module):
         aux_out['img_loss'] = img_loss
         
         if opts.use_dp:
-            dp_err = rendered['dp_err']
-            dp_valid_idx = rendered['dp_valid_idx']
-            dp_loss = 0.1*dp_err[dp_valid_idx.float()>0].mean() # eval on valid pts
-            total_loss = total_loss + dp_loss 
+            rendered_dp = rendered['dp_render']
+            dp_at_samp = torch.stack([self.dps[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
+            dp_at_samp = self.dp_verts[dp_at_samp[...,0].long()]
+            dp_loss = (rendered_dp - dp_at_samp).pow(2)
+            dp_loss = dp_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
+            total_loss = total_loss + dp_loss
             aux_out['dp_loss'] = dp_loss
             
         

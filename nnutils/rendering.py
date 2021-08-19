@@ -319,8 +319,7 @@ def render_rays(models,
             bone_rts_target = rays['bone_rts_target']
             xyz_coarse_target,_,_ = lbs(bones, bone_rts_target, 
                                     xyz_coarse_sampled,backward=False)
-            
-
+        
     if test_time:
         weights_coarse, sigmas = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
@@ -334,6 +333,14 @@ def render_rays(models,
                   'depth_coarse': depth_coarse,
                   'sil_coarse': weights_coarse[:,:-1].sum(1),
                  }
+    
+    if 'nerf_dp' in models.keys():
+        # render densepose surface
+        nerf_dp = models['nerf_dp']
+        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+        flow_dp = evaluate_mlp(nerf_dp, xyz_coarse_embedded)
+        xyz_dp = xyz_coarse_sampled + flow_dp
+        result['dp_render'] = torch.sum(weights_coarse.unsqueeze(-1)*xyz_dp, -2)
     
     # similarity transform to the video canoical space
     xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat_j2c, Tmat_j2c)

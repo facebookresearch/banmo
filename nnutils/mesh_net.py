@@ -223,11 +223,20 @@ class v2s_net(nn.Module):
                 self.dp_verts = dp['vertices']
                 self.dp_faces = dp['faces']
                 self.dp_verts = torch.Tensor(self.dp_verts).cuda(self.device)
-
-                # normalize
+                
                 self.dp_verts -= self.dp_verts.mean(0)[None]
                 self.dp_verts /= self.dp_verts.abs().max()
                 self.dp_verts *= (self.near_far[:,1] - self.near_far[:,0]).mean()/2
+                
+                # visualize
+                self.dp_vis = self.dp_verts
+                self.dp_vmin = self.dp_vis.min(0)[0][None]
+                self.dp_vis = self.dp_vis - self.dp_vmin
+                self.dp_vmax = self.dp_vis.max(0)[0][None]
+                self.dp_vis = self.dp_vis / self.dp_vmax
+                
+                self.dp_verts = nn.Parameter(self.dp_verts)
+
 
             # deformation from joint canonincal space to dp space
             self.nerf_dp = NeRF(in_channels_xyz=in_channels_xyz,
@@ -348,35 +357,18 @@ class v2s_net(nn.Module):
 
         if opts.use_dp:
             # visualize cse predictions
-            def pts_vis(pts_pred, pts, gt_index):
-                """
-                pts_pred: ..., 3
-                pts: N,3
-                index: ...
-                vis_idx: ..., 3
-                """
-                vis = pts
-                vmin = vis.min(0)[0][None]
-                vis = vis - vmin
-                vmax = vis.max(0)[0][None]
-                vis = vis / vmax
-                vis_gt = vis[gt_index.long()] # bs, h, w, 3
-
-                vis_pred = pts_pred
-                vis_pred = vis_pred - vmin
-                vis_pred = vis_pred / vmax
-                return vis_gt, vis_pred
-
             dp_pts = results['dp_render']
-            dp_vis_gt, dp_vis_pred = pts_vis(dp_pts, self.dp_verts, self.dps)
+            dp_vis_gt = self.dp_vis[self.dps.long()] # bs, h, w, 3
+            dp_vis_pred = (dp_pts - self.dp_vmin)/self.dp_vmax
+            dp_vis_pred = dp_vis_pred.clamp(0,1)
             results['dp_vis_gt'] = dp_vis_gt
             results['dp_vis_pred'] = dp_vis_pred
-         
-            #pdb.set_trace()
-            #trimesh.Trimesh(self.dp_verts.cpu(), self.dp_faces,
-            #        vertex_colors=dp_pts_vis.cpu()).export('0.obj')
-            #trimesh.Trimesh(dp_canonical_pts.cpu(), self.dp_faces,
-            #        vertex_colors=dp_pts_vis.cpu()).export('1.obj')
+        
+        #    pdb.set_trace() 
+        #    trimesh.Trimesh(self.dp_verts.cpu(), self.dp_faces,
+        #            vertex_colors=self.dp_vis.cpu()).export('0.obj')
+        #    trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
+        # vertex_colors=dp_vis_pred[0].view(-1,3).cpu()).export('1.obj')
                
         
         return results, rand_inds

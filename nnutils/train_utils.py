@@ -111,12 +111,13 @@ class v2s_trainer(Trainer):
         params_ks=[]
         params_nerf_dp=[]
         params_sim3_j2c=[]
+        params_dp_verts=[]
         for name,p in self.model.named_parameters():
             if 'nerf_coarse' in name:
                 params_nerf_coarse.append(p)
             elif 'nerf_fine' in name:
                 params_nerf_fine.append(p)
-            elif 'nerf_flowbw' in name or 'nerf_flowfw':
+            elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
                 params_nerf_flowbw.append(p)
             elif 'nerf_root_rts' in name:
                 params_nerf_root_rts.append(p)
@@ -128,13 +129,15 @@ class v2s_trainer(Trainer):
                 params_bones.append(p)
             elif 'ks' == name:
                 params_ks.append(p)
-            elif 'nerf_dp' == name:
+            elif 'nerf_dp' in name:
                 params_nerf_dp.append(p)
             elif 'sim3_j2c' == name:
                 params_sim3_j2c.append(p)
+            elif 'dp_verts' == name:
+                params_dp_verts.append(p)
             else: continue
             print(name)
-                
+
         self.optimizer = torch.optim.AdamW(
             [{'params': params_nerf_coarse},
              {'params': params_nerf_fine},
@@ -146,6 +149,7 @@ class v2s_trainer(Trainer):
              {'params': params_ks},
              {'params': params_nerf_dp},
              {'params': params_sim3_j2c},
+             {'params': params_dp_verts},
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
@@ -160,6 +164,7 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_ks
             opts.learning_rate, # params_nerf_dp
             opts.learning_rate, # params_sim3_j2c
+          0*opts.learning_rate, # params_dp_verts
             ],
             self.model.final_steps,
             pct_start=2./opts.num_epochs, # use 2 epochs to warm up
@@ -407,16 +412,32 @@ class v2s_trainer(Trainer):
                 mesh = mesh[-1]
             #    mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
             
-            ##TODO
-            #verts = torch.Tensor(mesh.vertices).to(model.device)
-            #verts_embedded = model.embedding_xyz(verts)
-            #dp_verts = verts + model.nerf_dp(verts_embedded)
-            #mesh.vertices = dp_verts.cpu().numpy()
+                ## assign color based on dp canonical location
+                #verts = torch.Tensor(mesh.vertices).to(model.device)
+                #verts_embedded = model.embedding_xyz(verts)
+                #dp_verts = verts + model.nerf_dp(verts_embedded)
+                #dp_verts_color = (dp_verts - model.dp_vmin)/model.dp_vmax
+                ##mesh.vertices = dp_verts.cpu().numpy()
+                #mesh.visual.vertex_colors = dp_verts_color.clamp(0,1).cpu().numpy()
 
-            vis = mesh.vertices
-            vis = vis - vis.min(0)[0][None]
-            vis = vis / vis.max(0)[0][None]
-            mesh.visual.vertex_colors[:,:3] = vis*255
+                ## save canonical mesh
+                #trimesh.Trimesh(model.dp_verts.cpu(), model.dp_faces,  
+                #            vertex_colors=model.dp_vis.cpu()).export('0.obj')
+
+                # assign color based on canonical location
+                vis = mesh.vertices
+                vis = vis - vis.min(0)[0][None]
+                vis = vis / vis.max(0)[0][None]
+                mesh.visual.vertex_colors[:,:3] = vis*255
+
+                #if opts.use_dp:
+                #    pdb.set_trace()
+                #    dp_verts = model.dp_verts
+                #    dp_verts = dp_verts - dp_verts.mean(0)[None] + \
+                #     torch.Tensor(mesh.vertices.mean(0)[None]).to(model.device)
+                #    dp_verts = dp_verts / dp_verts.max(0)[None] * \
+                #     torch.Tensor(mesh.vertices.max(0)[None]).to(model.device)
+                #    model.dp_verts.data = dp_verts
 
         # forward warping
         if frameid is not None and opts.queryfw:

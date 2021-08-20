@@ -235,6 +235,7 @@ def main():
             #refmesh.vertices -= refmesh.vertices.mean(0)[None]
             #refmesh.vertices /= 1.2*np.abs(refmesh.vertices).max()
             refcam = all_cam[0].copy()
+            refscale = all_scale[0]
             rot_turntb = cv2.Rodrigues(np.asarray([0.,i*2*np.pi/size,0.]))[0]
             refcam[:3,:3] = rot_turntb.dot( refcam[:3,:3] ) 
             refcam[:2,3] = 0  # trans xy
@@ -244,6 +245,7 @@ def main():
             refcam[3,:2] = 8*img_size/2 # fl
         else:
             refimg, refsil, refkp, refvis, refname = all_anno[i]
+            refscale = all_scale[i]
             print('%s'%(refname))
             img_size = max(refimg.shape)
             refmesh = all_mesh[i]
@@ -281,7 +283,7 @@ def main():
         ppoint =refcam_vp[3,2:]
         focal = refcam_vp[3,:2]
 
-        verts = verts * float(all_scale[i])
+        verts = verts * float(refscale)
 
         verts = obj_to_cam(verts, Rmat, Tmat)
         r = OffscreenRenderer(img_size, img_size)

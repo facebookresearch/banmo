@@ -420,15 +420,15 @@ class v2s_trainer(Trainer):
                 ##mesh.vertices = dp_verts.cpu().numpy()
                 #mesh.visual.vertex_colors = dp_verts_color.clamp(0,1).cpu().numpy()
 
+                # assign color based on canonical location
+                vis = mesh.vertices
+                vis = vis - vis.min(0)[None]
+                vis = vis / vis.max(0)[None]
+                mesh.visual.vertex_colors[:,:3] = vis*255
+                
                 ## save canonical mesh
                 #trimesh.Trimesh(model.dp_verts.cpu(), model.dp_faces,  
                 #            vertex_colors=model.dp_vis.cpu()).export('0.obj')
-
-                # assign color based on canonical location
-                vis = mesh.vertices
-                vis = vis - vis.min(0)[0][None]
-                vis = vis / vis.max(0)[0][None]
-                mesh.visual.vertex_colors[:,:3] = vis*255
 
                 #if opts.use_dp:
                 #    pdb.set_trace()

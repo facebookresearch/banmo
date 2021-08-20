@@ -410,67 +410,80 @@ class v2s_net(nn.Module):
             # densepose to correspondence
             # downsample
             h_rszd,w_rszd=h//4,w//4
+            self.dp_flow = torch.zeros(2*bs,2*bs,2,h_rszd,w_rszd).to(self.device)
+            self.dp_conf = torch.zeros(2*bs,2*bs,1,h_rszd,w_rszd).to(self.device)
             hw_rszd = h_rszd*w_rszd
             dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), mode='nearest')[:,0]
-            dps = dps.view(2,bs,-1).long()
-            dps_refr = dps.view(2*bs,-1)
-            dps_targ = dps.flip(0).view(2*bs,-1)
+            dps = dps.view(2*bs,-1).long()
             for idx in range(2*bs):
-                dp_refr = dps_refr[idx].view(-1,1).repeat(1,hw_rszd).view(-1,1)
-                dp_targ = dps_targ[idx].view(1,-1).repeat(hw_rszd,1).view(-1,1)
-                match = self.geodists[dp_refr, dp_targ]
-                dis_geo,match = match.view(hw_rszd, hw_rszd).min(1)
-                match[dis_geo>0.1] = 0
+                for jdx in range(2*bs):
+                    dp_refr = dps[idx].view(-1,1).repeat(1,hw_rszd).view(-1,1)
+                    dp_targ = dps[jdx].view(1,-1).repeat(hw_rszd,1).view(-1,1)
+                    match = self.geodists[dp_refr, dp_targ]
+                    dis_geo,match = match.view(hw_rszd, hw_rszd).min(1)
+                    #match[dis_geo>0.1] = 0
 
-                # cx,cy
-                tar_coord = torch.cat([match[:,None]%w_rszd, match[:,None]//w_rszd],-1)
-                tar_coord = tar_coord.view(h_rszd, w_rszd, 2).float()
-                ref_coord = torch.Tensor(np.meshgrid(range(w_rszd), range(h_rszd)))
-                ref_coord = ref_coord.to(self.device).permute(1,2,0).view(-1,2)
-                ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
-                flo_dp = (tar_coord - ref_coord) / w_rszd * 2
-                flo_dp = flo_dp.permute(2,0,1)
-                flo_dp = F.interpolate(flo_dp[None], (h,w), mode='bilinear')[0]
-                self.flow[idx] = flo_dp
+                    # cx,cy
+                    tar_coord = torch.cat([match[:,None]%w_rszd, match[:,None]//w_rszd],-1)
+                    tar_coord = tar_coord.view(h_rszd, w_rszd, 2).float()
+                    ref_coord = torch.Tensor(np.meshgrid(range(w_rszd), range(h_rszd)))
+                    ref_coord = ref_coord.to(self.device).permute(1,2,0).view(-1,2)
+                    ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
+                    flo_dp = (tar_coord - ref_coord) / w_rszd * 2 # [-2,2]
+                    match = match.view(h_rszd, w_rszd)
+                    flo_dp[match==0] = 0
+                    flo_dp = flo_dp.permute(2,0,1)
+                    self.dp_flow[idx,jdx] = flo_dp
 
             # clean up flow
-            self.occ = []
-            for idx in range(bs):
-                flo_refr = self.flow[idx]
-                flo_targ = self.flow[idx+bs]
-                img_refr = self.imgs[idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
-                img_targ= self.imgs[bs+idx].permute(1,2,0).cpu().numpy()[:,:,::-1]
-                flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
-                flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
-                flo_refr_px = flo_refr * w / 2
-                flo_targ_px = flo_targ * w / 2
+            for idx in range(2*bs):
+                for jdx in range(idx, 2*bs):
+                    flo_refr = self.dp_flow[idx,jdx]
+                    flo_targ = self.dp_flow[jdx,idx]
+                    flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
+                    flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
+                    flo_refr_mask = np.linalg.norm(flo_refr,2,-1)>0
+                    flo_targ_mask = np.linalg.norm(flo_targ,2,-1)>0
+                    flo_refr_px = flo_refr * w_rszd / 2
+                    flo_targ_px = flo_targ * w_rszd / 2
 
-                #fb check
-                x0,y0  =np.meshgrid(range(w),range(h))
-                hp0 = np.stack([x0,y0],-1) # screen coord
+                    #fb check
+                    thrd = 0.01
+                    x0,y0  =np.meshgrid(range(w_rszd),range(h_rszd))
+                    hp0 = np.stack([x0,y0],-1) # screen coord
 
-                flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
-                flo_fb = flo_fb*2/w
-                fberr_fw = np.linalg.norm(flo_fb, 2,-1)
-                self.occ.append(torch.Tensor(fberr_fw[None]))
+                    flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
+                    flo_fb = 2*flo_fb/w_rszd
+                    fberr_fw = np.linalg.norm(flo_fb, 2,-1)
+                    fberr_fw[~flo_refr_mask] = 0
+                    self.dp_conf[idx,jdx,0] = torch.Tensor(fberr_fw)
 
-                flo_bf = warp_flow(hp0 + flo_refr_px, flo_targ_px) - hp0
-                flo_bf = flo_bf*2/w
-                fberr_bw = np.linalg.norm(flo_bf, 2,-1)
-                self.occ.append(torch.Tensor(fberr_bw[None]))
+                    flo_bf = warp_flow(hp0 + flo_refr_px, flo_targ_px) - hp0
+                    flo_bf = 2*flo_bf/w_rszd
+                    fberr_bw = np.linalg.norm(flo_bf, 2,-1)
+                    fberr_bw[~flo_targ_mask] = 0
+                    self.dp_conf[jdx,idx,0] = torch.Tensor(fberr_bw)
 
-            #    # vis
-            #    thrd = 0.03
-            #    flo_refr[:,:,0] = (flo_refr[:,:,0] + 2)/2
-            #    flo_targ[:,:,0] = (flo_targ[:,:,0] - 2)/2
-            #    flo_refr[(fberr_fw>thrd)]=0.
-            #    flo_targ[(fberr_bw>thrd)]=0.
-            #    img = np.concatenate([img_refr, img_targ], 1)
-            #    flo = np.concatenate([flo_refr, flo_targ], 1)
-            #    imgflo = cat_imgflo(img, flo)
-            #    cv2.imwrite('tmp/imgflo-%05d.jpg'%(idx), imgflo)
-            self.occ = torch.cat(self.occ, 0).to(self.device)
-            self.occ = self.occ.view(-1,2,h,w).permute(1,0,2,3).reshape(-1,h,w)
+                    # vis
+                    img_refr = F.interpolate(self.imgs[idx:idx+1], (h_rszd, w_rszd), mode='bilinear')[0]
+                    img_refr = img_refr.permute(1,2,0).cpu().numpy()[:,:,::-1]
+                    img_targ = F.interpolate(self.imgs[jdx:jdx+1], (h_rszd, w_rszd), mode='bilinear')[0]
+                    img_targ = img_targ.permute(1,2,0).cpu().numpy()[:,:,::-1]
+                    flo_refr[:,:,0] = (flo_refr[:,:,0] + 2)/2
+                    flo_targ[:,:,0] = (flo_targ[:,:,0] - 2)/2
+                    flo_refr[fberr_fw>thrd]=0.
+                    flo_targ[fberr_bw>thrd]=0.
+                    flo_refr[~flo_refr_mask]=0.
+                    flo_targ[~flo_targ_mask]=0.
+                    img = np.concatenate([img_refr, img_targ], 1)
+                    flo = np.concatenate([flo_refr, flo_targ], 1)
+                    imgflo = cat_imgflo(img, flo)
+                    imgcnf = np.concatenate([fberr_fw, fberr_bw],1)
+                    imgcnf = np.clip(imgcnf, 0,0.1)*2550
+                    imgcnf = np.repeat(imgcnf[...,None],3,-1)
+                    imgcnf = cv2.resize(imgcnf, imgflo.shape[::-1][1:])
+                    imgflo_cnf = np.concatenate([imgflo, imgcnf],0)
+                    cv2.imwrite('tmp/img-%05d-%05d.jpg'%(idx,jdx), imgflo_cnf)
  
         ## TODO
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]

@@ -150,6 +150,8 @@ class v2s_net(nn.Module):
                         self.config.get('data_%d'%nvid, 'near_far').split(',')])
             self.near_far = np.asarray(self.near_far).astype(np.float32) #TODO need to save it
         except: self.near_far = None
+        self.vis_min=np.asarray([[0,0,0]])
+        self.vis_max=np.asarray([[1,1,1]])
         
         # video specific sim3: from video to joint canonical space
         self.sim3_j2c= generate_bones(self.num_vid, self.num_vid, 0, self.device)
@@ -165,7 +167,7 @@ class v2s_net(nn.Module):
         self.nerf_models= {'coarse':self.nerf_coarse}
 
         # set dnerf model
-        max_t=200  ##TODO change 15
+        max_t=1000  ##TODO change 15
         self.embedding_time = nn.Embedding(max_t, max_t)
         if opts.flowbw:
             self.nerf_flowbw = NeRF(in_channels_xyz=in_channels_xyz+max_t,
@@ -216,25 +218,26 @@ class v2s_net(nn.Module):
                 geodists[0,:] = np.inf
                 geodists[:,0] = np.inf
                 self.geodists = geodists
+            self.dp_thrd = 0.1 # threshold to fb error of dp
+
+        with open('tmp/sheep_5004.pkl', 'rb') as f:
+            dp = pickle.load(f)
+            self.dp_verts = dp['vertices']
+            self.dp_faces = dp['faces']
+            self.dp_verts = torch.Tensor(self.dp_verts).cuda(self.device)
+            
+            self.dp_verts -= self.dp_verts.mean(0)[None]
+            self.dp_verts /= self.dp_verts.abs().max()
+            self.dp_verts *= (self.near_far[:,1] - self.near_far[:,0]).mean()/2
+            
+            # visualize
+            self.dp_vis = self.dp_verts
+            self.dp_vmin = self.dp_vis.min(0)[0][None]
+            self.dp_vis = self.dp_vis - self.dp_vmin
+            self.dp_vmax = self.dp_vis.max(0)[0][None]
+            self.dp_vis = self.dp_vis / self.dp_vmax
 
         if opts.use_dp:
-            with open('tmp/sheep_5004.pkl', 'rb') as f:
-                dp = pickle.load(f)
-                self.dp_verts = dp['vertices']
-                self.dp_faces = dp['faces']
-                self.dp_verts = torch.Tensor(self.dp_verts).cuda(self.device)
-                
-                self.dp_verts -= self.dp_verts.mean(0)[None]
-                self.dp_verts /= self.dp_verts.abs().max()
-                self.dp_verts *= (self.near_far[:,1] - self.near_far[:,0]).mean()/2
-                
-                # visualize
-                self.dp_vis = self.dp_verts
-                self.dp_vmin = self.dp_vis.min(0)[0][None]
-                self.dp_vis = self.dp_vis - self.dp_vmin
-                self.dp_vmax = self.dp_vis.max(0)[0][None]
-                self.dp_vis = self.dp_vis / self.dp_vmax
-                
                 self.dp_verts = nn.Parameter(self.dp_verts)
 
 
@@ -272,7 +275,7 @@ class v2s_net(nn.Module):
 
         # update rays
         if bs>1:
-            rtk_vec = rays['rtk_vec']
+            rtk_vec = rays['rtk_vec'] # bs, N, 21
             rtk_vec_target = rtk_vec.view(2,-1).flip(0)
             rays['rtk_vec_target'] = rtk_vec_target.reshape(rays['rtk_vec'].shape)
             
@@ -284,6 +287,22 @@ class v2s_net(nn.Module):
             elif opts.lbs:
                 bone_rts_target = self.nerf_bone_rts(frameid_target)
                 rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
+
+            if opts.flow_dp:
+                # randomly choose 1 target image
+                rays['rtk_vec_dentrg'] = rtk_vec[self.rand_dentrg] # bs,N,21
+                frameid_dentrg = frameid.view(-1,1)[self.rand_dentrg]
+                if opts.flowbw:
+                    print('Error: not implemented')
+                    exit()
+                elif opts.lbs:
+                    bone_rts_dentrg = self.nerf_bone_rts(frameid_dentrg) #bsxbs,x 
+                    rays['bone_rts_dentrg'] = bone_rts_dentrg.repeat(1,rays['nsample'],1)
+
+                dataid_dentrg = self.dataid[self.rand_dentrg]
+                rays['sim3_j2c_dentrg'] = self.sim3_j2c[dataid_dentrg.long()]
+                rays['sim3_j2c_dentrg'] = rays['sim3_j2c_dentrg'][:,None].repeat(1,rays['nsample'],1)
+                 
 
         if opts.flowbw:
             time_embedded = self.embedding_time(frameid)
@@ -324,7 +343,7 @@ class v2s_net(nn.Module):
        
         # render flow 
         # bs, nsamp, -1, x
-        weights_coarse = results['weights_coarse']
+        weights_coarse = results['weights_coarse'].clone()
         weights_shape = weights_coarse.shape
         xyz_coarse_target = results['xyz_coarse_target']
         xyz_coarse_target = xyz_coarse_target.view(weights_shape+(3,))
@@ -352,18 +371,45 @@ class v2s_net(nn.Module):
         #flo_coarse = xy_coarse_target - xys_unsq
 
         results['flo_coarse'] = flo_coarse/img_size * 2
-        del results['weights_coarse']
         del results['xyz_coarse_target']
+
+        if opts.flow_dp:
+            weights_coarse = results['weights_coarse'].clone()
+            xyz_coarse_dentrg = results['xyz_coarse_dentrg']
+            xyz_coarse_dentrg = xyz_coarse_dentrg.view(weights_shape+(3,))
+            xy_coarse_dentrg = xyz_coarse_dentrg[...,:2]
+
+            # deal with negative z
+            invalid_ind = torch.logical_or(xyz_coarse_dentrg[...,-1]<1e-5,
+                                   xy_coarse_dentrg.norm(2,-1).abs()>2*img_size)
+            weights_coarse[invalid_ind] = 0.
+            xy_coarse_dentrg[invalid_ind] = 0.
+
+            # renormalize
+            weights_coarse = weights_coarse/(1e-9+weights_coarse.sum(-1)[...,None])
+
+            # candidate motion vector
+            xys_unsq = xys.view(weights_shape[:-1]+(1,2))
+            fdp = xy_coarse_dentrg - xys_unsq
+            fdp =  weights_coarse[...,None] * fdp
+            fdp = fdp.sum(-2)
+
+            results['fdp_coarse'] = fdp/img_size * 2
+            del results['xyz_coarse_dentrg']
+        del results['weights_coarse']
 
         if opts.use_dp:
             # visualize cse predictions
-            dp_pts = results['dp_render']
+            dp_pts = results['joint_render']
             dp_vis_gt = self.dp_vis[self.dps.long()] # bs, h, w, 3
             dp_vis_pred = (dp_pts - self.dp_vmin)/self.dp_vmax
             dp_vis_pred = dp_vis_pred.clamp(0,1)
             results['dp_vis_gt'] = dp_vis_gt
             results['dp_vis_pred'] = dp_vis_pred
-        
+    
+        results['joint_render_vis'] = (results['joint_render']-\
+                       torch.Tensor(self.vis_min[None,None]).to(self.device))/\
+                       torch.Tensor(self.vis_max[None,None]).to(self.device)
         #    pdb.set_trace() 
         #    trimesh.Trimesh(self.dp_verts.cpu(), self.dp_faces,
         #            vertex_colors=self.dp_vis.cpu()).export('0.obj')
@@ -408,15 +454,25 @@ class v2s_net(nn.Module):
 
         if self.opts.flow_dp:
             # densepose to correspondence
+            # randomly choose 1 target image
+            while True:
+                rand_dentrg = np.random.randint(0,2*bs,2*bs)
+                if ((rand_dentrg-np.asarray(range(2*bs)))==0).sum()==0:
+                    break
+            self.rand_dentrg = rand_dentrg
             # downsample
             h_rszd,w_rszd=h//4,w//4
-            self.dp_flow = torch.zeros(2*bs,2*bs,2,h_rszd,w_rszd).to(self.device)
-            self.dp_conf = torch.zeros(2*bs,2*bs,1,h_rszd,w_rszd).to(self.device)
+            self.dp_flow = torch.zeros(2*bs,2,h_rszd,w_rszd).to(self.device)
+            self.dp_conf = torch.zeros(2*bs,h_rszd,w_rszd).to(self.device)
             hw_rszd = h_rszd*w_rszd
             dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), mode='nearest')[:,0]
-            dps = dps.view(2*bs,-1).long()
             for idx in range(2*bs):
-                for jdx in range(2*bs):
+                jdx = self.rand_dentrg[idx]
+                def compute_flow_geodist(dps,idx,jdx):
+                    h_rszd,w_rszd = dps.shape[1:]
+                    hw_rszd = h_rszd*w_rszd
+                    device = dps.device
+                    dps = dps.view(2*bs,-1).long()
                     dp_refr = dps[idx].view(-1,1).repeat(1,hw_rszd).view(-1,1)
                     dp_targ = dps[jdx].view(1,-1).repeat(hw_rszd,1).view(-1,1)
                     match = self.geodists[dp_refr, dp_targ]
@@ -427,63 +483,62 @@ class v2s_net(nn.Module):
                     tar_coord = torch.cat([match[:,None]%w_rszd, match[:,None]//w_rszd],-1)
                     tar_coord = tar_coord.view(h_rszd, w_rszd, 2).float()
                     ref_coord = torch.Tensor(np.meshgrid(range(w_rszd), range(h_rszd)))
-                    ref_coord = ref_coord.to(self.device).permute(1,2,0).view(-1,2)
+                    ref_coord = ref_coord.to(device).permute(1,2,0).view(-1,2)
                     ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
                     flo_dp = (tar_coord - ref_coord) / w_rszd * 2 # [-2,2]
                     match = match.view(h_rszd, w_rszd)
                     flo_dp[match==0] = 0
                     flo_dp = flo_dp.permute(2,0,1)
-                    self.dp_flow[idx,jdx] = flo_dp
+                    return flo_dp
+                flo_refr = compute_flow_geodist(dps,idx,jdx)
+                flo_targ = compute_flow_geodist(dps,jdx,idx)
+                self.dp_flow[idx] = flo_refr
 
-            # clean up flow
-            for idx in range(2*bs):
-                for jdx in range(idx, 2*bs):
-                    flo_refr = self.dp_flow[idx,jdx]
-                    flo_targ = self.dp_flow[jdx,idx]
-                    flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
-                    flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
-                    flo_refr_mask = np.linalg.norm(flo_refr,2,-1)>0
-                    flo_targ_mask = np.linalg.norm(flo_targ,2,-1)>0
-                    flo_refr_px = flo_refr * w_rszd / 2
-                    flo_targ_px = flo_targ * w_rszd / 2
+                # clean up flow
+                flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
+                flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
+                flo_refr_mask = np.linalg.norm(flo_refr,2,-1)>0
+                flo_targ_mask = np.linalg.norm(flo_targ,2,-1)>0
+                flo_refr_px = flo_refr * w_rszd / 2
+                flo_targ_px = flo_targ * w_rszd / 2
 
-                    #fb check
-                    thrd = 0.01
-                    x0,y0  =np.meshgrid(range(w_rszd),range(h_rszd))
-                    hp0 = np.stack([x0,y0],-1) # screen coord
+                #fb check
+                x0,y0  =np.meshgrid(range(w_rszd),range(h_rszd))
+                hp0 = np.stack([x0,y0],-1) # screen coord
 
-                    flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
-                    flo_fb = 2*flo_fb/w_rszd
-                    fberr_fw = np.linalg.norm(flo_fb, 2,-1)
-                    fberr_fw[~flo_refr_mask] = 0
-                    self.dp_conf[idx,jdx,0] = torch.Tensor(fberr_fw)
+                flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
+                flo_fb = 2*flo_fb/w_rszd
+                fberr_fw = np.linalg.norm(flo_fb, 2,-1)
+                fberr_fw[~flo_refr_mask] = 0
+                self.dp_conf[idx] = torch.Tensor(fberr_fw)
 
-                    flo_bf = warp_flow(hp0 + flo_refr_px, flo_targ_px) - hp0
-                    flo_bf = 2*flo_bf/w_rszd
-                    fberr_bw = np.linalg.norm(flo_bf, 2,-1)
-                    fberr_bw[~flo_targ_mask] = 0
-                    self.dp_conf[jdx,idx,0] = torch.Tensor(fberr_bw)
+                flo_bf = warp_flow(hp0 + flo_refr_px, flo_targ_px) - hp0
+                flo_bf = 2*flo_bf/w_rszd
+                fberr_bw = np.linalg.norm(flo_bf, 2,-1)
+                fberr_bw[~flo_targ_mask] = 0
 
-                    # vis
-                    img_refr = F.interpolate(self.imgs[idx:idx+1], (h_rszd, w_rszd), mode='bilinear')[0]
-                    img_refr = img_refr.permute(1,2,0).cpu().numpy()[:,:,::-1]
-                    img_targ = F.interpolate(self.imgs[jdx:jdx+1], (h_rszd, w_rszd), mode='bilinear')[0]
-                    img_targ = img_targ.permute(1,2,0).cpu().numpy()[:,:,::-1]
-                    flo_refr[:,:,0] = (flo_refr[:,:,0] + 2)/2
-                    flo_targ[:,:,0] = (flo_targ[:,:,0] - 2)/2
-                    flo_refr[fberr_fw>thrd]=0.
-                    flo_targ[fberr_bw>thrd]=0.
-                    flo_refr[~flo_refr_mask]=0.
-                    flo_targ[~flo_targ_mask]=0.
-                    img = np.concatenate([img_refr, img_targ], 1)
-                    flo = np.concatenate([flo_refr, flo_targ], 1)
-                    imgflo = cat_imgflo(img, flo)
-                    imgcnf = np.concatenate([fberr_fw, fberr_bw],1)
-                    imgcnf = np.clip(imgcnf, 0,0.1)*2550
-                    imgcnf = np.repeat(imgcnf[...,None],3,-1)
-                    imgcnf = cv2.resize(imgcnf, imgflo.shape[::-1][1:])
-                    imgflo_cnf = np.concatenate([imgflo, imgcnf],0)
-                    cv2.imwrite('tmp/img-%05d-%05d.jpg'%(idx,jdx), imgflo_cnf)
+                ## vis
+                #thrd_vis = 0.01
+                #img_refr = F.interpolate(self.imgs[idx:idx+1], (h_rszd, w_rszd), mode='bilinear')[0]
+                #img_refr = img_refr.permute(1,2,0).cpu().numpy()[:,:,::-1]
+                #img_targ = F.interpolate(self.imgs[jdx:jdx+1], (h_rszd, w_rszd), mode='bilinear')[0]
+                #img_targ = img_targ.permute(1,2,0).cpu().numpy()[:,:,::-1]
+                #flo_refr[:,:,0] = (flo_refr[:,:,0] + 2)/2
+                #flo_targ[:,:,0] = (flo_targ[:,:,0] - 2)/2
+                #flo_refr[fberr_fw>thrd_vis]=0.
+                #flo_targ[fberr_bw>thrd_vis]=0.
+                #flo_refr[~flo_refr_mask]=0.
+                #flo_targ[~flo_targ_mask]=0.
+                #img = np.concatenate([img_refr, img_targ], 1)
+                #flo = np.concatenate([flo_refr, flo_targ], 1)
+                #imgflo = cat_imgflo(img, flo)
+                #imgcnf = np.concatenate([fberr_fw, fberr_bw],1)
+                #imgcnf = np.clip(imgcnf, 0, self.dp_thrd)*(255/self.dp_thrd)
+                #imgcnf = np.repeat(imgcnf[...,None],3,-1)
+                #imgcnf = cv2.resize(imgcnf, imgflo.shape[::-1][1:])
+                #imgflo_cnf = np.concatenate([imgflo, imgcnf],0)
+                #cv2.imwrite('tmp/img-%05d-%05d.jpg'%(idx,jdx), imgflo_cnf)
+            self.dp_conf[self.dp_conf>self.dp_thrd] = self.dp_thrd
  
         ## TODO
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]
@@ -574,7 +629,7 @@ class v2s_net(nn.Module):
         aux_out['img_loss'] = img_loss
         
         if opts.use_dp:
-            rendered_dp = rendered['dp_render']
+            rendered_dp = rendered['joint_render']
             dp_at_samp = torch.stack([self.dps[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
             dp_at_samp = self.dp_verts[dp_at_samp[...,0].long()]
             dp_loss = (rendered_dp - dp_at_samp).pow(2)
@@ -606,6 +661,34 @@ class v2s_net(nn.Module):
                 total_loss = total_loss + flo_loss
 
             aux_out['flo_loss'] = flo_loss
+        
+        # flow densepose loss
+        if opts.flow_dp:
+            rendered_fdp = rendered['fdp_coarse'] # bs,N,2
+            fdp_at_samp = []
+            dcf_at_samp = []
+            for i in range(bs):
+                # 1/4 resolution
+                dp_flow = F.interpolate(self.dp_flow[i][None], 
+                             (opts.img_size,opts.img_size), mode='bilinear')[0]
+                dp_conf = F.interpolate(self.dp_conf[i][None,None], 
+                             (opts.img_size,opts.img_size), mode='bilinear')[0]
+                fdp_at_samp.append(dp_flow.view(2,-1).T[rand_inds[i]])
+                dcf_at_samp.append(dp_conf.view(-1,1)[rand_inds[i]])
+            fdp_at_samp = torch.stack(fdp_at_samp,0)
+            dcf_at_samp = torch.stack(dcf_at_samp,0)
+            fdp_loss = (rendered_fdp - fdp_at_samp).pow(2).sum(-1)
+            fdp_loss = (fdp_loss-0.02).relu() # ignore error < 1/20 unit
+
+            # TODO confidence weighting
+            sil_at_samp_fdp = (sil_at_samp>0) & (dcf_at_samp<self.dp_thrd-1e-3)
+            dcf_at_samp = (-30*dcf_at_samp).sigmoid()
+            dcf_at_samp = dcf_at_samp / dcf_at_samp[sil_at_samp_fdp].mean()
+            fdp_loss = fdp_loss * dcf_at_samp[...,0]
+            
+            fdp_loss = 0.1*fdp_loss[sil_at_samp_fdp[...,0]].mean() # eval on valid pts
+            total_loss = total_loss + fdp_loss
+            aux_out['fdp_loss'] = fdp_loss
         
         # regularization 
         if opts.lbs or opts.flowbw:

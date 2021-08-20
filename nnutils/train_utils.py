@@ -227,9 +227,13 @@ class v2s_trainer(Trainer):
                 rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:1]]
                 rendered_seq['sil'] += [self.model.masks[...,None]      [:1]]
                 rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:1]]
-                rendered_seq['dpc'] += [self.model.dps[...,None]      [:1]]
+                rendered_seq['dpc'] += [self.model.dp_vis[self.model.dps.long()][:1]]
                 rendered_seq['occ'] += [self.model.occ[...,None]      [:1]]
                 rendered_seq['flo_coarse'][-1] *= rendered_seq['sil_coarse'][-1]
+                if opts.flow_dp:
+                    rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:1]]
+                    rendered_seq['dcf'] += [self.model.dp_conf[...,None]/\
+                                            self.model.dp_thrd]
 
                 # run marching cubes
                 if dynamic_mesh:
@@ -422,8 +426,10 @@ class v2s_trainer(Trainer):
 
                 # assign color based on canonical location
                 vis = mesh.vertices
-                vis = vis - vis.min(0)[None]
-                vis = vis / vis.max(0)[None]
+                model.vis_min = vis.min(0)[None]
+                vis = vis - model.vis_min
+                model.vis_max = vis.max(0)[None]
+                vis = vis / model.vis_max
                 mesh.visual.vertex_colors[:,:3] = vis*255
                 
                 ## save canonical mesh
@@ -459,7 +465,7 @@ class v2s_trainer(Trainer):
         """
         timg, h,w,x
         """
-        if 'flo' in tag: 
+        if 'flo' in tag or 'fdp' in tag: 
             timg = timg.detach().cpu().numpy()
             timg = flow_to_image(timg)
         if scale:

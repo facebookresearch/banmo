@@ -319,6 +319,10 @@ def render_rays(models,
             bone_rts_target = rays['bone_rts_target']
             xyz_coarse_target,_,_ = lbs(bones, bone_rts_target, 
                                     xyz_coarse_sampled,backward=False)
+        if 'bone_rts_dentrg' in rays.keys():
+            bone_rts_dentrg = rays['bone_rts_dentrg']
+            xyz_coarse_dentrg,_,_ = lbs(bones, bone_rts_dentrg, 
+                                    xyz_coarse_sampled,backward=False)
         
     if test_time:
         weights_coarse, sigmas = \
@@ -334,13 +338,14 @@ def render_rays(models,
                   'sil_coarse': weights_coarse[:,:-1].sum(1),
                  }
     
+    xyz_joint = xyz_coarse_sampled
     if 'nerf_dp' in models.keys():
         # render densepose surface
         nerf_dp = models['nerf_dp']
-        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-        flow_dp = evaluate_mlp(nerf_dp, xyz_coarse_embedded)
-        xyz_dp = xyz_coarse_sampled + flow_dp
-        result['dp_render'] = torch.sum(weights_coarse.unsqueeze(-1)*xyz_dp, -2)
+        xyz_joint_embedded = embedding_xyz(xyz_joint)
+        flow_dp = evaluate_mlp(nerf_dp, xyz_joint_embedded)
+        xyz_joint= xyz_joint + flow_dp
+    result['joint_render'] = torch.sum(weights_coarse.unsqueeze(-1)*xyz_joint, -2)
     
     # similarity transform to the video canoical space
     xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat_j2c, Tmat_j2c)
@@ -359,6 +364,28 @@ def render_rays(models,
         
     result['xyz_coarse_target'] = xyz_coarse_target
     result['weights_coarse'] = weights_coarse
+
+    if 'xyz_coarse_dentrg' in locals():
+        # similarity transform to the video canoical space
+        sim3_j2c_dt = rays['sim3_j2c_dentrg'][:,None]
+        Tmat_j2c_dt, Rmat_j2c_dt, Smat_j2c_dt = vec_to_sim3(sim3_j2c_dt)
+        Smat_j2c_dt = Smat_j2c_dt.mean(-1)[...,None]
+        xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat_j2c_dt, Tmat_j2c_dt)
+        xyz_coarse_dentrg = xyz_coarse_dentrg * Smat_j2c_dt
+
+        # compute correspondence: root space to dentrg view space
+        # RT: root space to camera space
+        rtk_vec_dentrg =  rays['rtk_vec_dentrg']
+        Rmat = rtk_vec_dentrg[:,0:9].view(N_rays,1,3,3)
+        Tmat = rtk_vec_dentrg[:,9:12].view(N_rays,1,3)
+        Kinv = rtk_vec_dentrg[:,12:21].view(N_rays,1,3,3)
+        K = mat2K(Kmatinv(Kinv))
+
+        xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat, Tmat) 
+        xyz_coarse_dentrg = pinhole_cam(xyz_coarse_dentrg,K)
+            
+        result['xyz_coarse_dentrg'] = xyz_coarse_dentrg
+        
         
     if 'flowbw' in models.keys() or  'bones' in models.keys():
         result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)

@@ -143,6 +143,7 @@ class v2s_net(nn.Module):
         self.impath      = data_info['impath']
         self.latest_vars = {}
         self.latest_vars['rtk'] = np.zeros((self.data_offset[-1], 4,4))
+        self.latest_vars['j2c'] = np.zeros((self.data_offset[-1], 10))
         self.latest_vars['idk'] = np.zeros((self.data_offset[-1],))
 
         # get near-far plane
@@ -151,7 +152,8 @@ class v2s_net(nn.Module):
             for nvid in range(self.num_vid):
                 self.near_far[self.data_offset[nvid]:self.data_offset[nvid+1]]=\
         [float(i) for i in self.config.get('data_%d'%nvid, 'near_far').split(',')]
-            #TODO need to save it for each frame
+            self.near_far = torch.Tensor(self.near_far)
+            self.near_far = nn.Parameter(self.near_far)
         except: self.near_far = None
         self.vis_min=np.asarray([[0,0,0]])
         self.vis_max=np.asarray([[1,1,1]])
@@ -586,6 +588,8 @@ class v2s_net(nn.Module):
         # save latest variables
         self.latest_vars['idk'][self.frameid.long()] = 1
         self.latest_vars['rtk'][self.frameid.long()] = self.rtk.cpu().numpy()
+        self.latest_vars['j2c'][self.frameid.long()] = self.sim3_j2c.detach().cpu().numpy()\
+                                                        [self.dataid.long()]
         
         if self.training and self.opts.anneal_freq:
             alpha = self.num_freqs * self.total_steps / (self.final_steps/2)

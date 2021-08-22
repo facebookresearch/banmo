@@ -336,6 +336,13 @@ def tensor2array(tdict):
         adict[k] = v.detach().cpu().numpy()
     return adict
 
+def array2tensor(adict, device='cpu'):
+    tdict={}
+    for k,v in adict.items():
+        tdict[k] = torch.Tensor(v)
+        if device != 'cpu': tdict[k] = tdict[k].to(device)
+    return tdict
+
 def raycast(xys, Rmat, Tmat, Kinv, near_far):
     """
     xys: bs, N, 3
@@ -356,8 +363,8 @@ def raycast(xys, Rmat, Tmat, Kinv, near_far):
     ray_origins = -Tmat.matmul(Rmat) # transpose -> right multiply
 
     if near_far is not None:
-        znear= (torch.ones(bs,nsample,1) * near_far[:,0,None,None]).to(device) 
-        zfar = (torch.ones(bs,nsample,1) * near_far[:,1,None,None]).to(device) 
+        znear= (torch.ones(bs,nsample,1).to(device) * near_far[:,0,None,None]) 
+        zfar = (torch.ones(bs,nsample,1).to(device) * near_far[:,1,None,None]) 
     else:
         #TODO need a better way to bound raycast
         lbound, ubound=[-1.5,1.5]
@@ -546,3 +553,34 @@ def canonical2ndc(model, dp_canonical_pts, rtk, kaug, frameid):
     dp_cam_pts = obj_to_cam(dp_deformed_pts, Rmat, Tmat) 
     dp_px = pinhole_cam(dp_cam_pts,K)
     return dp_px 
+
+def get_near_far(pts, near_far, vars_np):
+    """
+    pts:        point coordinate N,3
+    near_far:   near and far plane M,2
+    j2c:        joint to canonical transform M, 10
+    rtk:        object to camera transform, M,4,4
+    idk:        indicator of obsered or not M
+    """
+    M = near_far.shape[0]
+    device = near_far.device
+    pts = torch.Tensor(np.tile(pts[None],(M,1,1))).to(device) # N,3
+
+    vars_tensor = array2tensor(vars_np, device=device)
+    j2c = vars_tensor['j2c']
+    rtk = vars_tensor['rtk']
+    idk = vars_tensor['idk']
+
+    # pts to video canonical then to camera
+    Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(j2c)
+    Smat_j2c =Smat_j2c.mean(-1)[...,None]
+    pts = obj_to_cam(pts, Rmat_j2c, Tmat_j2c)
+    pts = obj_to_cam(pts, rtk[:,:3,:3], rtk[:,:3,3])
+
+    near= pts[...,-1].min(-1)[0]/1.2
+    far = pts[...,-1].max(-1)[0]*1.2
+
+    max_far = near_far.max().item()
+    near_far[idk==1,0] = torch.clamp(near[idk==1], 1e-3, max_far)
+    near_far[idk==1,1] = torch.clamp( far[idk==1], 1e-3, max_far)
+    return near_far

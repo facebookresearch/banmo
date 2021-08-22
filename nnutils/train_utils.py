@@ -35,7 +35,7 @@ from pytorch3d import transforms
 from torch.nn.utils import clip_grad_norm_
 
 from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
-                               obj_to_cam
+                               obj_to_cam, get_near_far
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
@@ -299,11 +299,10 @@ class v2s_trainer(Trainer):
                 self.init_training() # add new params to optimizer
 
             # change near-far plane after 10 epochs
-            #TODO near-far plane should be per-frame
-            #pdb.set_trace()
-            #if epoch==10:
-            #    model.near_far = get_near_far(mesh_rest, model.sim3_j2c, 
-            #                                  self.model.latest_vars)
+            if epoch==10:
+                self.model.near_far.data = get_near_far(mesh_rest.vertices,
+                                             self.model.near_far.data,
+                                             self.model.latest_vars)
  
             # training loop
             self.model.train()
@@ -378,7 +377,8 @@ class v2s_trainer(Trainer):
         opts = model.opts
         mesh_dict = {}
         if model.near_far is not None: 
-            bound=np.mean(model.near_far[:,1]-model.near_far[:,0]) / 2
+            bound=(model.near_far[:,1]-model.near_far[:,0]).mean() / 2
+            bound = bound.cpu().numpy()
         else: bound=1.5
 
         if mesh_dict_in is None:

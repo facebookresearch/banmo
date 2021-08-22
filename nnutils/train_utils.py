@@ -93,7 +93,7 @@ class v2s_trainer(Trainer):
             #data_offset.append( 100 )
             impath += dataset.imglist
             data_offset.append(len(dataset.imglist))
-        data_info['offset'] = np.asarray(data_offset)[:-1]
+        data_info['offset'] = np.asarray(data_offset).cumsum()
         data_info['impath'] = impath
         return data_info
     
@@ -297,6 +297,13 @@ class v2s_trainer(Trainer):
             if opts.lbs and epoch==10:
                 reinit_bones(self.model, mesh_rest)
                 self.init_training() # add new params to optimizer
+
+            # change near-far plane after 10 epochs
+            #TODO near-far plane should be per-frame
+            #pdb.set_trace()
+            #if epoch==10:
+            #    model.near_far = get_near_far(mesh_rest, model.sim3_j2c, 
+            #                                  self.model.latest_vars)
  
             # training loop
             self.model.train()
@@ -371,7 +378,7 @@ class v2s_trainer(Trainer):
         opts = model.opts
         mesh_dict = {}
         if model.near_far is not None: 
-            bound=np.mean(model.near_far) 
+            bound=np.mean(model.near_far[:,1]-model.near_far[:,0]) / 2
         else: bound=1.5
 
         if mesh_dict_in is None:
@@ -399,16 +406,19 @@ class v2s_trainer(Trainer):
             vol_rgbo = torch.cat(out_chunks, 0)
 
             vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
-            vol_o = F.softplus(vol_o)
-            if opts.bg: 
-                percentage_th = 0.4*64**2/grid_size**2
-                threshold=torch.quantile(vol_o, 1-percentage_th) # empirical value
-            else: threshold = 20
+            threshold = 0
+
+            #vol_o = F.softplus(vol_o)
+            #if opts.bg: 
+            #    percentage_th = 0.4*64**2/grid_size**2
+            #    threshold=torch.quantile(vol_o, 1-percentage_th) # empirical value
+            #else: threshold = 20
+
             print('fraction occupied:', (vol_o > threshold).float().mean())
             vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
             vertices = (vertices - grid_size/2)/grid_size*2*bound
             mesh = trimesh.Trimesh(vertices, triangles)
-       
+
             # mesh post-processing 
             if not opts.bg and len(mesh.vertices)>0:
                 mesh = [i for i in mesh.split(only_watertight=False)]

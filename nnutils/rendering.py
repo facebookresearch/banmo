@@ -161,8 +161,16 @@ def render_rays(models,
         noise = torch.randn(sigmas.shape, device=sigmas.device) * noise_std
 
         # compute alpha by the formula (3)
-        alphas = 1-torch.exp(-deltas*F.softplus(sigmas+noise)) # (N_rays, N_samples_)
-        #alphas = 1-torch.exp(-deltas*torch.relu(sigmas+noise)) # (N_rays, N_samples_)
+        sigmas = sigmas+noise
+        #sigmas = F.softplus(sigmas)
+        #sigmas = torch.relu(sigmas)
+        ibetas = 1/model.beta
+        #ibetas = 100
+        sdf = -sigmas
+        sigmas = (0.5 + 0.5 * sdf.sign() * torch.expm1(-sdf.abs() * ibetas))
+        sigmas = sigmas * ibetas
+
+        alphas = 1-torch.exp(-deltas*sigmas) # (N_rays, N_samples_)
         alphas_shifted = \
             torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, a1, a2, ...]
         weights = \
@@ -170,7 +178,7 @@ def render_rays(models,
         weights_sum = weights.sum(1) # (N_rays), the accumulated opacity along the rays
                                      # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
         if weights_only:
-            return weights, sigmas
+            return weights
 
         # compute final weighted outputs
         rgb_final = torch.sum(weights.unsqueeze(-1)*rgbs, -2) # (N_rays, 3)
@@ -179,7 +187,7 @@ def render_rays(models,
         if white_back:
             rgb_final = rgb_final + 1-weights_sum.unsqueeze(-1)
 
-        return rgb_final, depth_final, weights, sigmas
+        return rgb_final, depth_final, weights
 
 
     # Extract models from lists
@@ -325,12 +333,12 @@ def render_rays(models,
                                     xyz_coarse_sampled,backward=False)
         
     if test_time:
-        weights_coarse, sigmas = \
+        weights_coarse = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=True)
         result = {'sil_coarse': weights_coarse[:,:-1].sum(1)}
     else:
-        rgb_coarse, depth_coarse, weights_coarse, sigmas = \
+        rgb_coarse, depth_coarse, weights_coarse = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=False)
         result = {'img_coarse': rgb_coarse,
@@ -417,7 +425,7 @@ def render_rays(models,
                            # (N_rays, N_samples+N_importance, 3)
 
         model_fine = models['fine']
-        rgb_fine, depth_fine, weights_fine, sigmas = \
+        rgb_fine, depth_fine, weights_fine = \
             inference(model_fine, embedding_xyz, xyz_fine_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=False)
 

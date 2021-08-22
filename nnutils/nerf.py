@@ -115,6 +115,9 @@ class NeRF(nn.Module):
                         )
 
         self.raw_feat = raw_feat
+
+        self.beta = torch.Tensor([1./100])
+        self.beta = nn.Parameter(self.beta)
         
 #        for m in self.modules():
 #            if isinstance(m, nn.Linear):

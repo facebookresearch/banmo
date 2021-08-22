@@ -120,7 +120,7 @@ flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from n
 flags.DEFINE_integer('num_test_views', 0, 'number of test views, 0: use all viewsf')
 flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
 flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
-flags.DEFINE_bool('anneal_freq', False, 'whether to use frequency annealing')
+flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', None, 'maximum frequency for fourier features')
 flags.DEFINE_integer('freq_decay', None, 'maximum frequency for fourier feature regularization')
 
@@ -141,14 +141,17 @@ class v2s_net(nn.Module):
         self.num_vid =  len(self.config.sections())-1
         self.data_offset = data_info['offset']
         self.impath      = data_info['impath']
+        self.latest_vars = {}
+        self.latest_vars['rtk'] = np.zeros((self.data_offset[-1], 4,4))
+        self.latest_vars['idk'] = np.zeros((self.data_offset[-1],))
 
         # get near-far plane
         try:
-            self.near_far = []
+            self.near_far = np.zeros((self.data_offset[-1],2)).astype(np.float32)
             for nvid in range(self.num_vid):
-                self.near_far.append( [float(i) for i in\
-                        self.config.get('data_%d'%nvid, 'near_far').split(',')])
-            self.near_far = np.asarray(self.near_far).astype(np.float32) #TODO need to save it
+                self.near_far[self.data_offset[nvid]:self.data_offset[nvid+1]]=\
+        [float(i) for i in self.config.get('data_%d'%nvid, 'near_far').split(',')]
+            #TODO need to save it for each frame
         except: self.near_far = None
         self.vis_min=np.asarray([[0,0,0]])
         self.vis_max=np.asarray([[1,1,1]])
@@ -167,7 +170,7 @@ class v2s_net(nn.Module):
         self.nerf_models= {'coarse':self.nerf_coarse}
 
         # set dnerf model
-        max_t=1000  ##TODO change 15
+        max_t=self.data_offset[-1]  
         self.embedding_time = nn.Embedding(max_t, max_t)
         if opts.flowbw:
             self.nerf_flowbw = NeRF(in_channels_xyz=in_channels_xyz+max_t,
@@ -238,8 +241,7 @@ class v2s_net(nn.Module):
             self.dp_vis = self.dp_vis / self.dp_vmax
 
         if opts.use_dp:
-                self.dp_verts = nn.Parameter(self.dp_verts)
-
+            self.dp_verts = nn.Parameter(self.dp_verts)
 
             # deformation from joint canonincal space to dp space
             self.nerf_dp = NeRF(in_channels_xyz=in_channels_xyz,
@@ -270,7 +272,7 @@ class v2s_net(nn.Module):
 
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
-        near_far = self.near_far[self.dataid.long()]
+        near_far = self.near_far[self.frameid.long()]
         rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
 
         # update rays
@@ -580,8 +582,12 @@ class v2s_net(nn.Module):
             self.rtk[:,:3,:3] = rmat
             self.rtk[:,:3,3] = tmat
             self.rtk[:,3,:] = self.ks_param #TODO kmat
+
+        # save latest variables
+        self.latest_vars['idk'][self.frameid.long()] = 1
+        self.latest_vars['rtk'][self.frameid.long()] = self.rtk.cpu().numpy()
         
-        if self.opts.anneal_freq:
+        if self.training and self.opts.anneal_freq:
             alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
             alpha = min(max(3, alpha),self.num_freqs) # alpha from 3 to 10
             self.embedding_xyz.alpha = alpha 

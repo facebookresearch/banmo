@@ -251,12 +251,18 @@ def main():
             refmesh = all_mesh[i]
             refcam = all_cam[i]
 
+        # load vertices
+        refface = torch.Tensor(refmesh.faces[None]).cuda()
+        verts = torch.Tensor(refmesh.vertices[None]).cuda()
+        verts = verts * float(refscale)
+
         # change viewpoint
         vp_tmat = refcam[:3,3]
         vp_kmat = refcam[3]
         if args.vp==-1:
             # static camera
-            vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
+            vp_rmat = (refcam[:3,:3].T).dot(all_cam[0][:3,:3])
+            #vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
 #            vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0].dot(vp_rmat) # bev
             vp_tmat = all_cam[0][:3,3]
             vp_kmat = all_cam[0][3]
@@ -267,24 +273,18 @@ def main():
         else:
             vp_rmat = cv2.Rodrigues(np.asarray([0.,0,0]))[0]
         refcam_vp = refcam.copy()
-        refcam_vp[:3,:3] = vp_rmat.dot(refcam_vp[:3,:3])
+        refcam_vp[:3,:3] = refcam_vp[:3,:3].dot(vp_rmat)
+        #refcam_vp[:3,:3] = vp_rmat.dot(refcam_vp[:3,:3])
+        if args.vp==1 or args.vp==2:
+            vmean = verts[0].mean(0).cpu()
+            vp_tmat = vp_tmat - refcam_vp[:3,:3].dot(vmean) + refcam[:3,:3].dot(vmean)
         refcam_vp[:3,3]  = vp_tmat
         refcam_vp[3]     = vp_kmat
 
-
-        currcam = np.concatenate([refcam_vp[:3,:4],np.asarray([[0,0,0,1]])],0)
-        if i==0:
-            initcam = currcam.copy()
-        
-        refface = torch.Tensor(refmesh.faces[None]).cuda()
-        verts = torch.Tensor(refmesh.vertices[None]).cuda()
         Rmat =  torch.Tensor(refcam_vp[None,:3,:3]).cuda()
         Tmat =  torch.Tensor(refcam_vp[None,:3,3]).cuda()
         ppoint =refcam_vp[3,2:]
         focal = refcam_vp[3,:2]
-
-        verts = verts * float(refscale)
-
         verts = obj_to_cam(verts, Rmat, Tmat)
         r = OffscreenRenderer(img_size, img_size)
         colors = refmesh.visual.vertex_colors

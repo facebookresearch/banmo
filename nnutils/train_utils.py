@@ -183,6 +183,20 @@ class v2s_trainer(Trainer):
     
     def load_network(self,model_path=None):
         states = torch.load(model_path,map_location='cpu')
+
+        # TODO: modify states to be compatible with possibly more datasets
+        len_prev_fr = states['near_far'].shape[0]
+        len_prev_vid= states['sim3_j2c'].shape[0]
+        self.model.near_far.data[:len_prev_fr] = states['near_far']
+        self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
+        self.model.embedding_time.weight.data[:len_prev_fr] = \
+           states['embedding_time.weight']
+
+        del states['near_far'] 
+        del states['sim3_j2c']
+        del states['embedding_time.weight']
+        del states['nerf_bone_rts.0.weight']
+
         self.model.load_state_dict(states, strict=False)
         return
    
@@ -298,8 +312,8 @@ class v2s_trainer(Trainer):
                 reinit_bones(self.model, mesh_rest)
                 self.init_training() # add new params to optimizer
 
-            # change near-far plane after 10 epochs
-            if epoch==10:
+            # change near-far plane after half epochs
+            if epoch==int(opts.num_epochs/2):
                 self.model.near_far.data = get_near_far(mesh_rest.vertices,
                                              self.model.near_far.data,
                                              self.model.latest_vars)

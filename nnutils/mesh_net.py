@@ -121,7 +121,7 @@ flags.DEFINE_integer('num_test_views', 0, 'number of test views, 0: use all view
 flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
 flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
 flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
-flags.DEFINE_integer('alpha', None, 'maximum frequency for fourier features')
+flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
 flags.DEFINE_integer('freq_decay', None, 'maximum frequency for fourier feature regularization')
 
 #viser
@@ -136,6 +136,8 @@ class v2s_net(nn.Module):
         self.device = torch.device("cuda:%d"%opts.local_rank)
         self.config = configparser.RawConfigParser()
         self.config.read('configs/%s.config'%opts.seqname)
+        self.alpha=torch.Tensor([opts.alpha])
+        self.alpha=nn.Parameter(self.alpha)
 
         # multi-video mode
         self.num_vid =  len(self.config.sections())-1
@@ -166,18 +168,19 @@ class v2s_net(nn.Module):
         self.num_freqs = 10
         in_channels_xyz=3+3*self.num_freqs*2
         self.nerf_coarse = NeRF(in_channels_xyz=in_channels_xyz)
-        self.embedding_xyz = Embedding(3,self.num_freqs,alpha=opts.alpha)
-        self.embedding_dir = Embedding(3,4,             alpha=opts.alpha)
+        self.embedding_xyz = Embedding(3,self.num_freqs,alpha=self.alpha.data[0])
+        self.embedding_dir = Embedding(3,4,             alpha=self.alpha.data[0])
         self.embeddings = {'xyz':self.embedding_xyz, 'dir':self.embedding_dir}
         self.nerf_models= {'coarse':self.nerf_coarse}
 
         # set dnerf model
         max_t=self.data_offset[-1]  
-        self.embedding_time = nn.Embedding(max_t, max_t)
+        t_embed_dim = 128
+        self.embedding_time = nn.Embedding(max_t, t_embed_dim)
         if opts.flowbw:
-            self.nerf_flowbw = NeRF(in_channels_xyz=in_channels_xyz+max_t,
+            self.nerf_flowbw = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
                                 in_channels_dir=0, raw_feat=True)
-            self.nerf_flowfw = NeRF(in_channels_xyz=in_channels_xyz+max_t,
+            self.nerf_flowfw = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
                                 in_channels_dir=0, raw_feat=True)
             self.nerf_models['flowbw'] = self.nerf_flowbw
             self.nerf_models['flowfw'] = self.nerf_flowfw
@@ -195,7 +198,7 @@ class v2s_net(nn.Module):
 
             self.nerf_bone_rts = nn.Sequential(self.embedding_time,
                                 RTHead(is_bone=True, use_cam=opts.use_cam, 
-                                in_channels_xyz=max_t, D=4, in_channels_dir=0,
+                                in_channels_xyz=t_embed_dim, D=4, in_channels_dir=0,
                                 out_channels=7*self.num_bones, raw_feat=True))
 
         # optimize camera
@@ -206,7 +209,7 @@ class v2s_net(nn.Module):
             else:
                 self.nerf_root_rts = nn.Sequential(self.embedding_time,
                                 RTHead(is_bone=False, use_cam=opts.use_cam, 
-                                in_channels_xyz=max_t, D=4, in_channels_dir=0,
+                                in_channels_xyz=t_embed_dim, D=4, in_channels_dir=0,
                                 out_channels=7, raw_feat=True))
 
                 # TODO: change according to multiple video
@@ -593,9 +596,9 @@ class v2s_net(nn.Module):
         
         if self.training and self.opts.anneal_freq:
             alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
-            alpha = min(max(3, alpha),self.num_freqs) # alpha from 3 to 10
-            self.embedding_xyz.alpha = alpha 
-            self.embedding_dir.alpha = alpha 
+            self.alpha.data[0] = min(max(3, alpha),self.num_freqs) # alpha from 3 to 10
+            self.embedding_xyz.alpha = self.alpha.data[0]
+            self.embedding_dir.alpha = self.alpha.data[0]
 
         return bs
 

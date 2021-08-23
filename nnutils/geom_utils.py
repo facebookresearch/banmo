@@ -554,13 +554,14 @@ def canonical2ndc(model, dp_canonical_pts, rtk, kaug, frameid):
     dp_px = pinhole_cam(dp_cam_pts,K)
     return dp_px 
 
-def get_near_far(pts, near_far, vars_np):
+def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
     """
     pts:        point coordinate N,3
     near_far:   near and far plane M,2
     j2c:        joint to canonical transform M, 10
     rtk:        object to camera transform, M,4,4
     idk:        indicator of obsered or not M
+    tol_fac     tolerance factor
     """
     M = near_far.shape[0]
     device = near_far.device
@@ -577,8 +578,8 @@ def get_near_far(pts, near_far, vars_np):
     pts = obj_to_cam(pts, Rmat_j2c, Tmat_j2c)
     pts = obj_to_cam(pts, rtk[:,:3,:3], rtk[:,:3,3])
 
-    near= pts[...,-1].min(-1)[0]/1.2
-    far = pts[...,-1].max(-1)[0]*1.2
+    near= pts[...,-1].min(-1)[0]/tol_fac
+    far = pts[...,-1].max(-1)[0]*tol_fac
 
     max_far = near_far.max().item()
     near_far[idk==1,0] = torch.clamp(near[idk==1], 1e-3, max_far)

@@ -27,8 +27,10 @@ from nnutils.nerf import Embedding, NeRF, RTHead
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
-                                canonical2ndc, obj_to_cam, vec_to_sim3
+                                canonical2ndc, obj_to_cam, vec_to_sim3, \
+                                near_far_to_bound
 from nnutils.rendering import render_rays
+from nnutils.loss_utils import eikonal_loss
 from ext_utils.flowlib import cat_imgflo 
 from ext_utils.flowlib import warp_flow
 
@@ -122,7 +124,7 @@ flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
 flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
 flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
-flags.DEFINE_integer('freq_decay', None, 'maximum frequency for fourier feature regularization')
+flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -154,14 +156,19 @@ class v2s_net(nn.Module):
             for nvid in range(self.num_vid):
                 self.near_far[self.data_offset[nvid]:self.data_offset[nvid+1]]=\
         [float(i) for i in self.config.get('data_%d'%nvid, 'near_far').split(',')]
-            self.near_far = torch.Tensor(self.near_far)
+            self.near_far = torch.Tensor(self.near_far).to(self.device)
             self.near_far = nn.Parameter(self.near_far)
         except: self.near_far = None
+    
+        # object bound
+        self.obj_bound = near_far_to_bound(self.near_far)
+
         self.vis_min=np.asarray([[0,0,0]])
         self.vis_max=np.asarray([[1,1,1]])
         
         # video specific sim3: from video to joint canonical space
         self.sim3_j2c= generate_bones(self.num_vid, self.num_vid, 0, self.device)
+        #self.sim3_j2c.data[1,3:7] = torch.Tensor([0,0,1,0]).cuda() #TODO
         self.sim3_j2c = nn.Parameter(self.sim3_j2c)
 
         # set nerf model
@@ -716,15 +723,11 @@ class v2s_net(nn.Module):
             total_loss = total_loss + rig_loss
             aux_out['rig_loss'] = rig_loss
 
-        if opts.freq_decay:
-            freq_decay_loss = 0.
-            for embed_str in self.nerf_coarse.weights_reg:
-                embed_weight = getattr(self.nerf_coarse, embed_str)[0].weight
-                embed_weight = embed_weight[:,:self.nerf_coarse.in_channels_xyz]
-                embed_weight = embed_weight[:,3:] # after xyz
-                freq_decay_loss += opts.freq_decay*embed_weight.abs().mean()
-            total_loss = total_loss + freq_decay_loss
-            aux_out['freq_decay_loss'] = freq_decay_loss
+        if opts.eikonal_loss:
+            ekl_loss = 0.01*eikonal_loss(self.nerf_coarse, self.embedding_xyz, 
+                                         self.obj_bound)
+            total_loss = total_loss + ekl_loss
+            aux_out['ekl_loss'] = ekl_loss
 
         aux_out['total_loss'] = total_loss
         return total_loss, aux_out

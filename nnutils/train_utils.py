@@ -35,7 +35,7 @@ from pytorch3d import transforms
 from torch.nn.utils import clip_grad_norm_
 
 from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
-                               obj_to_cam, get_near_far
+                               obj_to_cam, get_near_far, near_far_to_bound
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
@@ -163,7 +163,7 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_bones
             opts.learning_rate, # params_ks
             opts.learning_rate, # params_nerf_dp
-          5*opts.learning_rate, # params_sim3_j2c
+          2*opts.learning_rate, # params_sim3_j2c
           0*opts.learning_rate, # params_dp_verts
             ],
             self.model.final_steps,
@@ -304,6 +304,11 @@ class v2s_trainer(Trainer):
             mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
             mesh_rest = aux_seq['mesh'][0]
             mesh_rest.export(mesh_file)
+
+            # reset object bound
+            if epoch>int(opts.num_epochs/2):
+                self.model.obj_bound = 1.2*np.abs(mesh_rest.vertices).max()
+
             for k,v in rendered_seq.items():
                 grid_img = image_grid(rendered_seq[k],3,3)
                 self.add_image(log, k, grid_img, epoch, scale=False)
@@ -392,8 +397,7 @@ class v2s_trainer(Trainer):
         opts = model.opts
         mesh_dict = {}
         if model.near_far is not None: 
-            bound=(model.near_far[:,1]-model.near_far[:,0]).mean() / 2
-            bound = bound.cpu().numpy()
+            bound = model.obj_bound
         else: bound=1.5
 
         if mesh_dict_in is None:

@@ -7,6 +7,7 @@ from torchsearchsorted import searchsorted
 
 from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
                                vec_to_sim3, rtmat_invert
+from nnutils.nerf import evaluate_mlp
 
 __all__ = ['render_rays']
 
@@ -240,18 +241,6 @@ def render_rays(models,
     # root space point correspondence in t2
     xyz_coarse_target = xyz_coarse_sampled.clone()
 
-    ##TODO: produce backward 3d flow and warp to canonical space.
-    def evaluate_mlp(model, embedded, code=None, sigma_only=False):
-        B,nbins,_ = embedded.shape
-        out_chunks = []
-        for i in range(0, B, chunk):
-            if code is not None:
-                embedded = torch.cat([embedded[i:i+chunk],
-                           code[i:i+chunk].repeat(1,nbins,1)], -1)
-            out_chunks += [model(embedded, sigma_only=sigma_only)]
-
-        out = torch.cat(out_chunks, 0)
-        return out
 
     # free deform
     if 'flowbw' in models.keys():
@@ -259,12 +248,14 @@ def render_rays(models,
         model_flowfw = models['flowfw']
         time_embedded = rays['time_embedded'][:,None]
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-        flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, code=time_embedded)
+        flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, 
+                                        chunk, code=time_embedded)
         xyz_coarse_sampled=xyz_coarse_sampled + flow_bw
         
         # cycle loss (in the joint canonical space)
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-        flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, code=time_embedded)
+        flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
+                                        chunk, code=time_embedded)
         frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
         # rigidity loss
         frame_disp3d = flow_fw.norm(2,-1)
@@ -289,7 +280,7 @@ def render_rays(models,
         if "time_embedded_target" in rays.keys():
             time_embedded_target = rays['time_embedded_target'][:,None]
             flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
-                                    code=time_embedded_target)
+                                    chunk, code=time_embedded_target)
             xyz_coarse_target=xyz_coarse_sampled + flow_fw
 
 
@@ -351,7 +342,7 @@ def render_rays(models,
         # render densepose surface
         nerf_dp = models['nerf_dp']
         xyz_joint_embedded = embedding_xyz(xyz_joint)
-        flow_dp = evaluate_mlp(nerf_dp, xyz_joint_embedded)
+        flow_dp = evaluate_mlp(nerf_dp, xyz_joint_embedded, chunk)
         xyz_joint= xyz_joint + flow_dp
     result['joint_render'] = torch.sum(weights_coarse.unsqueeze(-1)*xyz_joint, -2)
     

@@ -576,8 +576,8 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
     Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(j2c)
     Smat_j2c =Smat_j2c.mean(-1)[...,None,None]
     pts = obj_to_cam(pts, Rmat_j2c, Tmat_j2c)
-    pts = obj_to_cam(pts, rtk[:,:3,:3], rtk[:,:3,3])
     pts = pts * Smat_j2c
+    pts = obj_to_cam(pts, rtk[:,:3,:3], rtk[:,:3,3])
 
     near= pts[...,-1].min(-1)[0]/tol_fac
     far = pts[...,-1].max(-1)[0]*tol_fac
@@ -586,3 +586,14 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
     near_far[idk==1,0] = torch.clamp(near[idk==1], 1e-3, max_far)
     near_far[idk==1,1] = torch.clamp( far[idk==1], 1e-3, max_far)
     return near_far
+            
+
+def near_far_to_bound(near_far):
+    """
+    near_far: T, 2 on cuda
+    bound: float
+    this can only be used for a single video (and for approximation)
+    """
+    bound=(near_far[:,1]-near_far[:,0]).mean() / 2
+    bound = bound.detach().cpu().numpy()
+    return bound

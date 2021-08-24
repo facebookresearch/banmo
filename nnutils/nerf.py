@@ -200,3 +200,16 @@ class RTHead(NeRF):
         rts = torch.cat([rquat,tmat],-1)
         x = rts.view(x.shape)
         return x
+    
+
+def evaluate_mlp(model, embedded, chunk, code=None, sigma_only=False):
+    B,nbins,_ = embedded.shape
+    out_chunks = []
+    for i in range(0, B, chunk):
+        if code is not None:
+            embedded = torch.cat([embedded[i:i+chunk],
+                       code[i:i+chunk].repeat(1,nbins,1)], -1)
+        out_chunks += [model(embedded, sigma_only=sigma_only)]
+
+    out = torch.cat(out_chunks, 0)
+    return out

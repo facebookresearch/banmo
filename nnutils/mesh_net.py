@@ -596,7 +596,8 @@ class v2s_net(nn.Module):
         
         if self.training and self.opts.anneal_freq:
             alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
-            self.alpha.data[0] = min(max(3, alpha),self.num_freqs) # alpha from 3 to 10
+            if alpha>self.alpha.data[0]:
+                self.alpha.data[0] = min(max(3, alpha),self.num_freqs) # alpha from 3 to 10
             self.embedding_xyz.alpha = self.alpha.data[0]
             self.embedding_dir.alpha = self.alpha.data[0]
 

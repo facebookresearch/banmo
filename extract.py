@@ -80,8 +80,8 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
         #mesh_verts = mesh_verts * Smat_j2c
         #mesh.vertices = mesh_verts.numpy()
         # save the cameras relative to the joint canonical model
-        rtk[:3,:3] = rtk[:3,:3].dot(Rmat_j2c)
         rtk[:3,3]  = rtk[:3,:3].dot(Tmat_j2c[...,None]*Smat_j2c)[...,0] + rtk[:3,3]
+        rtk[:3,:3] = rtk[:3,:3].dot(Rmat_j2c)
         
         mesh.export('%s-mesh-%05d.obj'%(save_prefix, idx))
         np.savetxt('%s-cam-%05d.txt'  %(save_prefix, idx), rtk)

@@ -163,7 +163,7 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_bones
             opts.learning_rate, # params_ks
             opts.learning_rate, # params_nerf_dp
-            opts.learning_rate, # params_sim3_j2c
+          5*opts.learning_rate, # params_sim3_j2c
           0*opts.learning_rate, # params_dp_verts
             ],
             self.model.final_steps,
@@ -198,6 +198,7 @@ class v2s_trainer(Trainer):
         del states['nerf_bone_rts.0.weight']
 
         self.model.load_state_dict(states, strict=False)
+        #self.model.sim3_j2c.data[1,3:7] = torch.Tensor([0,0,1,0]).cuda()
         return
    
     def eval(self, num_view=9, dynamic_mesh=False): 

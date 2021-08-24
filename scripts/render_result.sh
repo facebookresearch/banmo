@@ -17,7 +17,8 @@ python render_vis.py --testdir $testdir \
                      --outpath $prefix-bne \
                      --seqname $seqname \
                      --vp -1 \
-                     --vis_bones
+                     --vis_bones \
+                     --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj0 \
                      --seqname $seqname \

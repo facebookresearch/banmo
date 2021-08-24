@@ -574,9 +574,10 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
 
     # pts to video canonical then to camera
     Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(j2c)
-    Smat_j2c =Smat_j2c.mean(-1)[...,None]
+    Smat_j2c =Smat_j2c.mean(-1)[...,None,None]
     pts = obj_to_cam(pts, Rmat_j2c, Tmat_j2c)
     pts = obj_to_cam(pts, rtk[:,:3,:3], rtk[:,:3,3])
+    pts = pts * Smat_j2c
 
     near= pts[...,-1].min(-1)[0]/tol_fac
     far = pts[...,-1].max(-1)[0]*tol_fac

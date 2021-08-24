@@ -295,7 +295,7 @@ def main():
             
         # project trajectories to image
         if args.vis_traj:
-            pts_trajs[i] = obj2cam_vis(pts_trajs[i], Rmat, Tmat)
+            pts_trajs[i] = obj2cam_vis(pts_trajs[i]*refscale, Rmat, Tmat)
 
         if args.vis_cam:
             mesh_cam_transformed = mesh_cam.copy()

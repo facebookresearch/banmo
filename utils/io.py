@@ -7,18 +7,25 @@ import imageio
 from typing import Any, Dict, List, Tuple, Union
 import glob
 
+import sys
+sys.path.insert(0,'third_party')
 import dataloader.vidbase as base_data
+from ext_utils.flowlib import flow_to_image
 
 
-def save_vid(outpath, frames, suffix='.gif'):
+def save_vid(outpath, frames, suffix='.gif',upsample_frame=150., is_flow=False):
     """
     save frames to video
+    frames:     n,h,w,1 or n.
     """
     # convert to 150 frames
+    if upsample_frame<1: upsample_frame = len(frames)
     frame_150=[]
-    for i in range(150):
-        fid = int(i/150.*len(frames))
+    for i in range(int(upsample_frame)):
+        fid = int(i/upsample_frame*len(frames))
         frame = frames[fid]
+        if is_flow:
+            frame = flow_to_image(frame)
         if frame.max()<=1: 
             frame=frame*255
         frame = frame.astype(np.uint8)

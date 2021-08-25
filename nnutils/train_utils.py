@@ -40,7 +40,7 @@ from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
-
+from utils.io import save_vid
 
 class v2s_trainer(Trainer):
     def __init__(self, opts):
@@ -163,7 +163,7 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_bones
             opts.learning_rate, # params_ks
             opts.learning_rate, # params_nerf_dp
-          2*opts.learning_rate, # params_sim3_j2c
+         10*opts.learning_rate, # params_sim3_j2c
           0*opts.learning_rate, # params_dp_verts
             ],
             self.model.final_steps,
@@ -279,7 +279,15 @@ class v2s_trainer(Trainer):
                 aux_seq['impath'].append(impath)
 
             for k,v in rendered_seq.items():
+                #TODO save images
+                print('saving %s to gif'%k)
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)
+                if 'flo' in k or 'fdp' in k: 
+                    is_flow = True
+                else: is_flow = False
+                save_vid('%s/%s'%(self.save_dir,k), 
+                         rendered_seq[k].cpu().numpy(), 
+                        suffix='.gif', upsample_frame=-1, is_flow=is_flow)
 
         return rendered_seq, aux_seq
     
@@ -305,7 +313,7 @@ class v2s_trainer(Trainer):
             mesh_rest = aux_seq['mesh'][0]
             mesh_rest.export(mesh_file)
 
-            # reset object bound
+            # reset object bound, only for visualization
             if epoch>int(opts.num_epochs/2):
                 self.model.obj_bound = 1.2*np.abs(mesh_rest.vertices).max()
 
@@ -342,20 +350,57 @@ class v2s_trainer(Trainer):
                     print('forward back time:%.2f'%(time.time()-start_time))
 
                 ## gradient clipping
-                nerf_coarse_grad = []
-                nerf_root_rts_grad = []
+                grad_nerf_coarse=[]
+                grad_nerf_fine=[]
+                grad_nerf_flowbw=[]
+                grad_nerf_root_rts=[]
+                grad_nerf_bone_rts=[]
+                grad_embed=[]
+                grad_bones=[]
+                grad_ks=[]
+                grad_nerf_dp=[]
+                grad_sim3_j2c=[]
+                grad_dp_verts=[]
                 for name,p in self.model.named_parameters():
                     try: 
                         pgrad_nan = p.grad.isnan()
                         if pgrad_nan.sum()>0: pdb.set_trace()
                     except: pass
                     if 'nerf_coarse' in name:
-                        nerf_coarse_grad.append(p)
+                        grad_nerf_coarse.append(p)
+                    elif 'nerf_fine' in name:
+                        grad_nerf_fine.append(p)
+                    elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
+                        grad_nerf_flowbw.append(p)
                     elif 'nerf_root_rts' in name:
-                        nerf_root_rts_grad.append(p)
-                aux_out['nerf_coarse_g'] = clip_grad_norm_(nerf_coarse_grad, .1)
-                aux_out['nerf_root_rts_g'] = clip_grad_norm_(nerf_root_rts_grad, .1)
-                
+                        grad_nerf_root_rts.append(p)
+                    elif 'nerf_bone_rts' in name:
+                        grad_nerf_bone_rts.append(p)
+                    elif 'embedding_time' in name:
+                        grad_embed.append(p)
+                    elif 'bones' == name:
+                        grad_bones.append(p)
+                    elif 'ks' == name:
+                        grad_ks.append(p)
+                    elif 'nerf_dp' in name:
+                        grad_nerf_dp.append(p)
+                    elif 'sim3_j2c' == name:
+                        grad_sim3_j2c.append(p)
+                    elif 'dp_verts' == name:
+                        grad_dp_verts.append(p)
+                    else: continue
+
+                aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,  .1)
+                aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,    .1)
+                aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,  .1)
+                aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts,.1)
+                aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts,.1)
+                aux_out['embedding_time_g']= clip_grad_norm_(grad_embed,        .1)
+                aux_out['bones_g']         = clip_grad_norm_(grad_bones,        .1)
+                aux_out['ks_g']            = clip_grad_norm_(grad_ks,           .1)
+                aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,      .1)
+                aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,     .1)
+                aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,     .1)
 
                 self.optimizer.step()
                 self.scheduler.step()

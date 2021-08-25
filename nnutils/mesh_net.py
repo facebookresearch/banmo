@@ -125,6 +125,7 @@ flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
 flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
 flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
+flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -168,7 +169,9 @@ class v2s_net(nn.Module):
         
         # video specific sim3: from video to joint canonical space
         self.sim3_j2c= generate_bones(self.num_vid, self.num_vid, 0, self.device)
-        #self.sim3_j2c.data[1,3:7] = torch.Tensor([0,0,1,0]).cuda() #TODO
+        angle=opts.rot_angle*np.pi
+        init_rot = transforms.axis_angle_to_quaternion(torch.Tensor([0,angle,0]))
+        self.sim3_j2c.data[1,3:7] = init_rot.to(self.device) #TODO
         self.sim3_j2c = nn.Parameter(self.sim3_j2c)
 
         # set nerf model
@@ -281,6 +284,9 @@ class v2s_net(nn.Module):
         Kinv = Kmatinv(Kaug.matmul(Kmat))
         bs = Kinv.shape[0]
         frameid = frameid.long().to(self.device)[:,None]
+        # don't update the canonical frame sim3
+        sim3_j2c = torch.cat([self.sim3_j2c[:1].detach(),  
+                              self.sim3_j2c[1:]],0)
 
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
@@ -314,7 +320,7 @@ class v2s_net(nn.Module):
                     rays['bone_rts_dentrg'] = bone_rts_dentrg.repeat(1,rays['nsample'],1)
 
                 dataid_dentrg = self.dataid[self.rand_dentrg]
-                rays['sim3_j2c_dentrg'] = self.sim3_j2c[dataid_dentrg.long()]
+                rays['sim3_j2c_dentrg'] = sim3_j2c[dataid_dentrg.long()]
                 rays['sim3_j2c_dentrg'] = rays['sim3_j2c_dentrg'][:,None].repeat(1,rays['nsample'],1)
                  
 
@@ -326,7 +332,7 @@ class v2s_net(nn.Module):
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
         # pass the canonical to joint space transforms
-        rays['sim3_j2c'] = self.sim3_j2c[self.dataid.long()]
+        rays['sim3_j2c'] = sim3_j2c[self.dataid.long()]
         rays['sim3_j2c'] = rays['sim3_j2c'][:,None].repeat(1,rays['nsample'],1)
 
         # render rays
@@ -424,6 +430,7 @@ class v2s_net(nn.Module):
         results['joint_render_vis'] = (results['joint_render']-\
                        torch.Tensor(self.vis_min[None,None]).to(self.device))/\
                        torch.Tensor(self.vis_max[None,None]).to(self.device)
+        results['joint_render_vis'] = results['joint_render_vis'].clamp(0,1)
         #    pdb.set_trace() 
         #    trimesh.Trimesh(self.dp_verts.cpu(), self.dp_faces,
         #            vertex_colors=self.dp_vis.cpu()).export('0.obj')
@@ -469,10 +476,15 @@ class v2s_net(nn.Module):
         if self.opts.flow_dp:
             # densepose to correspondence
             # randomly choose 1 target image
-            while True:
-                rand_dentrg = np.random.randint(0,2*bs,2*bs)
-                if ((rand_dentrg-np.asarray(range(2*bs)))==0).sum()==0:
-                    break
+            if self.training:
+                order1 = np.asarray(range(2*bs))
+                is_degenerate_pair = len(set((self.frameid.cpu().numpy())))==2
+                while True:
+                    rand_dentrg = np.random.randint(0,2*bs,2*bs)
+                    if is_degenerate_pair or \
+            ((self.frameid[rand_dentrg]-self.frameid[order1])==0).sum()==0:
+                        break
+            else: rand_dentrg = np.asarray([1,0])
             self.rand_dentrg = rand_dentrg
             # downsample
             h_rszd,w_rszd=h//4,w//4

@@ -28,7 +28,7 @@ import point_rend
         
 
 seqname=sys.argv[1]
-datadir='/private/home/gengshany/data/tmp/%s/images/'%seqname
+datadir='tmp/%s/images/'%seqname
 odir='/private/home/gengshany/data/DAVIS/'
 imgdir= '%s/JPEGImages/Full-Resolution/%s'%(odir,seqname)
 maskdir='%s/Annotations/Full-Resolution/%s'%(odir,seqname)

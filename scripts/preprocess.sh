@@ -1,6 +1,6 @@
 rootdir=/private/home/gengshany/dropbox/GengshanYang_project/test_videos/
-tmpdir=/private/home/gengshany/data/tmp/
-prefix=cat_5
+tmpdir=tmp/
+prefix=cat_9
 filedir=$rootdir/$prefix
 outdir=$rootdir/output
 suffix=.MOV

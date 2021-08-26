@@ -16,6 +16,12 @@ git clone --recursive -j8 git://github.com/hjwdzh/Manifold; cd Manifold; mkdir b
 pip install --upgrade PyMCubes
 ```
 
+## Preprocess
+Extract frames
+```
+bash scripts/preprocess.sh
+```
+
 ## Run
 Create tmp dirs
 ```
@@ -40,7 +46,7 @@ python submit.py scripts/template.sh redo-mcat-6-corresp-lbs-flowdp-rot1 mcat_6 
 ```
 To re-render meshes
 ```
-bash scripts/render_result.sh syn-eagled-15h logdir/syn-eagled-15h-test3/params_20.pth --flowbw --sample_grid3d 256
+bash scripts/render_result.sh syn-eagled-15h logdir/syn-eagled-15h-test3/params_20.pth --lbs --sample_grid3d 128 --queryfw
 bash scripts/render_result.sh mcat_6 logdir/mcat-6-corresp-lbs-flowdp-lr10-rot1-rmdp/params_11.pth --sample_grid3d 128 --queryfw --lbs
 ```
 ## Additional Notes

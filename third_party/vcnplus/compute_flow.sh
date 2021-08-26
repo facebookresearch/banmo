@@ -4,7 +4,6 @@ res=Full-Resolution
 seqname=$1
 testres=1
 
-. activate viser
 rm ./$seqname -rf
 rm $outdavisdir/FlowFW/$res/${seqname}* -rf
 rm $outdavisdir/FlowBW/$res/${seqname}* -rf

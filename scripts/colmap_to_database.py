@@ -85,17 +85,15 @@ grid_size = 12
 threshold = 20
 
 if save_data:
-    target_dir='logdir/%s/'%logname
-    try: shutil.rmtree(target_dir)
-    except: pass
-    os.mkdir(target_dir)
-
+    cam_save_path = '../vid2shape/database/DAVIS/Cameras/Full-Resolution/%s'%seqname
     rgb_save_path = '../vid2shape/database/DAVIS/JPEGImages/Full-Resolution/%s'%seqname
     sil_save_path = '../vid2shape/database/DAVIS/Annotations/Full-Resolution/%s'%seqname
     try:
         shutil.rmtree(rgb_save_path)
         shutil.rmtree(sil_save_path)
+        shutil.rmtree(cam_save_path)
     except: pass
+    os.mkdir(cam_save_path)
     os.mkdir(rgb_save_path)
     os.mkdir(sil_save_path)
 
@@ -111,7 +109,7 @@ for tidx in range(0,render_len):
     camtxt[3,2:] = test_cameras[tidxf].principal_point
     
     if save_data:
-        np.savetxt( '%s/%s-cam-%05d.txt'%(target_dir,seqname,tidx), camtxt)
+        np.savetxt( '%s/%05d.txt'%(cam_save_path,tidx), camtxt)
         input_rgb = datasource.load_rgb(datasource.train_ids[tidxf])
         input_sil = 1-datasource.load_sil(datasource.train_ids[tidxf])
         cv2.imwrite('%s/%05d.jpg'%(rgb_save_path,tidx), 255*input_rgb[:,:,::-1])
@@ -119,3 +117,22 @@ for tidx in range(0,render_len):
 
 print(' '.join( [str(i) for i in camtxt[-1]] ))
 print('%f, %f'%(datasource.near, datasource.far))
+
+import configparser
+config = configparser.ConfigParser()
+config['data'] = {
+'datapath': 'database/DAVIS/JPEGImages/Full-Resolution/',
+'dframe': '1',
+'init_frame': '0',
+'end_frame': '-1',
+'can_frame': '-1'}
+
+config['data_0'] = {
+'near_far': '%f, %f'%(datasource.near, datasource.far),
+'ks': ' '.join( [str(i) for i in camtxt[-1]] )
+}
+
+with open('configs/%s.config'%(seqname), 'w') as configfile:
+    config.write(configfile)
+
+

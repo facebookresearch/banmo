@@ -46,11 +46,11 @@ rot_rand = torch.Tensor(R.random().as_matrix()).cuda()
 overts_list = []
 for i in range(args.nframes):
     if args.model=='spot':
-        mesh = sr.Mesh.from_obj('database/misc/spot/spot_triangulated.obj', load_texture=True, texture_res=5, texture_type='surface')
+        mesh = sr.Mesh.from_obj('mesh_material/spot/spot_triangulated.obj', load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='eagle':
-        mesh = sr.Mesh.from_obj('database/misc/eagle/Eagle-original_%06d.obj'%int(i*args.xspeed), load_texture=True, texture_res=5, texture_type='surface')
+        mesh = sr.Mesh.from_obj('mesh_material/misc/eagle/Eagle-original_%06d.obj'%int(i*args.xspeed), load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='water':
-        mesh = sr.Mesh.from_obj('database/misc/water/water.obj', load_texture=True, texture_res=5, texture_type='surface')
+        mesh = sr.Mesh.from_obj('mesh_material/misc/water/water.obj', load_texture=True, texture_res=5, texture_type='surface')
     overts = mesh.vertices
     center = overts.mean(1)[:,None]
     scale = max((overts - center)[0].abs().max(0)[0])

@@ -12,9 +12,19 @@ python -m pip install detectron2 -f \
   https://dl.fbaipublicfiles.com/detectron2/wheels/cu110/torch1.7/index.html
 # install manifold remeshing
 git clone --recursive -j8 git://github.com/hjwdzh/Manifold; cd Manifold; mkdir build; cd build; cmake .. -DCMAKE_BUILD_TYPE=Release;make; cd ../../
+# marching cubes
+pip install --upgrade PyMCubes
 ```
 
 ## Run
+Create tmp dirs
+```
+ln -s /private/home/gengshany/data/ database
+mkdir tmp
+wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl
+mv geodists_sheep_5004.pkl ./mesh_material
+```
+
 To render objects
 ```
 python scripts/render_synthetic.py --outdir syn-eagle-100 --model eagle --nframes 100 --alpha 1

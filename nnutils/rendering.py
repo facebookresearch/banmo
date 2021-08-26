@@ -3,7 +3,6 @@ import pdb
 import torch
 import torch.nn.functional as F
 from pytorch3d import transforms
-from torchsearchsorted import searchsorted
 
 from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
                                vec_to_sim3, rtmat_invert
@@ -47,7 +46,7 @@ def sample_pdf(bins, weights, N_importance, det=False, eps=1e-5):
         u = torch.rand(N_rays, N_importance, device=bins.device)
     u = u.contiguous()
 
-    inds = searchsorted(cdf, u, side='right')
+    inds = torch.searchsorted(cdf, u, right=True)
     below = torch.clamp_min(inds-1, 0)
     above = torch.clamp_max(inds, N_samples_)
 

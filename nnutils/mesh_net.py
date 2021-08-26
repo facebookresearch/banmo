@@ -234,7 +234,7 @@ class v2s_net(nn.Module):
 
         # densepose
         if opts.flow_dp:
-            with open('tmp/geodists_sheep_5004.pkl', 'rb') as f: 
+            with open('mesh_material/geodists_sheep_5004.pkl', 'rb') as f: 
                 geodists=pickle.load(f)
                 geodists = torch.Tensor(geodists).cuda(self.device)
                 geodists[0,:] = np.inf
@@ -242,7 +242,7 @@ class v2s_net(nn.Module):
                 self.geodists = geodists
             self.dp_thrd = 0.1 # threshold to fb error of dp
 
-        with open('tmp/sheep_5004.pkl', 'rb') as f:
+        with open('mesh_material/sheep_5004.pkl', 'rb') as f:
             dp = pickle.load(f)
             self.dp_verts = dp['vertices']
             self.dp_faces = dp['faces']

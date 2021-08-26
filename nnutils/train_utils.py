@@ -27,7 +27,6 @@ from kmeans_pytorch import kmeans
 import torch.distributed as dist
 import torch.nn.functional as F
 import trimesh
-import chamfer3D.dist_chamfer_3D
 import torchvision
 from torch.autograd import Variable
 from collections import defaultdict

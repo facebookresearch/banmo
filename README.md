@@ -25,10 +25,12 @@ To optimize
 ```
 bash scripts/template.sh logname dataname address --flowbw
 python submit.py scripts/template.sh syn-eagled-15h-lbs-corresp-can15 syn-eagled-15h 10034 --lbs --num_epochs 30 --use_corresp
+python submit.py scripts/template.sh ncat-509-correspdp-lbs-ropt-10f nerfies_cat_509 10170 --num_epochs 40 --use_corresp --lbs --flow_dp
 ```
 To re-render meshes
 ```
 bash scripts/render_result.sh syn-eagled-15h logdir/syn-eagled-15h-test3/params_20.pth --flowbw --sample_grid3d 256
+bash scripts/render_result.sh mcat_6 logdir/mcat-6-corresp-lbs-flowdp-lr10-rot1-rmdp/params_11.pth --sample_grid3d 128 --queryfw --lbs
 ```
 ## Additional Notes
 wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl

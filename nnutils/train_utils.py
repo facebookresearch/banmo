@@ -247,7 +247,7 @@ class v2s_trainer(Trainer):
                 rendered_seq['flo_coarse'][-1] *= rendered_seq['sil_coarse'][-1]
                 if opts.flow_dp:
                     rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:1]]
-                    rendered_seq['dcf'] += [self.model.dp_conf[...,None]/\
+                    rendered_seq['dcf'] += [self.model.dp_conf[...,None][:1]/\
                                             self.model.dp_thrd]
 
                 # run marching cubes

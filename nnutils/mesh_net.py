@@ -115,6 +115,7 @@ flags.DEFINE_bool('flowbw', False, 'use backward warping 3d flow')
 flags.DEFINE_bool('lbs', False, 'use lbs for backward warping 3d flow')
 flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')
 flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
+flags.DEFINE_bool('ks_opt', False,   'whether to optimize camera intrinsics')
 flags.DEFINE_bool('bg', False, 'whether to optimize background')
 flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspondence')
 flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
@@ -169,9 +170,10 @@ class v2s_net(nn.Module):
         
         # video specific sim3: from video to joint canonical space
         self.sim3_j2c= generate_bones(self.num_vid, self.num_vid, 0, self.device)
-        angle=opts.rot_angle*np.pi
-        init_rot = transforms.axis_angle_to_quaternion(torch.Tensor([0,angle,0]))
-        self.sim3_j2c.data[1,3:7] = init_rot.to(self.device) #TODO
+        if self.num_vid>1:
+            angle=opts.rot_angle*np.pi
+            init_rot = transforms.axis_angle_to_quaternion(torch.Tensor([0,angle,0]))
+            self.sim3_j2c.data[1,3:7] = init_rot.to(self.device) #TODO
         self.sim3_j2c = nn.Parameter(self.sim3_j2c)
 
         # set nerf model
@@ -222,11 +224,13 @@ class v2s_net(nn.Module):
                                 in_channels_xyz=t_embed_dim, D=4, in_channels_dir=0,
                                 out_channels=7, raw_feat=True))
 
-                # TODO: change according to multiple video
-                fx,fy,px,py=[int(float(i)) for i in \
-                            self.config.get('data_0', 'ks').split(',')]
-                self.ks = torch.Tensor([fx,fy,px,py]).to(self.device)
-                self.ks_param = nn.Parameter(self.ks)
+        if opts.ks_opt:
+            # TODO: change according to multiple video
+            fx,fy,px,py=[int(float(i)) for i in \
+                        self.config.get('data_0', 'ks').split(',')]
+            self.ks = torch.Tensor([fx,fy,px,py]).to(self.device)
+            self.ks_param = nn.Parameter(self.ks)
+            
 
         # densepose
         if opts.flow_dp:
@@ -605,11 +609,13 @@ class v2s_net(nn.Module):
             rmat = rmat.matmul(root_rmat)
             self.rtk[:,:3,:3] = rmat
             self.rtk[:,:3,3] = tmat
+
+        if self.opts.ks_opt:
             self.rtk[:,3,:] = self.ks_param #TODO kmat
 
         # save latest variables
         self.latest_vars['idk'][self.frameid.long()] = 1
-        self.latest_vars['rtk'][self.frameid.long()] = self.rtk.cpu().numpy()
+        self.latest_vars['rtk'][self.frameid.long()] = self.rtk.detach().cpu().numpy()
         self.latest_vars['j2c'][self.frameid.long()] = self.sim3_j2c.detach().cpu().numpy()\
                                                         [self.dataid.long()]
         

@@ -17,7 +17,7 @@ import torchvision
 import sys
 curr_dir = os.path.abspath(os.getcwd())
 sys.path.insert(0,curr_dir)
-detbase='/private/home/gengshany/code/detectron2/'
+detbase='../detectron2/'
 sys.path.insert(0,'%s/projects/PointRend/'%detbase)
 sys.path.insert(0,'%s/projects/DensePose/'%detbase)
 sys.path.insert(0,'third_party/ext_utils')
@@ -28,7 +28,7 @@ import point_rend
   
 
 seqname=sys.argv[1]
-odir='/private/home/gengshany/data/DAVIS/'
+odir='database/DAVIS/'
 imgdir= '%s/JPEGImages/Full-Resolution/%s'%(odir,seqname)
 maskdir='%s/Annotations/Full-Resolution/%s'%(odir,seqname)
 dpdir='%s/Densepose/Full-Resolution/%s'%(odir,seqname)

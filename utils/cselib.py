@@ -7,6 +7,9 @@ import torch.nn.functional as F
 import pdb
 import trimesh
 
+import sys
+sys.path.insert(0,'../detectron2//projects/DensePose/')
+
 from detectron2.config import get_cfg
 from detectron2.modeling import build_model
 from detectron2.checkpoint import DetectionCheckpointer

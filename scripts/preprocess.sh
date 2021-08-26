@@ -1,4 +1,4 @@
-rootdir=/private/home/gengshany/dropbox/GengshanYang_project/test_videos/
+rootdir=$1
 tmpdir=tmp/
 prefix=cat_9
 filedir=$rootdir/$prefix
@@ -37,9 +37,9 @@ for infile in $filedir/*$suffix; do
 #  cd -
 #
   # save to zips
-  cd /private/home/gengshany/code/viser/database/DAVIS/
-  rm ~/dropbox/viser/$seqname.zip
-  zip ~/dropbox/viser/$seqname.zip -r  */Full-Resolution/$seqname/
+  cd database/DAVIS/
+  rm  $rootdir/$seqname.zip
+  zip $rootdir/$seqname.zip -r  */Full-Resolution/$seqname/
   cd -
   counter=$((counter+1))
 done

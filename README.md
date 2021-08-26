@@ -10,16 +10,24 @@ cd third_party/softras; python setup.py install; cd -;
 # install detectron2
 python -m pip install detectron2 -f \
   https://dl.fbaipublicfiles.com/detectron2/wheels/cu110/torch1.7/index.html
-# install manifold remeshing
-git clone --recursive -j8 git://github.com/hjwdzh/Manifold; cd Manifold; mkdir build; cd build; cmake .. -DCMAKE_BUILD_TYPE=Release;make; cd ../../
 # marching cubes
 pip install --upgrade PyMCubes
+# clone detectron2 repo to ../
 ```
 
 ## Preprocess
-Extract frames
+Extract frames and masks
 ```
-bash scripts/preprocess.sh
+bash scripts/preprocess.sh video-folder
+```
+
+Run colmap scripts and save to a zip file. Then
+```
+unzip ~/dropbox/viser/cat_900-nerfies.zip -d ../nerfies-0.1
+bash scripts/extract_nerfies.sh cat_900
+python scripts/compute_dp.py nerfies_cat_900
+cd third_party/vcn_plus
+bash compute_flow.sh nerfies_cat_900
 ```
 
 ## Run

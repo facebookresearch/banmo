@@ -364,7 +364,7 @@ def main():
             mesh_cam_transformed._primitives[0].material.RoughnessFactor=1.
             scene.add_node( Node(mesh=mesh_cam_transformed))
 
-        floor_mesh = trimesh.load('./database/misc/wood.obj',process=False)
+        floor_mesh = trimesh.load('./mesh_material/wood.obj',process=False)
         floor_mesh.vertices = np.concatenate([floor_mesh.vertices[:,:1], floor_mesh.vertices[:,2:3], floor_mesh.vertices[:,1:2]],-1 )
         xfloor = 10*mesh.vertices[:,0].min() + (10*mesh.vertices[:,0].max()-10*mesh.vertices[:,0].min())*(floor_mesh.vertices[:,0:1] - floor_mesh.vertices[:,0].min())/(floor_mesh.vertices[:,0].max()-floor_mesh.vertices[:,0].min()) 
         yfloor = floor_mesh.vertices[:,1:2]; yfloor[:] = (mesh.vertices[:,1].max())

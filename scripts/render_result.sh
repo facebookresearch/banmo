@@ -5,30 +5,30 @@ add_args=${*: 3:$#-1}
 prefix=$testdir/$seqname
 #prefix=/scratch/gengshany/Dropbox/output/$seqname
 
-#python extract.py --seqname $seqname \
-#                  --model_path $model_path \
-#                  $add_args
-#python render_vis.py --testdir $testdir \
-#                     --outpath $prefix-frz \
-#                     --seqname $seqname \
-#                     --freeze \
-#                     --vis_cam
-#python render_vis.py --testdir $testdir \
-#                     --outpath $prefix-bne \
-#                     --seqname $seqname \
-#                     --vp -1 \
-#                     --vis_bones \
-#                     --vis_traj
-#python render_vis.py --testdir $testdir \
-#                     --outpath $prefix-trj0 \
-#                     --seqname $seqname \
-#                     --vp 0 \
-#                     --vis_traj
-#python render_vis.py --testdir $testdir \
-#                     --outpath $prefix-trj1 \
-#                     --seqname $seqname \
-#                     --vp 1 \
-#                     --vis_traj
+python extract.py --seqname $seqname \
+                  --model_path $model_path \
+                  $add_args
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-frz \
+                     --seqname $seqname \
+                     --freeze \
+                     --vis_cam
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-bne \
+                     --seqname $seqname \
+                     --vp -1 \
+                     --vis_bones \
+                     --vis_traj
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-trj0 \
+                     --seqname $seqname \
+                     --vp 0 \
+                     --vis_traj
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-trj1 \
+                     --seqname $seqname \
+                     --vp 1 \
+                     --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj2 \
                      --seqname $seqname \

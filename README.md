@@ -23,11 +23,7 @@ bash scripts/preprocess.sh video-folder
 
 Run colmap scripts and save to a zip file. Then
 ```
-unzip ~/dropbox/viser/cat_900-nerfies.zip -d third_party/nerfies-0.1
-python nerfies-path scripts/colmap_to_database.py cat_900
-python scripts/compute_dp.py nerfies_cat_900
-cd third_party/vcnplus
-bash compute_flow.sh nerfies_cat_900
+bash scripts/colmap_to_data.sh seqname
 ```
 
 ## Run

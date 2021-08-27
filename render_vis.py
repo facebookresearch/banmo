@@ -273,11 +273,11 @@ def main():
         else:
             vp_rmat = cv2.Rodrigues(np.asarray([0.,0,0]))[0]
         refcam_vp = refcam.copy()
-        refcam_vp[:3,:3] = refcam_vp[:3,:3].dot(vp_rmat)
-        #refcam_vp[:3,:3] = vp_rmat.dot(refcam_vp[:3,:3])
+        #refcam_vp[:3,:3] = refcam_vp[:3,:3].dot(vp_rmat)
+        refcam_vp[:3,:3] = vp_rmat.dot(refcam_vp[:3,:3])
         if args.vp==1 or args.vp==2:
             vmean = verts[0].mean(0).cpu()
-            vp_tmat = vp_tmat - refcam_vp[:3,:3].dot(vmean) + refcam[:3,:3].dot(vmean)
+            vp_tmat[:2] = (-refcam_vp[:3,:3].dot(vmean))[:2]
         refcam_vp[:3,3]  = vp_tmat
         refcam_vp[3]     = vp_kmat
 

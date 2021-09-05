@@ -25,7 +25,7 @@ from ext_utils import geometry as geom_utils
 from ext_nnutils.net_blocks import Encoder, CodePredictor
 from nnutils.nerf import Embedding, NeRF, RTHead
 import kornia, configparser, soft_renderer as sr
-from nnutils.geom_utils import K2mat, Kmatinv, K2inv, raycast, sample_xy,\
+from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
                                 canonical2ndc, obj_to_cam, vec_to_sim3, \
                                 near_far_to_bound
@@ -39,7 +39,7 @@ flags.DEFINE_integer('local_rank', 0, 'for distributed training')
 flags.DEFINE_integer('ngpu', 1, 'number of gpus to use')
 flags.DEFINE_float('random_geo', 1, 'Random geometric augmentation')
 flags.DEFINE_string('seqname', 'syn-spot-40', 'name of the sequence')
-flags.DEFINE_integer('img_size', 256, 'image size')
+flags.DEFINE_integer('img_size', 512, 'image size')
 flags.DEFINE_enum('split', 'train', ['train', 'val', 'all', 'test'], 'eval split')
 flags.DEFINE_integer('num_kps', 15, 'The dataloader should override these.')
 flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
@@ -151,6 +151,8 @@ class v2s_net(nn.Module):
         self.latest_vars['rtk'] = np.zeros((self.data_offset[-1], 4,4))
         self.latest_vars['j2c'] = np.zeros((self.data_offset[-1], 10))
         self.latest_vars['idk'] = np.zeros((self.data_offset[-1],))
+        self.latest_vars['vis'] = np.zeros((self.data_offset[-1],
+                                 opts.img_size,opts.img_size)).astype(bool)
 
         # get near-far plane
         try:
@@ -163,7 +165,7 @@ class v2s_net(nn.Module):
         except: self.near_far = None
     
         # object bound
-        self.obj_bound = near_far_to_bound(self.near_far)
+        self.latest_vars['obj_bound'] = near_far_to_bound(self.near_far)
 
         self.vis_min=np.asarray([[0,0,0]])
         self.vis_max=np.asarray([[1,1,1]])
@@ -203,8 +205,7 @@ class v2s_net(nn.Module):
             num_bones = num_bones_x**3
             if half_bones: num_bones = num_bones // 2
             self.num_bones = num_bones
-            bound = 0.5
-            bones= generate_bones(num_bones_x, num_bones, bound, self.device)
+            bones= generate_bones(num_bones_x, num_bones, 0, self.device)
             self.bones = nn.Parameter(bones)
             self.nerf_models['bones'] = self.bones
 
@@ -614,10 +615,15 @@ class v2s_net(nn.Module):
             self.rtk[:,3,:] = self.ks_param #TODO kmat
 
         # save latest variables
-        self.latest_vars['idk'][self.frameid.long()] = 1
-        self.latest_vars['rtk'][self.frameid.long()] = self.rtk.detach().cpu().numpy()
+        rtk = self.rtk.clone().detach()
+        Kmat = K2mat(rtk[:,3])
+        Kaug = K2inv(self.kaug) # p = Kaug Kmat P
+        rtk[:,3] = mat2K(Kaug.matmul(Kmat))
+        self.latest_vars['rtk'][self.frameid.long()] = rtk.cpu().numpy()
         self.latest_vars['j2c'][self.frameid.long()] = self.sim3_j2c.detach().cpu().numpy()\
                                                         [self.dataid.long()]
+        self.latest_vars['idk'][self.frameid.long()] = 1
+        self.latest_vars['vis'][self.frameid.long()] = self.vis2d.cpu().numpy()
         
         if self.training and self.opts.anneal_freq:
             alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
@@ -737,13 +743,13 @@ class v2s_net(nn.Module):
             aux_out['cyc_loss'] = cyc_loss
 
             # globally rigid prior
-            rig_loss = 0.0001*rendered['frame_disp3d'].mean()
+            rig_loss = 0.0001*rendered['frame_rigloss'].mean()
             total_loss = total_loss + rig_loss
             aux_out['rig_loss'] = rig_loss
 
         if opts.eikonal_loss:
             ekl_loss = 0.01*eikonal_loss(self.nerf_coarse, self.embedding_xyz, 
-                                         self.obj_bound)
+                                         self.latest_vars['obj_bound'])
             total_loss = total_loss + ekl_loss
             aux_out['ekl_loss'] = ekl_loss
 

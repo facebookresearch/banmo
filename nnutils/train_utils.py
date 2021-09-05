@@ -34,7 +34,8 @@ from pytorch3d import transforms
 from torch.nn.utils import clip_grad_norm_
 
 from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
-                               obj_to_cam, get_near_far, near_far_to_bound
+                               obj_to_cam, get_near_far, near_far_to_bound, \
+                               compute_point_visibility
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
@@ -156,7 +157,7 @@ class v2s_trainer(Trainer):
            [opts.learning_rate, # params_nerf_coarse
             opts.learning_rate, # params_nerf_fine
             opts.learning_rate, # params_nerf_flowbw
-            opts.learning_rate, # params_nerf_root_rts
+          2*opts.learning_rate, # params_nerf_root_rts
             opts.learning_rate, # params_nerf_bone_rts
             opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
@@ -174,10 +175,12 @@ class v2s_trainer(Trainer):
     
     def save_network(self, epoch_label):
         if self.opts.local_rank==0:
-            save_filename = 'params_{}.pth'.format(epoch_label)
-            save_path = os.path.join(self.save_dir, save_filename)
+            param_path = '%s/params_%s.pth'%(self.save_dir, epoch_label)
             save_dict = self.model.state_dict()
-            torch.save(save_dict, save_path)
+            torch.save(save_dict, param_path)
+
+            var_path = '%s/vars_%s.npy'%(self.save_dir, epoch_label)
+            np.save(var_path, self.model.latest_vars)
             return
     
     def load_network(self,model_path=None):
@@ -191,13 +194,17 @@ class v2s_trainer(Trainer):
         self.model.embedding_time.weight.data[:len_prev_fr] = \
            states['embedding_time.weight']
 
-        del states['near_far'] 
-        del states['sim3_j2c']
-        del states['embedding_time.weight']
-        del states['nerf_bone_rts.0.weight']
+        self.del_key( states, 'near_far') 
+        self.del_key( states, 'sim3_j2c')
+        self.del_key( states, 'embedding_time.weight')
+        self.del_key( states, 'nerf_bone_rts.0.weight')
 
         self.model.load_state_dict(states, strict=False)
         #self.model.sim3_j2c.data[1,3:7] = torch.Tensor([0,0,1,0]).cuda()
+    
+        # load variables
+        var_path = model_path.replace('params', 'vars').replace('.pth', '.npy')
+        self.model.latest_vars = np.load(var_path,allow_pickle=True)[()]
         return
    
     def eval(self, num_view=9, dynamic_mesh=False): 
@@ -305,6 +312,9 @@ class v2s_trainer(Trainer):
             epoch_iter = 0
             self.model.epoch = epoch
             self.model.ep_iters = len(self.dataloader)
+
+            # moidfy cropping factor on the fly TODO
+            #self.reset_dataset_crop_factor(float(epoch)/opts.num_epochs)
             
             # evaluation
             rendered_seq, aux_seq = self.eval()                
@@ -314,11 +324,13 @@ class v2s_trainer(Trainer):
 
             # reset object bound, only for visualization
             if epoch>int(opts.num_epochs/2):
-                self.model.obj_bound = 1.2*np.abs(mesh_rest.vertices).max()
+                self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
 
             for k,v in rendered_seq.items():
                 grid_img = image_grid(rendered_seq[k],3,3)
-                self.add_image(log, k, grid_img, epoch, scale=False)
+                if k=='depth_coarse':scale=True
+                else: scale=False
+                self.add_image(log, k, grid_img, epoch, scale=scale)
                
             # reinit bones based on extracted surface
             if opts.lbs and epoch==10:
@@ -417,7 +429,7 @@ class v2s_trainer(Trainer):
                 print('saving the model at the end of epoch {:d}, iters {:d}'.\
                                          format(epoch, self.model.total_steps))
                 self.save_network('latest')
-                self.save_network(epoch+1)
+                self.save_network(str(epoch+1))
    
     @staticmethod 
     def render_vid(model, batch):
@@ -436,12 +448,13 @@ class v2s_trainer(Trainer):
 
     @staticmethod
     def extract_mesh(model,chunk,grid_size,
+                      threshold = 0.,
                       frameid=None,
                       mesh_dict_in=None):
         opts = model.opts
         mesh_dict = {}
         if model.near_far is not None: 
-            bound = model.obj_bound
+            bound = model.latest_vars['obj_bound']
         else: bound=1.5
 
         if mesh_dict_in is None:
@@ -467,15 +480,27 @@ class v2s_trainer(Trainer):
                 xyzdir_embedded = torch.cat([xyz_embedded, dir_embedded], 1)
                 out_chunks += [model.nerf_coarse(xyzdir_embedded)]
             vol_rgbo = torch.cat(out_chunks, 0)
-
             vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
-            threshold = 0
-
             #vol_o = F.softplus(vol_o)
-            #if opts.bg: 
-            #    percentage_th = 0.4*64**2/grid_size**2
-            #    threshold=torch.quantile(vol_o, 1-percentage_th) # empirical value
-            #else: threshold = 20
+
+            ##TODO set density of non-observable points to small value
+            #if model.latest_vars['idk'].sum()>0:
+            #    vis_chunks = []
+            #    for i in range(0, bs_pts, chunk):
+            #        vis_chunks += compute_point_visibility(query_xyz[i:i+chunk].cpu(), 
+            #                               model.latest_vars, model.device)[None]
+            #    vol_visi = torch.cat(vis_chunks, 0)
+            #    vol_visi = vol_visi.view(grid_size, grid_size, grid_size)
+            #    vol_o[vol_visi==0] = -1
+
+            ## save color of sampled points 
+            #from matplotlib.pyplot import cm
+            #cmap = cm.get_cmap('cool')
+            #pts_col = cmap(vol_visi.float().view(-1).cpu())
+            ##pts_col = cmap(vol_o.sigmoid().view(-1).cpu())
+            #mesh = trimesh.Trimesh(query_xyz.view(-1,3).cpu(), vertex_colors=pts_col)
+            #mesh.export('0.obj')
+            #pdb.set_trace()
 
             print('fraction occupied:', (vol_o > threshold).float().mean())
             vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
@@ -483,20 +508,7 @@ class v2s_trainer(Trainer):
             mesh = trimesh.Trimesh(vertices, triangles)
 
             # mesh post-processing 
-            if not opts.bg and len(mesh.vertices)>0:
-                mesh = [i for i in mesh.split(only_watertight=False)]
-                mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
-                mesh = mesh[-1]
-            #    mesh = trimesh.smoothing.filter_laplacian(mesh, iterations=3)
-            
-                ## assign color based on dp canonical location
-                #verts = torch.Tensor(mesh.vertices).to(model.device)
-                #verts_embedded = model.embedding_xyz(verts)
-                #dp_verts = verts + model.nerf_dp(verts_embedded)
-                #dp_verts_color = (dp_verts - model.dp_vmin)/model.dp_vmax
-                ##mesh.vertices = dp_verts.cpu().numpy()
-                #mesh.visual.vertex_colors = dp_verts_color.clamp(0,1).cpu().numpy()
-
+            if len(mesh.vertices)>0:
                 # assign color based on canonical location
                 vis = mesh.vertices
                 model.vis_min = vis.min(0)[None]
@@ -504,19 +516,6 @@ class v2s_trainer(Trainer):
                 model.vis_max = vis.max(0)[None]
                 vis = vis / model.vis_max
                 mesh.visual.vertex_colors[:,:3] = vis*255
-                
-                ## save canonical mesh
-                #trimesh.Trimesh(model.dp_verts.cpu(), model.dp_faces,  
-                #            vertex_colors=model.dp_vis.cpu()).export('0.obj')
-
-                #if opts.use_dp:
-                #    pdb.set_trace()
-                #    dp_verts = model.dp_verts
-                #    dp_verts = dp_verts - dp_verts.mean(0)[None] + \
-                #     torch.Tensor(mesh.vertices.mean(0)[None]).to(model.device)
-                #    dp_verts = dp_verts / dp_verts.max(0)[None] * \
-                #     torch.Tensor(mesh.vertices.max(0)[None]).to(model.device)
-                #    model.dp_verts.data = dp_verts
 
         # forward warping
         if frameid is not None and opts.queryfw:
@@ -558,3 +557,21 @@ class v2s_trainer(Trainer):
     def add_scalar(log,tag,data,step):
         if tag in data.keys():
             log.add_scalar(tag,  data[tag], step)
+
+    @staticmethod
+    def del_key(states, key):
+        if key in states.keys():
+            del states[key]
+
+    def reset_dataset_crop_factor(self, percent):
+        """
+        percent: percentage of training epochs
+        """
+        #TODO schedule: 0(maxc) to 0.5 (minc)
+        maxc = 10
+        minc = 1.2
+        for i in range(len(self.dataloader.dataset.datasets)):
+            crop_factor = min(max(maxc-percent*(maxc-minc)*2, minc), maxc)
+            self.dataloader.dataset.datasets[i].crop_factor = crop_factor
+            self.evalloader.dataset.datasets[i].crop_factor = crop_factor
+

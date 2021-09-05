@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from pytorch3d import transforms
 
 from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
-                               vec_to_sim3, rtmat_invert
+                               vec_to_sim3, rtmat_invert, quat_angle
 from nnutils.nerf import evaluate_mlp
 
 __all__ = ['render_rays']
@@ -170,7 +170,7 @@ def render_rays(models,
         sigmas = (0.5 + 0.5 * sdf.sign() * torch.expm1(-sdf.abs() * ibetas))
         sigmas = sigmas * ibetas
 
-        alphas = 1-torch.exp(-deltas*sigmas) # (N_rays, N_samples_)
+        alphas = 1-torch.exp(-deltas*sigmas) # (N_rays, N_samples_), p_i
         alphas_shifted = \
             torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, a1, a2, ...]
         weights = \
@@ -297,7 +297,11 @@ def render_rays(models,
         frame_cyc_dis = (xyz_coarse_frame - xyz_coarse_frame_cyc).norm(2,-1)
         
         # rigidity loss
-        frame_disp3d = (xyz_coarse_frame_cyc - xyz_coarse_sampled).norm(2,-1)
+        num_bone = bones.shape[0] 
+        bone_fw_reshape = bone_rts_fw.view(-1,num_bone,7)
+        bone_trn = bone_fw_reshape[:,:,4:7]
+        bone_rot = bone_fw_reshape[:,:,0:4]
+        frame_rigloss = bone_trn.pow(2).sum(-1)+quat_angle(bone_rot)
         
         ## cycle loss: canodical deformed canonical
         #bound=1 #TODO modif this based on size of canonical volume
@@ -387,7 +391,11 @@ def render_rays(models,
         
     if 'flowbw' in models.keys() or  'bones' in models.keys():
         result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
-        result['frame_disp3d'] =  (frame_disp3d  * weights_coarse.detach()).sum(-1)
+        if 'flowbw' in models.keys():
+            result['frame_rigloss'] =  (frame_disp3d  * weights_coarse.detach()).sum(-1)
+        else:
+            result['frame_rigloss'] =  (frame_rigloss).mean(-1)
+
         
         #result['frame_cyc_dis'] = 0.01*(frame_cyc_dis * weights_sample.detach()).sum(-1)
         #result['frame_disp3d'] =  0.01*(frame_disp3d  * weights_sample.detach()).sum(-1)

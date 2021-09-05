@@ -33,9 +33,12 @@ parser.add_argument('--focal', default=2,type=float,
                     help='focal length')
 parser.add_argument('--can_rand', dest='can_rand',action='store_true',
                     help='ranomize canonical space')
+parser.add_argument('--img_size', default=512,type=int,
+                    help='image size')
+
 args = parser.parse_args()
 ## io
-img_size = 512
+img_size = args.img_size
 bgcolor = None
 #bgcolor = np.asarray([0,0,0])
 d_obj = 3
@@ -51,6 +54,9 @@ for i in range(args.nframes):
         mesh = sr.Mesh.from_obj('mesh_material/eagle/Eagle-original_%06d.obj'%int(i*args.xspeed), load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='water':
         mesh = sr.Mesh.from_obj('mesh_material/water/water.obj', load_texture=True, texture_res=5, texture_type='surface')
+    elif args.model=='hands':
+        mesh = sr.Mesh.from_obj('mesh_material/hands/hands_%06d.obj'%int(1+i*args.xspeed), load_texture=True, texture_res=100, texture_type='surface')
+
     overts = mesh.vertices
     center = overts.mean(1)[:,None]
     scale = max((overts - center)[0].abs().max(0)[0])

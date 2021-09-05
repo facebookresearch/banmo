@@ -58,6 +58,7 @@ class BaseDataset(Dataset):
         self.random_geo = 1.
         self.filter_key = filter_key
         self.flip=0
+        self.crop_factor = 1.2
     
     def mirror_image(self, img, mask):
         if np.random.rand(1) > 0.5:
@@ -210,9 +211,8 @@ class BaseDataset(Dataset):
         #length = (maxlength,maxlength)
         #lengthn = (maxlengthn,maxlengthn)
 
-        crop_factor = 1.2
-        length = (int(crop_factor*length[0]), int(crop_factor*length[1]))
-        lengthn= (int(crop_factor*lengthn[0]),int(crop_factor*lengthn[1]))
+        length = (int(self.crop_factor*length[0]), int(self.crop_factor*length[1]))
+        lengthn= (int(self.crop_factor*lengthn[0]),int(self.crop_factor*lengthn[1]))
 
         maxw=self.img_size;maxh=self.img_size
         orisize = (2*length[0], 2*length[1])

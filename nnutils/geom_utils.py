@@ -563,21 +563,13 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
     idk:        indicator of obsered or not M
     tol_fac     tolerance factor
     """
-    M = near_far.shape[0]
     device = near_far.device
-    pts = torch.Tensor(np.tile(pts[None],(M,1,1))).to(device) # N,3
-
     vars_tensor = array2tensor(vars_np, device=device)
     j2c = vars_tensor['j2c']
     rtk = vars_tensor['rtk']
     idk = vars_tensor['idk']
 
-    # pts to video canonical then to camera
-    Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(j2c)
-    Smat_j2c =Smat_j2c.mean(-1)[...,None,None]
-    pts = obj_to_cam(pts, Rmat_j2c, Tmat_j2c)
-    pts = pts * Smat_j2c
-    pts = obj_to_cam(pts, rtk[:,:3,:3], rtk[:,:3,3])
+    pts = pts_to_view(pts, j2c, rtk, device)
 
     near= pts[...,-1].min(-1)[0]/tol_fac
     far = pts[...,-1].max(-1)[0]*tol_fac
@@ -586,7 +578,54 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
     near_far[idk==1,0] = torch.clamp(near[idk==1], 1e-3, max_far)
     near_far[idk==1,1] = torch.clamp( far[idk==1], 1e-3, max_far)
     return near_far
-            
+
+
+def pts_to_view(pts, j2c, rtk, device):
+    """
+    object to camera coordinates
+    pts:        point coordinate N,3
+    j2c:        joint to canonical transform M, 10
+    rtk:        object to camera transform, M,4,4
+    idk:        indicator of obsered or not M
+    """
+    M = rtk.shape[0]
+    pts = torch.Tensor(np.tile(pts[None],(M,1,1))).to(device) # M,N,3
+
+    # pts to video canonical then to camera
+    Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(j2c)
+    Smat_j2c =Smat_j2c.mean(-1)[...,None,None]
+    pts = obj_to_cam(pts, Rmat_j2c, Tmat_j2c)
+    pts = pts * Smat_j2c
+    pts = obj_to_cam(pts, rtk[:,:3,:3], rtk[:,:3,3])
+    pts = pinhole_cam(pts, rtk[:,3])
+    return pts
+
+def compute_point_visibility(pts, vars_np, device):
+    """
+    pts:        point coordinate N,3
+    j2c:        joint to canonical transform M, 10
+    rtk:        object to camera transform, M,4,4
+    idk:        indicator of obsered or not M
+    """
+    vars_tensor = array2tensor(vars_np, device=device)
+    j2c = vars_tensor['j2c']
+    rtk = vars_tensor['rtk']
+    idk = vars_tensor['idk']
+    vis = vars_tensor['vis']
+    pts = pts_to_view(pts, j2c, rtk, device) # T, N, 3
+    h,w = vis.shape[1:]
+
+    vis = vis[:,None]
+    xy = pts[:,None,:,:2] 
+    xy[...,0] = xy[...,0]/w*2 - 1
+    xy[...,1] = xy[...,1]/h*2 - 1
+
+    #TODO grab the visibility value in the mask and sum over frames
+    vis = F.grid_sample(vis, xy)[:,0,0]
+    vis = (idk[:,None]*vis).sum(0)
+    vis = (vis>0).float()
+    return vis
+
 
 def near_far_to_bound(near_far):
     """
@@ -597,3 +636,16 @@ def near_far_to_bound(near_far):
     bound=(near_far[:,1]-near_far[:,0]).mean() / 2
     bound = bound.detach().cpu().numpy()
     return bound
+
+
+def quat_angle(quat):
+    """
+    quaternion angle 
+    quat: ..., 4
+    """
+    eps=1e-4
+    mat = transforms.quaternion_to_matrix(quat)
+    cos = (  mat[...,0,0] + mat[...,1,1] + mat[...,2,2] - 1 )/2
+    cos = cos.clamp(-1+eps,1-eps)
+    angle = torch.acos(cos)
+    return angle

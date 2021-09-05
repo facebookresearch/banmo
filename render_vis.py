@@ -185,6 +185,8 @@ def main():
                 elips.visual.vertex_colors = cmap(float(j)/traj_len)
                 elips_list.append(elips)
             mesh_cam = trimesh.util.concatenate(elips_list)
+            mesh_cam.export('%s/mesh_cam-%s.obj'%(args.testdir,seqname))
+
 
     # store all the results
     input_size = all_anno[0][0].shape[:2]
@@ -261,8 +263,8 @@ def main():
         vp_kmat = refcam[3]
         if args.vp==-1:
             # static camera
-            vp_rmat = (refcam[:3,:3].T).dot(all_cam[0][:3,:3])
-            #vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
+            #vp_rmat = (refcam[:3,:3].T).dot(all_cam[0][:3,:3])
+            vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
 #            vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0].dot(vp_rmat) # bev
             vp_tmat = all_cam[0][:3,3]
             vp_kmat = all_cam[0][3]

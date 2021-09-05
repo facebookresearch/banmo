@@ -127,13 +127,15 @@ flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
 flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
 flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
+flags.DEFINE_integer('num_bones', 12, 'maximum number of bones')
+flags.DEFINE_integer('warmup_epoch', 10, 'epochs used to learn root body pose')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
 flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 
 class v2s_net(nn.Module):
-    def __init__(self, input_shape, opts, data_info, half_bones):
+    def __init__(self, input_shape, opts, data_info):
         super(v2s_net, self).__init__()
         self.opts = opts
         self.cnn_shape = (opts.cnn_shape,opts.cnn_shape)
@@ -200,14 +202,11 @@ class v2s_net(nn.Module):
             self.nerf_models['flowfw'] = self.nerf_flowfw
                 
         elif opts.lbs:
-            num_bones_x = 3 # TODO change to # of cat bones
-            if opts.bg: num_bones_x=5
-            num_bones = num_bones_x**3
-            if half_bones: num_bones = num_bones // 2
-            self.num_bones = num_bones
-            bones= generate_bones(num_bones_x, num_bones, 0, self.device)
+            self.num_bones = opts.num_bones
+            bones= generate_bones(self.num_bones, self.num_bones, 0, self.device)
             self.bones = nn.Parameter(bones)
             self.nerf_models['bones'] = self.bones
+            self.num_bone_used = self.num_bones # bones used in the model
 
             self.nerf_bone_rts = nn.Sequential(self.embedding_time,
                                 RTHead(is_bone=True, use_cam=opts.use_cam, 
@@ -309,7 +308,7 @@ class v2s_net(nn.Module):
                 time_embedded_target = self.embedding_time(frameid_target)
                 rays['time_embedded_target'] = time_embedded_target.repeat(1,
                                                             rays['nsample'],1)
-            elif opts.lbs:
+            elif opts.lbs and self.num_bone_used>0:
                 bone_rts_target = self.nerf_bone_rts(frameid_target)
                 rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
 
@@ -320,7 +319,7 @@ class v2s_net(nn.Module):
                 if opts.flowbw:
                     print('Error: not implemented')
                     exit()
-                elif opts.lbs:
+                elif opts.lbs and self.num_bone_used>0:
                     bone_rts_dentrg = self.nerf_bone_rts(frameid_dentrg) #bsxbs,x 
                     rays['bone_rts_dentrg'] = bone_rts_dentrg.repeat(1,rays['nsample'],1)
 
@@ -332,7 +331,7 @@ class v2s_net(nn.Module):
         if opts.flowbw:
             time_embedded = self.embedding_time(frameid)
             rays['time_embedded'] = time_embedded.repeat(1,rays['nsample'],1)
-        elif opts.lbs:
+        elif opts.lbs and self.num_bone_used>0:
             bone_rts = self.nerf_bone_rts(frameid)
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
@@ -699,11 +698,9 @@ class v2s_net(nn.Module):
             
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
-            if opts.root_opt and (not opts.use_cam):
-                warmup_fac = min(1,max(0,(self.epoch-5)*0.1))
-                total_loss = total_loss*warmup_fac + flo_loss
-            else:
-                total_loss = total_loss + flo_loss
+            # warm up by only using flow loss to optimize root pose
+            warmup_fac = min(1,max(0,(self.epoch-opts.warmup_epoch)*0.1))
+            total_loss = total_loss*warmup_fac + flo_loss
 
             aux_out['flo_loss'] = flo_loss
         
@@ -736,7 +733,7 @@ class v2s_net(nn.Module):
             aux_out['fdp_loss'] = fdp_loss
         
         # regularization 
-        if opts.lbs or opts.flowbw:
+        if 'frame_cyc_dis' in rendered.keys():
             # cycle loss
             cyc_loss = rendered['frame_cyc_dis'].mean()
             total_loss = total_loss + cyc_loss
@@ -746,6 +743,14 @@ class v2s_net(nn.Module):
             rig_loss = 0.0001*rendered['frame_rigloss'].mean()
             total_loss = total_loss + rig_loss
             aux_out['rig_loss'] = rig_loss
+
+            ## TODO enforcing bone distribution to be close to points within surface
+            #if opts.lbs:
+            #    bone_density_loss = density_loss(self.nerf_coarse, 
+            #                                    self.embedding_xyz, self.bones)
+            #    total_loss = total_loss + bone_density_loss
+            #    aux_out['bone_density_loss'] = bone_density_loss
+                
 
         if opts.eikonal_loss:
             ekl_loss = 0.01*eikonal_loss(self.nerf_coarse, self.embedding_xyz, 

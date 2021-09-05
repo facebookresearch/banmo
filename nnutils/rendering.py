@@ -259,23 +259,6 @@ def render_rays(models,
         # rigidity loss
         frame_disp3d = flow_fw.norm(2,-1)
 
-        ## cycle loss: canodical deformed canonical
-        #bound=1 #TODO modif this based on size of canonical volume
-        #xyz_can_sampled = torch.rand(xyz_coarse_sampled.shape)*2*bound-bound
-        #xyz_can_sampled = xyz_can_sampled.to(xyz_coarse_embedded.device)
-        #xyz_can_embedded = embedding_xyz(xyz_can_sampled)
-        #sigma_can = evaluate_mlp(model_coarse, xyz_can_embedded, sigma_only=True)
-        #weights_sample = sigma_can.sigmoid()[...,0]
-        #flow_fw_can = evaluate_mlp(model_flowfw, xyz_can_embedded, code=time_embedded)
-
-        #xyz_dfm_sampled = xyz_can_sampled + flow_fw_can
-        #xyz_dfm_embedded = embedding_xyz(xyz_dfm_sampled)
-        #flow_bw_dfm = evaluate_mlp(model_flowbw, xyz_dfm_embedded, code=time_embedded)
-        #frame_cyc_dis = (flow_bw_dfm+flow_fw_can).norm(2,-1)
-        #
-        ## rigidity loss
-        #frame_disp3d = flow_fw_can.norm(2,-1)
-
         if "time_embedded_target" in rays.keys():
             time_embedded_target = rays['time_embedded_target'][:,None]
             flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
@@ -303,20 +286,6 @@ def render_rays(models,
         bone_rot = bone_fw_reshape[:,:,0:4]
         frame_rigloss = bone_trn.pow(2).sum(-1)+quat_angle(bone_rot)
         
-        ## cycle loss: canodical deformed canonical
-        #bound=1 #TODO modif this based on size of canonical volume
-        #xyz_can_sampled = torch.rand(xyz_coarse_sampled.shape)*2*bound-bound
-        #xyz_can_sampled = xyz_can_sampled.to(xyz_coarse_sampled.device)
-        #xyz_can_embedded = embedding_xyz(xyz_can_sampled)
-        #sigma_can = evaluate_mlp(model_coarse, xyz_can_embedded, sigma_only=True)
-        #weights_sample = sigma_can.sigmoid()[...,0]
-        #xyz_dfm_sampled,_,_ = lbs(bones, bone_rts_fw, xyz_can_sampled,backward=False)
-        #xyz_can_cyc,_,_     = lbs(bones, bone_rts_fw, xyz_dfm_sampled)
-        #frame_cyc_dis = (xyz_can_sampled - xyz_can_cyc).norm(2,-1)
-        #
-        ## rigidity loss
-        #frame_disp3d = (xyz_can_sampled - xyz_dfm_sampled).norm(2,-1)
-            
         if 'bone_rts_target' in rays.keys():
             bone_rts_target = rays['bone_rts_target']
             xyz_coarse_target,_,_ = lbs(bones, bone_rts_target, 

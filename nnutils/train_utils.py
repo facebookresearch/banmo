@@ -54,12 +54,11 @@ class v2s_trainer(Trainer):
             with open(log_file, 'w') as f:
                 for k in dir(opts): f.write('{}: {}\n'.format(k, opts.__getattr__(k)))
 
-    def define_model(self, data_info, no_ddp=False, half_bones=False):
+    def define_model(self, data_info, no_ddp=False):
         opts = self.opts
         img_size = (opts.img_size, opts.img_size)
         self.device = torch.device('cuda:{}'.format(opts.local_rank))
-        self.model = mesh_net.v2s_net(img_size, opts, data_info,
-                                     half_bones=half_bones)
+        self.model = mesh_net.v2s_net(img_size, opts, data_info)
 
         if opts.model_path!='':
             self.load_network(opts.model_path)
@@ -307,6 +306,11 @@ class v2s_trainer(Trainer):
         torch.cuda.manual_seed(1)
         self.save_network('0')
 
+        # disable bones before warmup epochs are finished
+        if opts.lbs: 
+            self.model.num_bone_used = 0
+            del self.model.nerf_models['bones']
+
         # start training
         for epoch in range(0, opts.num_epochs):
             epoch_iter = 0
@@ -333,9 +337,10 @@ class v2s_trainer(Trainer):
                 self.add_image(log, k, grid_img, epoch, scale=scale)
                
             # reinit bones based on extracted surface
-            if opts.lbs and epoch==10:
-                reinit_bones(self.model, mesh_rest)
+            if opts.lbs and epoch==opts.warmup_epoch//2:
+                reinit_bones(self.model, mesh_rest, opts.num_bones)
                 self.init_training() # add new params to optimizer
+                self.model.num_bone_used = self.model.num_bones
 
             # change near-far plane after half epochs
             if epoch==int(opts.num_epochs/2):
@@ -483,15 +488,15 @@ class v2s_trainer(Trainer):
             vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
             #vol_o = F.softplus(vol_o)
 
-            ##TODO set density of non-observable points to small value
-            #if model.latest_vars['idk'].sum()>0:
-            #    vis_chunks = []
-            #    for i in range(0, bs_pts, chunk):
-            #        vis_chunks += compute_point_visibility(query_xyz[i:i+chunk].cpu(), 
-            #                               model.latest_vars, model.device)[None]
-            #    vol_visi = torch.cat(vis_chunks, 0)
-            #    vol_visi = vol_visi.view(grid_size, grid_size, grid_size)
-            #    vol_o[vol_visi==0] = -1
+            #TODO set density of non-observable points to small value
+            if model.latest_vars['idk'].sum()>0:
+                vis_chunks = []
+                for i in range(0, bs_pts, chunk):
+                    vis_chunks += compute_point_visibility(query_xyz[i:i+chunk].cpu(), 
+                                           model.latest_vars, model.device)[None]
+                vol_visi = torch.cat(vis_chunks, 0)
+                vol_visi = vol_visi.view(grid_size, grid_size, grid_size)
+                vol_o[vol_visi==0] = -1
 
             ## save color of sampled points 
             #from matplotlib.pyplot import cm

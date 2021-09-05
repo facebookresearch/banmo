@@ -28,3 +28,9 @@ def eikonal_loss(mlp, embed, bound, nsample=1000):
     g = nerf_gradient(mlp, embed, pts)
     eikonal_loss = ((g.norm(2, dim=-1) - 1) ** 2).mean()
     return eikonal_loss
+
+def bone_density_loss(mlp, embed, bones):
+    pts = bones[:,:3] 
+    pts_embedded = embed(pts)
+    y = evaluate_mlp(mlp, pts_embedded, pts.shape[0], sigma_only=True)
+    return bone_density_loss

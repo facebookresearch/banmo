@@ -93,10 +93,11 @@ def skinning(bones, pts):
     mdis = scale.view(bs,1,B,3) * mdis.pow(2)
     mdis = (-10 * mdis.sum(3)) # bs,N,B
     
-    # truncated softmax
-    topk, indices = mdis.topk(3, 2, largest=True)
-    mdis = torch.zeros_like(mdis).fill_(-np.inf)
-    mdis = mdis.scatter(2, indices, topk)
+    ## truncated softmax
+    #topk, indices = mdis.topk(3, 2, largest=True)
+    #mdis = torch.zeros_like(mdis).fill_(-np.inf)
+    #mdis = mdis.scatter(2, indices, topk)
+    
     skin = mdis.softmax(2)
     return skin
 
@@ -436,18 +437,15 @@ def generate_bones(num_bones_x, num_bones, bound, device):
     bones = torch.cat([center, orient, scale],-1)
     return bones
 
-def reinit_bones(model, mesh):
+def reinit_bones(model, mesh, num_bones):
     """
     num_bones: number of bones on the surface
     mesh: trimesh
     """
     from kmeans_pytorch import kmeans
-    num_bones = model.num_bones
     device = model.device
     points = torch.Tensor(mesh.vertices).to(device)
     rthead = model.nerf_bone_rts[1].rgb
-    
-    num_bones = num_bones//2  # reduce bones
     
     # reinit
     num_in = rthead[0].weight.shape[1]

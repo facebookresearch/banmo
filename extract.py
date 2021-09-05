@@ -120,7 +120,7 @@ def transform_shape(mesh,rtk):
 def main(_):
     trainer = v2s_trainer(opts)
     data_info = trainer.init_dataset()    
-    trainer.define_model(data_info, no_ddp=True, half_bones=True)
+    trainer.define_model(data_info, no_ddp=True)
     seqname=opts.seqname
 
     dynamic_mesh = opts.flowbw or opts.lbs

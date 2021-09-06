@@ -7,6 +7,7 @@ from pytorch3d import transforms
 from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
                                vec_to_sim3, rtmat_invert, quat_angle
 from nnutils.nerf import evaluate_mlp
+from nnutils.loss_utils import elastic_loss
 
 __all__ = ['render_rays']
 
@@ -242,19 +243,20 @@ def render_rays(models,
 
 
     # free deform
+    xyz_coarse_frame = xyz_coarse_sampled.clone()
     if 'flowbw' in models.keys():
         model_flowbw = models['flowbw']
         model_flowfw = models['flowfw']
         time_embedded = rays['time_embedded'][:,None]
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
         flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, 
-                                        chunk, code=time_embedded)
+                             chunk, xyz=xyz_coarse_sampled, code=time_embedded)
         xyz_coarse_sampled=xyz_coarse_sampled + flow_bw
         
         # cycle loss (in the joint canonical space)
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
         flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
-                                        chunk, code=time_embedded)
+                              chunk, xyz=xyz_coarse_sampled,code=time_embedded)
         frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
         # rigidity loss
         frame_disp3d = flow_fw.norm(2,-1)
@@ -262,7 +264,7 @@ def render_rays(models,
         if "time_embedded_target" in rays.keys():
             time_embedded_target = rays['time_embedded_target'][:,None]
             flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
-                                    chunk, code=time_embedded_target)
+                      chunk, xyz=xyz_coarse_sampled,code=time_embedded_target)
             xyz_coarse_target=xyz_coarse_sampled + flow_fw
 
 
@@ -270,7 +272,6 @@ def render_rays(models,
         # backward skinning
         bones = models['bones']
         bone_rts_fw = rays['bone_rts']
-        xyz_coarse_frame = xyz_coarse_sampled.clone()
         xyz_coarse_sampled, skin, bones_dfm = lbs(bones, 
                                                   bone_rts_fw, 
                                                   xyz_coarse_sampled)
@@ -362,12 +363,14 @@ def render_rays(models,
         result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
         if 'flowbw' in models.keys():
             result['frame_rigloss'] =  (frame_disp3d  * weights_coarse.detach()).sum(-1)
+            # only evaluate at with_grad mode
+            if xyz_coarse_frame.requires_grad:
+                # elastic energy
+                result['elastic_loss'] = elastic_loss(model_flowbw, embedding_xyz, 
+                                  xyz_coarse_frame, time_embedded)
         else:
             result['frame_rigloss'] =  (frame_rigloss).mean(-1)
 
-        
-        #result['frame_cyc_dis'] = 0.01*(frame_cyc_dis * weights_sample.detach()).sum(-1)
-        #result['frame_disp3d'] =  0.01*(frame_disp3d  * weights_sample.detach()).sum(-1)
         
         ### script to plot sigmas/weights
         #from matplotlib import pyplot as plt

@@ -23,7 +23,7 @@ import configparser
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from ext_nnutils.net_blocks import Encoder, CodePredictor
-from nnutils.nerf import Embedding, NeRF, RTHead
+from nnutils.nerf import Embedding, NeRF, RTHead, SE3head
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
@@ -128,7 +128,9 @@ flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
 flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
 flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 12, 'maximum number of bones')
-flags.DEFINE_integer('warmup_epoch', 10, 'epochs used to learn root body pose')
+flags.DEFINE_integer('warmup_steps', 2000, 'steps used to learn root body pose')
+flags.DEFINE_integer('lbs_reinit_epochs', 5, 'epochs used to add all bones')
+flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -144,7 +146,7 @@ class v2s_net(nn.Module):
         self.config.read('configs/%s.config'%opts.seqname)
         self.alpha=torch.Tensor([opts.alpha])
         self.alpha=nn.Parameter(self.alpha)
-
+        
         # multi-video mode
         self.num_vid =  len(self.config.sections())-1
         self.data_offset = data_info['offset']
@@ -194,9 +196,17 @@ class v2s_net(nn.Module):
         t_embed_dim = 128
         self.embedding_time = nn.Embedding(max_t, t_embed_dim)
         if opts.flowbw:
-            self.nerf_flowbw = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
+            if opts.se3_flow:
+                flow3d_arch = SE3head
+                out_channels=9
+            else:
+                flow3d_arch = NeRF
+                out_channels=3
+            self.nerf_flowbw = flow3d_arch(in_channels_xyz=in_channels_xyz+t_embed_dim,
+                                D=5, W=128,out_channels=out_channels,
                                 in_channels_dir=0, raw_feat=True)
-            self.nerf_flowfw = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
+            self.nerf_flowfw = flow3d_arch(in_channels_xyz=in_channels_xyz+t_embed_dim,
+                                D=5, W=128,out_channels=out_channels,
                                 in_channels_dir=0, raw_feat=True)
             self.nerf_models['flowbw'] = self.nerf_flowbw
             self.nerf_models['flowfw'] = self.nerf_flowfw
@@ -665,7 +675,7 @@ class v2s_net(nn.Module):
         # loss
         img_loss = (rendered_img - img_at_samp).pow(2)
         img_loss = img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
-        sil_loss = F.mse_loss(rendered_sil, sil_at_samp)
+        sil_loss = 0.1*F.mse_loss(rendered_sil, sil_at_samp)
         total_loss = img_loss
         if not opts.bg: total_loss = total_loss + sil_loss 
 
@@ -699,8 +709,12 @@ class v2s_net(nn.Module):
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
             # warm up by only using flow loss to optimize root pose
-            warmup_fac = min(1,max(0,(self.epoch-opts.warmup_epoch)*0.1))
-            total_loss = total_loss*warmup_fac + flo_loss
+            if opts.root_opt and (not opts.use_cam):
+                warmup_fac = (self.total_steps-opts.warmup_steps)/200.
+                warmup_fac = min(1,max(0,warmup_fac))
+                total_loss = total_loss*warmup_fac + flo_loss
+            else:
+                total_loss = total_loss + flo_loss
 
             aux_out['flo_loss'] = flo_loss
         
@@ -750,7 +764,12 @@ class v2s_net(nn.Module):
             #                                    self.embedding_xyz, self.bones)
             #    total_loss = total_loss + bone_density_loss
             #    aux_out['bone_density_loss'] = bone_density_loss
-                
+
+            # elastic energy for se3 field / translation field
+            if 'elastic_loss' in rendered.keys():
+                elastic_loss = rendered['elastic_loss'].mean() * 1e-3
+                total_loss = total_loss + elastic_loss
+                aux_out['elastic_loss'] = elastic_loss
 
         if opts.eikonal_loss:
             ekl_loss = 0.01*eikonal_loss(self.nerf_coarse, self.embedding_xyz, 

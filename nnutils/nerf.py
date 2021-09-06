@@ -3,6 +3,7 @@ import pdb
 import torch
 from torch import nn
 import torch.nn.functional as F
+from pytorch3d import transforms
 
 class Embedding(nn.Module):
     def __init__(self, in_channels, N_freqs, logscale=True, alpha=None):
@@ -87,6 +88,7 @@ class NeRF(nn.Module):
         self.in_channels_xyz = in_channels_xyz
         self.in_channels_dir = in_channels_dir
         self.skips = skips
+        self.use_xyz = False
 
         # xyz encoding layers
         self.weights_reg = []
@@ -124,7 +126,7 @@ class NeRF(nn.Module):
 #                if hasattr(m.weight,'data'):
 #                    nn.init.xavier_uniform_(m.weight)
 
-    def forward(self, x, sigma_only=False):
+    def forward(self, x ,xyz=None, sigma_only=False):
         """
         Encodes input (xyz+dir) to rgb+sigma (not ready to render yet).
         For rendering this ray, please see rendering.py
@@ -172,6 +174,31 @@ class NeRF(nn.Module):
         return out
 
 
+class SE3head(NeRF):
+    """
+    modify the output to be rigid transforms per point
+    modified from Nerfies
+    """
+    def __init__(self, **kwargs):
+        super(SE3head, self).__init__(**kwargs)
+        self.use_xyz=True
+
+    def forward(self, x, xyz=None,sigma_only=False):
+        x = super(SE3head, self).forward(x, sigma_only=sigma_only)
+        x = x.view(-1,9)*0.1
+        rotation, pivot, translation = x.split([3,3,3],-1)
+        
+        shape = xyz.shape
+        warped_points = xyz.view(-1,3).clone()
+        warped_points = warped_points + pivot
+        rotmat = transforms.so3_exponential_map(rotation)
+        warped_points = rotmat.matmul(warped_points[...,None])[...,0]
+        warped_points = warped_points - pivot
+        warped_points = warped_points + translation
+
+        flow = warped_points.view(shape) - xyz
+        return flow
+
 class RTHead(NeRF):
     """
     modify the output to be rigid transforms
@@ -202,14 +229,16 @@ class RTHead(NeRF):
         return x
     
 
-def evaluate_mlp(model, embedded, chunk, code=None, sigma_only=False):
+def evaluate_mlp(model, embedded, chunk, 
+                xyz=None,
+                code=None, sigma_only=False):
     B,nbins,_ = embedded.shape
     out_chunks = []
     for i in range(0, B, chunk):
         if code is not None:
             embedded = torch.cat([embedded[i:i+chunk],
                        code[i:i+chunk].repeat(1,nbins,1)], -1)
-        out_chunks += [model(embedded, sigma_only=sigma_only)]
+        out_chunks += [model(embedded, sigma_only=sigma_only, xyz=xyz)]
 
     out = torch.cat(out_chunks, 0)
     return out

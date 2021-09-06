@@ -480,7 +480,7 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
         time_embedded = model.embedding_time(query_time)[:,0]
         xyztime_embedded = torch.cat([xyz_embedded, time_embedded],1)
 
-        flowbw_chunk = model.nerf_flowbw(xyztime_embedded)
+        flowbw_chunk = model.nerf_flowbw(xyztime_embedded, xyz=query_xyz_chunk)
         query_xyz_chunk += flowbw_chunk
     elif opts.lbs:
         # backward skinning
@@ -509,7 +509,7 @@ def warp_fw(opts, model, rt_dict, vertices, frameid):
         time_embedded = model.embedding_time(query_time)[:,0]
         ptstime_embedded = torch.cat([pts_can_embedded, time_embedded],1)
 
-        pts_dfm = pts_can + model.nerf_flowfw(ptstime_embedded)
+        pts_dfm = pts_can + model.nerf_flowfw(ptstime_embedded, xyz=pts_can)
     elif opts.lbs:
         # forward skinning
         bones = model.bones
@@ -544,7 +544,7 @@ def canonical2ndc(model, dp_canonical_pts, rtk, kaug, frameid):
         dp_canonical_embedded = model.embedding_xyz(dp_canonical_pts)[None]
         dp_canonical_embedded = dp_canonical_embedded.repeat(bs,1,1)
         dp_canonical_embedded = torch.cat([dp_canonical_embedded, time_embedded], -1)
-        dp_deformed_flo = model.nerf_flowfw(dp_canonical_embedded)
+        dp_deformed_flo = model.nerf_flowfw(dp_canonical_embedded, xyz=dp_canonical_pts)
         dp_deformed_pts = dp_canonical_pts + dp_deformed_flo
     else:
         dp_deformed_pts = dp_canonical_pts.repeat(bs,1,1)
@@ -621,7 +621,7 @@ def compute_point_visibility(pts, vars_np, device):
     #TODO grab the visibility value in the mask and sum over frames
     vis = F.grid_sample(vis, xy)[:,0,0]
     vis = (idk[:,None]*vis).sum(0)
-    vis = (vis>0).float()
+    vis = (vis>0).float() # at least seen in one view
     return vis
 
 

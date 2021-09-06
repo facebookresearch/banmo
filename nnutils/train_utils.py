@@ -337,7 +337,7 @@ class v2s_trainer(Trainer):
                 self.add_image(log, k, grid_img, epoch, scale=scale)
                
             # reinit bones based on extracted surface
-            if opts.lbs and epoch==opts.warmup_epoch//2:
+            if opts.lbs and epoch==opts.lbs_reinit_epochs:
                 reinit_bones(self.model, mesh_rest, opts.num_bones)
                 self.init_training() # add new params to optimizer
                 self.model.num_bone_used = self.model.num_bones

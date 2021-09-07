@@ -131,6 +131,7 @@ flags.DEFINE_integer('num_bones', 12, 'maximum number of bones')
 flags.DEFINE_integer('warmup_steps', 2000, 'steps used to learn root body pose')
 flags.DEFINE_integer('lbs_reinit_epochs', 5, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
+flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -223,6 +224,13 @@ class v2s_net(nn.Module):
                                 in_channels_xyz=t_embed_dim, D=4, in_channels_dir=0,
                                 out_channels=7*self.num_bones, raw_feat=True))
 
+        # set visibility nerf
+        if opts.nerf_vis:
+            self.nerf_vis = NeRF(in_channels_xyz=in_channels_xyz, D=5, W=64, 
+                                    out_channels=1, in_channels_dir=0,
+                                    raw_feat=True)
+            self.nerf_models['nerf_vis'] = self.nerf_vis
+        
         # optimize camera
         if opts.root_opt:
             if opts.cnn_root:
@@ -363,16 +371,20 @@ class v2s_net(nn.Module):
                         noise_std=opts.noise_std,
                         N_importance=opts.N_importance,
                         chunk=opts.chunk, # chunk size is effective in val mode
+                        obj_bound=self.latest_vars['obj_bound'],
                         white_back=False) # never turn on white_back
             for k, v in rendered_chunks.items():
                 results[k] += [v]
         
         for k, v in results.items():
-            v = torch.cat(v, 0)
-            if self.training:
-                v = v.view(bs,nsample,-1)
+            if v[0].dim()==0: # loss
+                v = torch.stack(v).mean()
             else:
-                v = v.view(bs,img_size, img_size, -1)
+                v = torch.cat(v, 0)
+                if self.training:
+                    v = v.view(bs,nsample,-1)
+                else:
+                    v = v.view(bs,img_size, img_size, -1)
             results[k] = v
        
         # render flow 
@@ -710,7 +722,7 @@ class v2s_net(nn.Module):
 
             # warm up by only using flow loss to optimize root pose
             if opts.root_opt and (not opts.use_cam):
-                warmup_fac = (self.total_steps-opts.warmup_steps)/200.
+                warmup_fac = (self.total_steps-opts.warmup_steps)/1000.
                 warmup_fac = min(1,max(0,warmup_fac))
                 total_loss = total_loss*warmup_fac + flo_loss
             else:
@@ -767,7 +779,8 @@ class v2s_net(nn.Module):
 
             # elastic energy for se3 field / translation field
             if 'elastic_loss' in rendered.keys():
-                elastic_loss = rendered['elastic_loss'].mean() * 1e-3
+                elastic_loss = rendered['elastic_loss'].mean() * 0.
+                #elastic_loss = rendered['elastic_loss'].mean() * 1e-3
                 total_loss = total_loss + elastic_loss
                 aux_out['elastic_loss'] = elastic_loss
 
@@ -777,6 +790,12 @@ class v2s_net(nn.Module):
             total_loss = total_loss + ekl_loss
             aux_out['ekl_loss'] = ekl_loss
 
+        # visibility loss
+        if 'vis_loss' in rendered.keys():
+            vis_loss = 0.01*rendered['vis_loss'].mean()
+            total_loss = total_loss + vis_loss
+            aux_out['visibility_loss'] = vis_loss
+            
         aux_out['total_loss'] = total_loss
         return total_loss, aux_out
 

@@ -1,6 +1,7 @@
 import pdb
 import torch
 from nnutils.nerf import evaluate_mlp
+import torch.nn.functional as F
 
 def nerf_gradient(mlp, embed, pts, use_xyz=False,code=None, sigma_only=False):
     """
@@ -58,3 +59,27 @@ def bone_density_loss(mlp, embed, bones):
     pts_embedded = embed(pts)
     y = evaluate_mlp(mlp, pts_embedded, pts.shape[0], sigma_only=True)
     return bone_density_loss
+
+def visibility_loss(mlp, embed, xyz_pos, w_pos, bound, chunk):
+    """
+    bound: scalar, used to sample negative samples
+    """
+    device = next(mlp.parameters()).device
+    xyz_pos = xyz_pos.detach().clone()
+    w_pos = w_pos.detach().clone()
+    
+    # negative examples
+    nsample = (2*w_pos.sum()).int()
+    xyz_neg = torch.rand(1,nsample,3)*2*bound-bound
+    xyz_neg = xyz_neg.to(device)
+    xyz_neg_embedded = embed(xyz_neg)
+    vis_neg_pred = evaluate_mlp(mlp, xyz_neg_embedded, chunk)[...,0]
+    vis_loss_neg = -F.logsigmoid(-vis_neg_pred).sum()*0.5/nsample
+      
+    # positive examples
+    xyz_pos_embedded = embed(xyz_pos)
+    vis_pos_pred = evaluate_mlp(mlp, xyz_pos_embedded, chunk)[...,0]
+    vis_loss_pos = -(F.logsigmoid(vis_pos_pred) * w_pos).sum()/nsample
+
+    vis_loss = vis_loss_pos + vis_loss_neg
+    return vis_loss

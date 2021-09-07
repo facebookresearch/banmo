@@ -7,7 +7,7 @@ from pytorch3d import transforms
 from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
                                vec_to_sim3, rtmat_invert, quat_angle
 from nnutils.nerf import evaluate_mlp
-from nnutils.loss_utils import elastic_loss
+from nnutils.loss_utils import elastic_loss, visibility_loss
 
 __all__ = ['render_rays']
 
@@ -72,6 +72,7 @@ def render_rays(models,
                 noise_std=1,
                 N_importance=0,
                 chunk=1024*32,
+                obj_bound=None,
                 white_back=False,
                 test_time=False
                 ):
@@ -174,10 +175,11 @@ def render_rays(models,
         alphas = 1-torch.exp(-deltas*sigmas) # (N_rays, N_samples_), p_i
         alphas_shifted = \
             torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, a1, a2, ...]
-        weights = \
-            alphas * torch.cumprod(alphas_shifted, -1)[:, :-1] # (N_rays, N_samples_)
+        alpha_prod = torch.cumprod(alphas_shifted, -1)[:, :-1]
+        weights = alphas * alpha_prod # (N_rays, N_samples_)
         weights_sum = weights.sum(1) # (N_rays), the accumulated opacity along the rays
                                      # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
+        visibility = alpha_prod.detach() # 1 q_0 q_j-1
         if weights_only:
             return weights
 
@@ -188,7 +190,7 @@ def render_rays(models,
         if white_back:
             rgb_final = rgb_final + 1-weights_sum.unsqueeze(-1)
 
-        return rgb_final, depth_final, weights
+        return rgb_final, depth_final, weights, visibility
 
 
     # Extract models from lists
@@ -302,7 +304,7 @@ def render_rays(models,
                       dir_embedded, z_vals, weights_only=True)
         result = {'sil_coarse': weights_coarse[:,:-1].sum(1)}
     else:
-        rgb_coarse, depth_coarse, weights_coarse = \
+        rgb_coarse, depth_coarse, weights_coarse, vis_coarse = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=False)
         result = {'img_coarse': rgb_coarse,
@@ -381,6 +383,9 @@ def render_rays(models,
         #plt.plot(sigmas[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
         #plt.savefig('sigmas.png')
 
+    if 'nerf_vis' in models.keys():
+        result['vis_loss'] = visibility_loss(models['nerf_vis'], embedding_xyz,
+                        xyz_coarse_sampled, vis_coarse, obj_bound, chunk)
 
     if N_importance > 0: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
@@ -395,7 +400,7 @@ def render_rays(models,
                            # (N_rays, N_samples+N_importance, 3)
 
         model_fine = models['fine']
-        rgb_fine, depth_fine, weights_fine = \
+        rgb_fine, depth_fine, weights_fine, vis_fine = \
             inference(model_fine, embedding_xyz, xyz_fine_sampled, rays_d,
                       dir_embedded, z_vals, weights_only=False)
 

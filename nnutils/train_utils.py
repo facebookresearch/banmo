@@ -32,6 +32,7 @@ from torch.autograd import Variable
 from collections import defaultdict
 from pytorch3d import transforms
 from torch.nn.utils import clip_grad_norm_
+from matplotlib.pyplot import cm
 
 from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
                                obj_to_cam, get_near_far, near_far_to_bound, \
@@ -103,6 +104,7 @@ class v2s_trainer(Trainer):
         params_nerf_coarse=[]
         params_nerf_fine=[]
         params_nerf_flowbw=[]
+        params_nerf_vis=[]
         params_nerf_root_rts=[]
         params_nerf_bone_rts=[]
         params_embed=[]
@@ -118,6 +120,8 @@ class v2s_trainer(Trainer):
                 params_nerf_fine.append(p)
             elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
                 params_nerf_flowbw.append(p)
+            elif 'nerf_vis' in name:
+                params_nerf_vis.append(p)
             elif 'nerf_root_rts' in name:
                 params_nerf_root_rts.append(p)
             elif 'nerf_bone_rts' in name:
@@ -141,6 +145,7 @@ class v2s_trainer(Trainer):
             [{'params': params_nerf_coarse},
              {'params': params_nerf_fine},
              {'params': params_nerf_flowbw},
+             {'params': params_nerf_vis},
              {'params': params_nerf_root_rts},
              {'params': params_nerf_bone_rts},
              {'params': params_embed},
@@ -156,6 +161,7 @@ class v2s_trainer(Trainer):
            [opts.learning_rate, # params_nerf_coarse
             opts.learning_rate, # params_nerf_fine
             opts.learning_rate, # params_nerf_flowbw
+            opts.learning_rate, # params_nerf_vis
           2*opts.learning_rate, # params_nerf_root_rts
             opts.learning_rate, # params_nerf_bone_rts
             opts.learning_rate, # params_embed
@@ -369,6 +375,7 @@ class v2s_trainer(Trainer):
                 grad_nerf_coarse=[]
                 grad_nerf_fine=[]
                 grad_nerf_flowbw=[]
+                grad_nerf_vis=[]
                 grad_nerf_root_rts=[]
                 grad_nerf_bone_rts=[]
                 grad_embed=[]
@@ -388,6 +395,8 @@ class v2s_trainer(Trainer):
                         grad_nerf_fine.append(p)
                     elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
                         grad_nerf_flowbw.append(p)
+                    elif 'nerf_vis' in name:
+                        grad_nerf_vis.append(p)
                     elif 'nerf_root_rts' in name:
                         grad_nerf_root_rts.append(p)
                     elif 'nerf_bone_rts' in name:
@@ -409,6 +418,7 @@ class v2s_trainer(Trainer):
                 aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,  .1)
                 aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,    .1)
                 aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,  .1)
+                aux_out['nerf_vis_g']   = clip_grad_norm_(grad_nerf_vis,  .1)
                 aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts,.1)
                 aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts,.1)
                 aux_out['embedding_time_g']= clip_grad_norm_(grad_embed,        .1)
@@ -447,9 +457,10 @@ class v2s_trainer(Trainer):
         kaug[:,:2] *= opts.img_size/render_size
 
         rendered, _ = model.nerf_render(rtk, kaug, frameid, render_size)
+        rendered_first = {}
         for k,v in rendered.items():
-            rendered[k] = v[:1]
-        return rendered  
+            if v.dim()>0: rendered_first[k] = v[:1] # remove loss term
+        return rendered_first 
 
     @staticmethod
     def extract_mesh(model,chunk,grid_size,
@@ -492,14 +503,20 @@ class v2s_trainer(Trainer):
             if model.latest_vars['idk'].sum()>0:
                 vis_chunks = []
                 for i in range(0, bs_pts, chunk):
-                    vis_chunks += compute_point_visibility(query_xyz[i:i+chunk].cpu(), 
-                                           model.latest_vars, model.device)[None]
+                    query_xyz_chunk = query_xyz[i:i+chunk]
+                    if opts.nerf_vis:
+                        xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
+                        vis_chunk_nerf = model.nerf_vis(xyz_embedded)
+                        vis_chunk = vis_chunk_nerf[...,0].sigmoid()
+                    else:
+                        vis_chunk = compute_point_visibility(query_xyz_chunk.cpu(),
+                                         model.latest_vars, model.device)[None]
+                    vis_chunks += [vis_chunk]
                 vol_visi = torch.cat(vis_chunks, 0)
                 vol_visi = vol_visi.view(grid_size, grid_size, grid_size)
-                vol_o[vol_visi==0] = -1
+                vol_o[vol_visi<0.5] = -1
 
             ## save color of sampled points 
-            #from matplotlib.pyplot import cm
             #cmap = cm.get_cmap('cool')
             #pts_col = cmap(vol_visi.float().view(-1).cpu())
             ##pts_col = cmap(vol_o.sigmoid().view(-1).cpu())

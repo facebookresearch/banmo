@@ -49,10 +49,11 @@ Kmat=K2mat(torch.Tensor([int(float(i)) for i in \
 frames=[]
 for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
     # read dp 
-    img_path = dp_path.replace('Densepose', 'JPEGImages').replace('.pfm', '.jpg')
-    im = cv2.imread(img_path)
     dp = readPFM(dp_path)[0]
     h,w = dp.shape
+    img_path = '%s/vis-%05d.jpg'%(dp_path.rsplit('/',1)[-2],idx)
+    im = cv2.imread(img_path)
+    im = cv2.resize(im, (w,h))
     dp= (dp *50).astype(np.int32)
     dpmask = dp>0
     x0,y0  =np.meshgrid(range(w),range(h))

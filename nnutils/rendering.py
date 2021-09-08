@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from pytorch3d import transforms
 
 from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
-                               vec_to_sim3, rtmat_invert, quat_angle
+                               vec_to_sim3, rtmat_invert, rot_angle
 from nnutils.nerf import evaluate_mlp
 from nnutils.loss_utils import elastic_loss, visibility_loss
 
@@ -284,10 +284,10 @@ def render_rays(models,
         
         # rigidity loss
         num_bone = bones.shape[0] 
-        bone_fw_reshape = bone_rts_fw.view(-1,num_bone,7)
-        bone_trn = bone_fw_reshape[:,:,4:7]
-        bone_rot = bone_fw_reshape[:,:,0:4]
-        frame_rigloss = bone_trn.pow(2).sum(-1)+quat_angle(bone_rot)
+        bone_fw_reshape = bone_rts_fw.view(-1,num_bone,12)
+        bone_trn = bone_fw_reshape[:,:,9:12]
+        bone_rot = bone_fw_reshape[:,:,0:9].view(-1,num_bone,3,3)
+        frame_rigloss = bone_trn.pow(2).sum(-1)+rot_angle(bone_rot)
         
         if 'bone_rts_target' in rays.keys():
             bone_rts_target = rays['bone_rts_target']

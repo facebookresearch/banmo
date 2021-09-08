@@ -158,7 +158,7 @@ def blend_skinning(bones, rts, pts):
 def lbs(bones, rts_fw, xyz_in, backward=True):
     """
     bones: bs,B,10       - B gaussian ellipsoids indicating rest bone coordinates
-    rts_fw: bs,B,7       - B rigid transforms, applied to the rest bones
+    rts_fw: bs,B,12       - B rigid transforms, applied to the rest bones
     xyz_in: bs,N,3       - N 3d points after transforms in the root coordinates
     """
     B = bones.shape[-2]
@@ -166,10 +166,10 @@ def lbs(bones, rts_fw, xyz_in, backward=True):
     bs = rts_fw.shape[0]
     bones = bones.view(-1,B,10)
     xyz_in = xyz_in.view(-1,N,3)
-    rts_fw = rts_fw.view(-1,B,7)# B,7
-    rquat=rts_fw[:,:,:4]
-    rmat=transforms.quaternion_to_matrix(rquat) 
-    tmat= rts_fw[:,:,4:7]
+    rts_fw = rts_fw.view(-1,B,12)# B,12
+    rmat=rts_fw[:,:,:9]
+    rmat=rmat.view(bs,B,3,3)
+    tmat= rts_fw[:,:,9:12]
     rts_fw = torch.cat([rmat,tmat[...,None]],-1)
     rts_fw = rts_fw.view(-1,B,3,4)
 
@@ -449,7 +449,7 @@ def reinit_bones(model, mesh, num_bones):
     
     # reinit
     num_in = rthead[0].weight.shape[1]
-    rthead = nn.Sequential(nn.Linear(num_in, 7*num_bones)).to(device)
+    rthead = nn.Sequential(nn.Linear(num_in, 6*num_bones)).to(device)
     torch.nn.init.xavier_uniform_(rthead[0].weight, gain=0.5)
     torch.nn.init.zeros_(rthead[0].bias)
 
@@ -636,13 +636,12 @@ def near_far_to_bound(near_far):
     return bound
 
 
-def quat_angle(quat):
+def rot_angle(mat):
     """
-    quaternion angle 
-    quat: ..., 4
+    rotation angle of rotation matrix 
+    rmat: ..., 3,3
     """
     eps=1e-4
-    mat = transforms.quaternion_to_matrix(quat)
     cos = (  mat[...,0,0] + mat[...,1,1] + mat[...,2,2] - 1 )/2
     cos = cos.clamp(-1+eps,1-eps)
     angle = torch.acos(cos)

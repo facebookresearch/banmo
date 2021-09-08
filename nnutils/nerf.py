@@ -203,10 +203,13 @@ class RTHead(NeRF):
     """
     modify the output to be rigid transforms
     """
-    def __init__(self, is_bone, use_cam, **kwargs):
+    def __init__(self, use_quat, **kwargs):
         super(RTHead, self).__init__(**kwargs)
-        self.is_bone=is_bone
-        self.use_cam=use_cam
+        # use quaternion when estimating full rotation
+        # use exponential map when estimating delta rotation
+        self.use_quat=use_quat
+        if self.use_quat: self.num_output=7
+        else: self.num_output=6
 
         for m in self.modules():
             if isinstance(m, nn.Linear):
@@ -214,19 +217,26 @@ class RTHead(NeRF):
                     m.bias.data.zero_()
 
     def forward(self, x):
+        # output: NxBx(9 rotation + 3 translation)
         x = super(RTHead, self).forward(x)
-        rts = x.view(-1,7) 
+        bs = x.shape[0]
+        rts = x.view(-1,self.num_output)  # bs B,x
+        B = rts.shape[0]//bs
+        
+        tmat= rts[:,0:3] *0.1
 
-        rquat=rts[:,:4]
-        if self.is_bone or self.use_cam:
-            rquat[:,0]+=10
-        rquat=F.normalize(rquat,2,-1)
+        if self.use_quat:
+            rquat=rts[:,3:7]
+            rquat=F.normalize(rquat,2,-1)
+            rmat=transforms.quaternion_to_matrix(rquat) 
+        else:
+            rot=rts[:,3:6]
+            rmat = transforms.so3_exponential_map(rot)
+        rmat = rmat.view(-1,9)
 
-        tmat= rts[:,4:7] *0.1
-
-        rts = torch.cat([rquat,tmat],-1)
-        x = rts.view(x.shape)
-        return x
+        rts = torch.cat([rmat,tmat],-1)
+        rts = rts.view(bs,1,-1)
+        return rts
     
 
 def evaluate_mlp(model, embedded, chunk, 

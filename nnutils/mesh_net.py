@@ -223,9 +223,9 @@ class v2s_net(nn.Module):
             self.num_bone_used = self.num_bones # bones used in the model
 
             self.nerf_bone_rts = nn.Sequential(self.embedding_time,
-                                RTHead(is_bone=True, use_cam=opts.use_cam, 
-                                in_channels_xyz=t_embed_dim, D=4, in_channels_dir=0,
-                                out_channels=7*self.num_bones, raw_feat=True))
+                                RTHead(use_quat=False, D=5,W=128,
+                                in_channels_xyz=t_embed_dim,in_channels_dir=0,
+                                out_channels=6*self.num_bones, raw_feat=True))
 
         # set visibility nerf
         if opts.nerf_vis:
@@ -240,10 +240,16 @@ class v2s_net(nn.Module):
                 self.nerf_root_rts = nn.Sequential(Encoder(self.cnn_shape, n_blocks=4),
                                                    CodePredictor(n_bones=1, n_hypo=1))
             else:
+                if opts.use_cam: 
+                    use_quat=False
+                    out_channels=6
+                else:
+                    use_quat=True
+                    out_channels=7
                 self.nerf_root_rts = nn.Sequential(self.embedding_time,
-                                RTHead(is_bone=False, use_cam=opts.use_cam, 
-                                in_channels_xyz=t_embed_dim, D=4, in_channels_dir=0,
-                                out_channels=7, raw_feat=True))
+                                RTHead(use_quat=use_quat, D=5,W=128,
+                                in_channels_xyz=t_embed_dim,in_channels_dir=0,
+                                out_channels=out_channels, raw_feat=True))
 
         if opts.ks_opt:
             # TODO: change according to multiple video
@@ -624,9 +630,8 @@ class v2s_net(nn.Module):
                 root_rmat = root_rmat.view(bs,3,3)
             else:
                 root_rts = self.nerf_root_rts(frameid)
-                root_quat = root_rts[:,:4]
-                root_rmat = transforms.quaternion_to_matrix(root_quat)
-                root_tmat = root_rts[:,4:7]
+                root_rmat = root_rts[:,0,:9].view(-1,3,3)
+                root_tmat = root_rts[:,0,9:12]
     
             rmat = self.rtk[:,:3,:3]
             tmat = self.rtk[:,:3,3]
@@ -783,7 +788,7 @@ class v2s_net(nn.Module):
             # elastic energy for se3 field / translation field
             if 'elastic_loss' in rendered.keys():
                 elastic_loss = rendered['elastic_loss'].mean() * 1e-3
-                total_loss = total_loss + elastic_loss*1
+                total_loss = total_loss + elastic_loss
                 aux_out['elastic_loss'] = elastic_loss
 
         if opts.eikonal_loss:

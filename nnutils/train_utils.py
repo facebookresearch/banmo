@@ -104,6 +104,7 @@ class v2s_trainer(Trainer):
         params_nerf_coarse=[]
         params_nerf_fine=[]
         params_nerf_flowbw=[]
+        params_nerf_skin=[]
         params_nerf_vis=[]
         params_nerf_root_rts=[]
         params_nerf_bone_rts=[]
@@ -120,13 +121,15 @@ class v2s_trainer(Trainer):
                 params_nerf_fine.append(p)
             elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
                 params_nerf_flowbw.append(p)
+            elif 'nerf_skin' in name:
+                params_nerf_skin.append(p)
             elif 'nerf_vis' in name:
                 params_nerf_vis.append(p)
             elif 'nerf_root_rts' in name:
                 params_nerf_root_rts.append(p)
             elif 'nerf_bone_rts' in name:
                 params_nerf_bone_rts.append(p)
-            elif 'embedding_time' in name:
+            elif 'embedding_time' in name or 'rest_pose_code' in name:
                 params_embed.append(p)
             elif 'bones' == name:
                 params_bones.append(p)
@@ -145,6 +148,7 @@ class v2s_trainer(Trainer):
             [{'params': params_nerf_coarse},
              {'params': params_nerf_fine},
              {'params': params_nerf_flowbw},
+             {'params': params_nerf_skin},
              {'params': params_nerf_vis},
              {'params': params_nerf_root_rts},
              {'params': params_nerf_bone_rts},
@@ -161,6 +165,7 @@ class v2s_trainer(Trainer):
            [opts.learning_rate, # params_nerf_coarse
             opts.learning_rate, # params_nerf_fine
             opts.learning_rate, # params_nerf_flowbw
+            opts.learning_rate, # params_nerf_skin
             opts.learning_rate, # params_nerf_vis
           2*opts.learning_rate, # params_nerf_root_rts
             opts.learning_rate, # params_nerf_bone_rts
@@ -375,6 +380,7 @@ class v2s_trainer(Trainer):
                 grad_nerf_coarse=[]
                 grad_nerf_fine=[]
                 grad_nerf_flowbw=[]
+                grad_nerf_skin=[]
                 grad_nerf_vis=[]
                 grad_nerf_root_rts=[]
                 grad_nerf_bone_rts=[]
@@ -395,13 +401,15 @@ class v2s_trainer(Trainer):
                         grad_nerf_fine.append(p)
                     elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
                         grad_nerf_flowbw.append(p)
+                    elif 'nerf_skin' in name:
+                        grad_nerf_skin.append(p)
                     elif 'nerf_vis' in name:
                         grad_nerf_vis.append(p)
                     elif 'nerf_root_rts' in name:
                         grad_nerf_root_rts.append(p)
                     elif 'nerf_bone_rts' in name:
                         grad_nerf_bone_rts.append(p)
-                    elif 'embedding_time' in name:
+                    elif 'embedding_time' in name or 'rest_pose_code' in name:
                         grad_embed.append(p)
                     elif 'bones' == name:
                         grad_bones.append(p)
@@ -418,6 +426,7 @@ class v2s_trainer(Trainer):
                 aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,  .1)
                 aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,    .1)
                 aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,  .1)
+                aux_out['nerf_skin_g']   = clip_grad_norm_(grad_nerf_skin,  .1)
                 aux_out['nerf_vis_g']   = clip_grad_norm_(grad_nerf_vis,  .1)
                 aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts,.1)
                 aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts,.1)

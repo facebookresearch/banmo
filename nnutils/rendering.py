@@ -5,7 +5,7 @@ import torch.nn.functional as F
 from pytorch3d import transforms
 
 from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
-                               vec_to_sim3, rtmat_invert, rot_angle
+                               vec_to_sim3, rtmat_invert, rot_angle, mlp_skinning
 from nnutils.nerf import evaluate_mlp
 from nnutils.loss_utils import elastic_loss, visibility_loss
 
@@ -271,15 +271,40 @@ def render_rays(models,
 
 
     elif 'bones' in models.keys():
-        # backward skinning
         bones = models['bones']
         bone_rts_fw = rays['bone_rts']
+
+        if 'nerf_skin' in models.keys():
+            # TODO compute skinning weights of bs, N, B
+            nerf_skin = models['nerf_skin'] 
+            rest_pose_code =  models['rest_pose_code']
+            rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
+            rest_pose_code = rest_pose_code[None].repeat(N_rays, 1,1)
+            time_embedded = rays['time_embedded'][:,None]
+            xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+            skin_backward= mlp_skinning(nerf_skin, time_embedded, xyz_coarse_embedded)
+        else:
+            skin_backward=None
+
+        # backward skinning
         xyz_coarse_sampled, skin, bones_dfm = lbs(bones, 
                                                   bone_rts_fw, 
-                                                  xyz_coarse_sampled)
+                                                  xyz_coarse_sampled,
+                                                  skin=skin_backward,
+                                                  )
+
+        if 'nerf_skin' in models.keys():
+            #TODO
+            xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+            skin_forward = mlp_skinning(nerf_skin, rest_pose_code, xyz_coarse_embedded)
+        else:
+            skin_forward = None
+
         # cycle loss (in the joint canonical space)
         xyz_coarse_frame_cyc,_,_ = lbs(bones, bone_rts_fw,
-                                       xyz_coarse_sampled,backward=False)
+                                       xyz_coarse_sampled,backward=False,
+                                        skin=skin_forward,
+                                        )
         frame_cyc_dis = (xyz_coarse_frame - xyz_coarse_frame_cyc).norm(2,-1)
         
         # rigidity loss
@@ -292,11 +317,15 @@ def render_rays(models,
         if 'bone_rts_target' in rays.keys():
             bone_rts_target = rays['bone_rts_target']
             xyz_coarse_target,_,_ = lbs(bones, bone_rts_target, 
-                                    xyz_coarse_sampled,backward=False)
+                                    xyz_coarse_sampled,backward=False,
+                                    skin=skin_forward,
+                                    )
         if 'bone_rts_dentrg' in rays.keys():
             bone_rts_dentrg = rays['bone_rts_dentrg']
             xyz_coarse_dentrg,_,_ = lbs(bones, bone_rts_dentrg, 
-                                    xyz_coarse_sampled,backward=False)
+                                    xyz_coarse_sampled,backward=False,
+                                    skin=skin_forward,
+                                    )
         
     if test_time:
         weights_coarse = \

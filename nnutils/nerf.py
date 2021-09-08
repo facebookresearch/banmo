@@ -74,7 +74,7 @@ class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
                  in_channels_xyz=63, in_channels_dir=27, out_channels=3, 
-                 skips=[4], raw_feat=False, init_beta=1./100):
+                 skips=[4], raw_feat=False, init_beta=1./100, activation=nn.ReLU(True)):
         """
         D: number of layers for density (sigma) encoder
         W: number of hidden units in each layer
@@ -101,14 +101,14 @@ class NeRF(nn.Module):
                 self.weights_reg.append(f"xyz_encoding_{i+1}")
             else:
                 layer = nn.Linear(W, W)
-            layer = nn.Sequential(layer, nn.ReLU(True))
+            layer = nn.Sequential(layer, activation)
             setattr(self, f"xyz_encoding_{i+1}", layer)
         self.xyz_encoding_final = nn.Linear(W, W)
 
         # direction encoding layers
         self.dir_encoding = nn.Sequential(
                                 nn.Linear(W+in_channels_dir, W//2),
-                                nn.ReLU(True))
+                                activation)
 
         # output layers
         self.sigma = nn.Linear(W, 1)
@@ -239,7 +239,7 @@ class RTHead(NeRF):
         return rts
     
 
-def evaluate_mlp(model, embedded, chunk, 
+def evaluate_mlp(model, embedded, chunk=32*1024, 
                 xyz=None,
                 code=None, sigma_only=False):
     B,nbins,_ = embedded.shape

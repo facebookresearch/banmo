@@ -132,6 +132,7 @@ flags.DEFINE_integer('warmup_steps', 2000, 'steps used to learn root body pose')
 flags.DEFINE_integer('lbs_reinit_epochs', 5, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
+flags.DEFINE_bool('nerf_skin', False, 'use mlp skinning function')
 flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 
@@ -227,6 +228,15 @@ class v2s_net(nn.Module):
                                 in_channels_xyz=t_embed_dim,in_channels_dir=0,
                                 out_channels=6*self.num_bones, raw_feat=True))
 
+            if opts.nerf_skin:
+                #TODO
+                self.nerf_skin = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
+                                    D=5,W=128,
+                     in_channels_dir=0, out_channels=self.num_bones, raw_feat=True)
+                self.rest_pose_code = nn.Embedding(1, t_embed_dim)
+                self.nerf_models['nerf_skin'] = self.nerf_skin
+                self.nerf_models['rest_pose_code'] = self.rest_pose_code
+
         # set visibility nerf
         if opts.nerf_vis:
             self.nerf_vis = NeRF(in_channels_xyz=in_channels_xyz, D=5, W=64, 
@@ -248,6 +258,7 @@ class v2s_net(nn.Module):
                     out_channels=7
                 self.nerf_root_rts = nn.Sequential(self.embedding_time,
                                 RTHead(use_quat=use_quat, D=5,W=128,
+                                activation=nn.Tanh(),
                                 in_channels_xyz=t_embed_dim,in_channels_dir=0,
                                 out_channels=out_channels, raw_feat=True))
 
@@ -354,11 +365,10 @@ class v2s_net(nn.Module):
                 rays['sim3_j2c_dentrg'] = sim3_j2c[dataid_dentrg.long()]
                 rays['sim3_j2c_dentrg'] = rays['sim3_j2c_dentrg'][:,None].repeat(1,rays['nsample'],1)
                  
-
-        if opts.flowbw:
-            time_embedded = self.embedding_time(frameid)
-            rays['time_embedded'] = time_embedded.repeat(1,rays['nsample'],1)
-        elif opts.lbs and self.num_bone_used>0:
+        # pass time-dependent inputs
+        time_embedded = self.embedding_time(frameid)
+        rays['time_embedded'] = time_embedded.repeat(1,rays['nsample'],1)
+        if opts.lbs and self.num_bone_used>0:
             bone_rts = self.nerf_bone_rts(frameid)
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 

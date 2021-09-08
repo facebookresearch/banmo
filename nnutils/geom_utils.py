@@ -6,6 +6,8 @@ import torch.nn as nn
 import torch.nn.functional as F
 import soft_renderer as sr
 
+from nnutils.nerf import evaluate_mlp
+
 def bone_transform(bones_in, rts):
     """ 
     bones_in: 1,B,10  - B gaussian ellipsoids of bone coordinates
@@ -68,6 +70,23 @@ def vec_to_sim3(vec):
     orient = transforms.quaternion_to_matrix(orient) # real first
     scale =  vec[...,7:10].exp()
     return center, orient, scale
+
+def mlp_skinning(mlp, code, pts_embed):
+    """
+    code: bs, D          - N D-dimensional pose code
+    pts_embed: bs,N,x    - N point positional embeddings
+    skin: bs,N,B         - skinning matrix
+    """
+    skin = evaluate_mlp(mlp, pts_embed, code=code)
+    
+    ##TODO
+    ## truncated softmax
+    #skin_trun = torch.zeros_like(skin).fill_(-np.inf)
+    #skin_trun[skin>0] = skin[skin>0]
+    #print((skin>0).view(-1,12).sum(0))
+
+    skin = skin.softmax(-1)
+    return skin
     
 
 def skinning(bones, pts):
@@ -93,15 +112,15 @@ def skinning(bones, pts):
     mdis = scale.view(bs,1,B,3) * mdis.pow(2)
     mdis = (-10 * mdis.sum(3)) # bs,N,B
     
-    ## truncated softmax
-    #topk, indices = mdis.topk(3, 2, largest=True)
-    #mdis = torch.zeros_like(mdis).fill_(-np.inf)
-    #mdis = mdis.scatter(2, indices, topk)
+    # truncated softmax
+    topk, indices = mdis.topk(3, 2, largest=True)
+    mdis = torch.zeros_like(mdis).fill_(-np.inf)
+    mdis = mdis.scatter(2, indices, topk)
     
     skin = mdis.softmax(2)
     return skin
 
-def blend_skinning(bones, rts, pts):
+def blend_skinning(bones, rts, pts,skin=None):
     """
     bone: bs,B,10   - B gaussian ellipsoids
     rts: bs,B,3,4   - B ririd transforms, applied to bone coordinates
@@ -146,7 +165,8 @@ def blend_skinning(bones, rts, pts):
     Tmat = gmat[:,:,:3,3]
     
     # compute skinning weight
-    skin = skinning(bones, pts) # bs, N, B
+    if skin is None:
+        skin = skinning(bones, pts) # bs, N, B
 
     # Gi=sum(wbGb), V=RV+T
     Rmat_w = (skin[...,None,None] * Rmat[:,None]).sum(2) # bs,N,B,3
@@ -155,7 +175,7 @@ def blend_skinning(bones, rts, pts):
     pts = pts[...,0]
     return pts, skin
 
-def lbs(bones, rts_fw, xyz_in, backward=True):
+def lbs(bones, rts_fw, xyz_in, backward=True, skin=None):
     """
     bones: bs,B,10       - B gaussian ellipsoids indicating rest bone coordinates
     rts_fw: bs,B,12       - B rigid transforms, applied to the rest bones
@@ -176,9 +196,9 @@ def lbs(bones, rts_fw, xyz_in, backward=True):
     if backward:
         bones_dfm = bone_transform(bones, rts_fw) # bone coordinates after deform
         rts_bw = rts_invert(rts_fw)
-        xyz, skin = blend_skinning(bones_dfm, rts_bw, xyz_in)
+        xyz, skin = blend_skinning(bones_dfm, rts_bw, xyz_in, skin)
     else:
-        xyz, skin = blend_skinning(bones.repeat(bs,1,1), rts_fw, xyz_in)
+        xyz, skin = blend_skinning(bones.repeat(bs,1,1), rts_fw, xyz_in, skin)
         bones_dfm = bone_transform(bones, rts_fw) # bone coordinates after deform
     return xyz, skin, bones_dfm
 

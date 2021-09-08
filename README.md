@@ -57,3 +57,7 @@ bash scripts/render_result.sh mcat_6 logdir/mcat-6-corresp-lbs-flowdp-lr10-rot1-
 ```
 ## Additional Notes
 wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl
+
+### don't use visibility filtering at extraction time --noner_vis
+
+### use a surface-like mlp for mlp-based deformation field --init_beta 1./100 --sil_wt 1.

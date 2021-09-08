@@ -505,6 +505,7 @@ class v2s_trainer(Trainer):
                 for i in range(0, bs_pts, chunk):
                     query_xyz_chunk = query_xyz[i:i+chunk]
                     if opts.nerf_vis:
+                        # this leave no room for halucination and is not what we want
                         xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
                         vis_chunk_nerf = model.nerf_vis(xyz_embedded)
                         vis_chunk = vis_chunk_nerf[...,0].sigmoid()

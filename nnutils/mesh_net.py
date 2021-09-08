@@ -132,6 +132,8 @@ flags.DEFINE_integer('warmup_steps', 2000, 'steps used to learn root body pose')
 flags.DEFINE_integer('lbs_reinit_epochs', 5, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
+flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
+flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -186,7 +188,8 @@ class v2s_net(nn.Module):
         # set nerf model
         self.num_freqs = 10
         in_channels_xyz=3+3*self.num_freqs*2
-        self.nerf_coarse = NeRF(in_channels_xyz=in_channels_xyz)
+        self.nerf_coarse = NeRF(in_channels_xyz=in_channels_xyz, 
+                                init_beta=opts.init_beta)
         self.embedding_xyz = Embedding(3,self.num_freqs,alpha=self.alpha.data[0])
         self.embedding_dir = Embedding(3,4,             alpha=self.alpha.data[0])
         self.embeddings = {'xyz':self.embedding_xyz, 'dir':self.embedding_dir}
@@ -204,11 +207,11 @@ class v2s_net(nn.Module):
                 flow3d_arch = NeRF
                 out_channels=3
             self.nerf_flowbw = flow3d_arch(in_channels_xyz=in_channels_xyz+t_embed_dim,
-                                D=5, W=128,out_channels=out_channels,
-                                in_channels_dir=0, raw_feat=True)
+                                D=5, W=128,
+                    out_channels=out_channels,in_channels_dir=0, raw_feat=True)
             self.nerf_flowfw = flow3d_arch(in_channels_xyz=in_channels_xyz+t_embed_dim,
-                                D=5, W=128,out_channels=out_channels,
-                                in_channels_dir=0, raw_feat=True)
+                                D=5, W=128,
+                    out_channels=out_channels,in_channels_dir=0, raw_feat=True)
             self.nerf_models['flowbw'] = self.nerf_flowbw
             self.nerf_models['flowfw'] = self.nerf_flowfw
                 
@@ -687,7 +690,7 @@ class v2s_net(nn.Module):
         # loss
         img_loss = (rendered_img - img_at_samp).pow(2)
         img_loss = img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
-        sil_loss = 0.1*F.mse_loss(rendered_sil, sil_at_samp)
+        sil_loss = opts.sil_wt*F.mse_loss(rendered_sil, sil_at_samp)
         total_loss = img_loss
         if not opts.bg: total_loss = total_loss + sil_loss 
 
@@ -779,9 +782,8 @@ class v2s_net(nn.Module):
 
             # elastic energy for se3 field / translation field
             if 'elastic_loss' in rendered.keys():
-                elastic_loss = rendered['elastic_loss'].mean() * 0.
-                #elastic_loss = rendered['elastic_loss'].mean() * 1e-3
-                total_loss = total_loss + elastic_loss
+                elastic_loss = rendered['elastic_loss'].mean() * 1e-3
+                total_loss = total_loss + elastic_loss*1
                 aux_out['elastic_loss'] = elastic_loss
 
         if opts.eikonal_loss:

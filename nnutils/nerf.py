@@ -74,7 +74,7 @@ class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
                  in_channels_xyz=63, in_channels_dir=27, out_channels=3, 
-                 skips=[4], raw_feat=False):
+                 skips=[4], raw_feat=False, init_beta=1./100):
         """
         D: number of layers for density (sigma) encoder
         W: number of hidden units in each layer
@@ -118,7 +118,7 @@ class NeRF(nn.Module):
 
         self.raw_feat = raw_feat
 
-        self.beta = torch.Tensor([1.])
+        self.beta = torch.Tensor([init_beta])
         self.beta = nn.Parameter(self.beta)
         
 #        for m in self.modules():
@@ -185,7 +185,7 @@ class SE3head(NeRF):
 
     def forward(self, x, xyz=None,sigma_only=False):
         x = super(SE3head, self).forward(x, sigma_only=sigma_only)
-        x = x.view(-1,9)*0.1
+        x = x.view(-1,9)
         rotation, pivot, translation = x.split([3,3,3],-1)
         
         shape = xyz.shape

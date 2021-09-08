@@ -62,6 +62,7 @@ def bone_density_loss(mlp, embed, bones):
 
 def visibility_loss(mlp, embed, xyz_pos, w_pos, bound, chunk):
     """
+    w_pos: num_points x num_samples, visibility returns from nerf
     bound: scalar, used to sample negative samples
     """
     device = next(mlp.parameters()).device
@@ -69,12 +70,12 @@ def visibility_loss(mlp, embed, xyz_pos, w_pos, bound, chunk):
     w_pos = w_pos.detach().clone()
     
     # negative examples
-    nsample = (2*w_pos.sum()).int()
+    nsample = w_pos.shape[0]*w_pos.shape[1]
     xyz_neg = torch.rand(1,nsample,3)*2*bound-bound
     xyz_neg = xyz_neg.to(device)
     xyz_neg_embedded = embed(xyz_neg)
     vis_neg_pred = evaluate_mlp(mlp, xyz_neg_embedded, chunk)[...,0]
-    vis_loss_neg = -F.logsigmoid(-vis_neg_pred).sum()*0.5/nsample
+    vis_loss_neg = -F.logsigmoid(-vis_neg_pred).sum()*0.1/nsample
       
     # positive examples
     xyz_pos_embedded = embed(xyz_pos)

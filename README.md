@@ -61,3 +61,5 @@ wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_500
 ### don't use visibility filtering at extraction time --noner_vis
 
 ### use a surface-like mlp for mlp-based deformation field --init_beta 1./100 --sil_wt 1.
+
+### for root body optimization: set --lbs_reinit_epochs 5

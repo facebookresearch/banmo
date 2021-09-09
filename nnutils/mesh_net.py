@@ -129,7 +129,7 @@ flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
 flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 12, 'maximum number of bones')
 flags.DEFINE_integer('warmup_steps', 2000, 'steps used to learn root body pose')
-flags.DEFINE_integer('lbs_reinit_epochs', 5, 'epochs used to add all bones')
+flags.DEFINE_integer('lbs_reinit_epochs', 0, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
 flags.DEFINE_bool('nerf_skin', False, 'use mlp skinning function')
@@ -224,7 +224,8 @@ class v2s_net(nn.Module):
             self.num_bone_used = self.num_bones # bones used in the model
 
             self.nerf_bone_rts = nn.Sequential(self.embedding_time,
-                                RTHead(use_quat=False, D=5,W=128,
+                                RTHead(use_quat=False, 
+                                #D=5,W=128,
                                 in_channels_xyz=t_embed_dim,in_channels_dir=0,
                                 out_channels=6*self.num_bones, raw_feat=True))
 
@@ -257,8 +258,9 @@ class v2s_net(nn.Module):
                     use_quat=True
                     out_channels=7
                 self.nerf_root_rts = nn.Sequential(self.embedding_time,
-                                RTHead(use_quat=use_quat, D=5,W=128,
-                                activation=nn.Tanh(),
+                                RTHead(use_quat=use_quat, 
+                                #D=5,W=128,
+                                #activation=nn.Tanh(),
                                 in_channels_xyz=t_embed_dim,in_channels_dir=0,
                                 out_channels=out_channels, raw_feat=True))
 

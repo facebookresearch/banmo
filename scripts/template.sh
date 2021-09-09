@@ -1,5 +1,5 @@
 export MKL_SERVICE_FORCE_INTEL=1
-dev=0
+dev=1
 ngpu=1
 nepoch=20
 bs=4

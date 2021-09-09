@@ -75,21 +75,20 @@ def mlp_skinning(mlp, code, pts_embed):
     """
     code: bs, D          - N D-dimensional pose code
     pts_embed: bs,N,x    - N point positional embeddings
-    skin: bs,N,B         - skinning matrix
+    dskin: bs,N,B        - delta skinning matrix
     """
-    skin = evaluate_mlp(mlp, pts_embed, code=code)
+    dskin = evaluate_mlp(mlp, pts_embed, code=code)
     
     ##TODO
     ## truncated softmax
     #skin_trun = torch.zeros_like(skin).fill_(-np.inf)
     #skin_trun[skin>0] = skin[skin>0]
     #print((skin>0).view(-1,12).sum(0))
-
-    skin = skin.softmax(-1)
-    return skin
+    #skin = skin.softmax(-1)
+    return dskin
     
 
-def skinning(bones, pts):
+def skinning(bones, pts, dskin=None):
     """
     bone: bs,B,10  - B gaussian ellipsoids
     pts: bs,N,3    - N 3d points
@@ -112,6 +111,9 @@ def skinning(bones, pts):
     mdis = scale.view(bs,1,B,3) * mdis.pow(2)
     mdis = (-10 * mdis.sum(3)) # bs,N,B
     
+    if dskin is not None:
+        mdis = mdis+dskin*10
+    
     # truncated softmax
     topk, indices = mdis.topk(3, 2, largest=True)
     mdis = torch.zeros_like(mdis).fill_(-np.inf)
@@ -120,7 +122,7 @@ def skinning(bones, pts):
     skin = mdis.softmax(2)
     return skin
 
-def blend_skinning(bones, rts, pts,skin=None):
+def blend_skinning(bones, rts, pts,dskin=None):
     """
     bone: bs,B,10   - B gaussian ellipsoids
     rts: bs,B,3,4   - B ririd transforms, applied to bone coordinates
@@ -165,8 +167,7 @@ def blend_skinning(bones, rts, pts,skin=None):
     Tmat = gmat[:,:,:3,3]
     
     # compute skinning weight
-    if skin is None:
-        skin = skinning(bones, pts) # bs, N, B
+    skin = skinning(bones, pts, dskin) # bs, N, B
 
     # Gi=sum(wbGb), V=RV+T
     Rmat_w = (skin[...,None,None] * Rmat[:,None]).sum(2) # bs,N,B,3
@@ -175,7 +176,7 @@ def blend_skinning(bones, rts, pts,skin=None):
     pts = pts[...,0]
     return pts, skin
 
-def lbs(bones, rts_fw, xyz_in, backward=True, skin=None):
+def lbs(bones, rts_fw, xyz_in, backward=True, dskin=None):
     """
     bones: bs,B,10       - B gaussian ellipsoids indicating rest bone coordinates
     rts_fw: bs,B,12       - B rigid transforms, applied to the rest bones
@@ -196,9 +197,9 @@ def lbs(bones, rts_fw, xyz_in, backward=True, skin=None):
     if backward:
         bones_dfm = bone_transform(bones, rts_fw) # bone coordinates after deform
         rts_bw = rts_invert(rts_fw)
-        xyz, skin = blend_skinning(bones_dfm, rts_bw, xyz_in, skin)
+        xyz, skin = blend_skinning(bones_dfm, rts_bw, xyz_in, dskin)
     else:
-        xyz, skin = blend_skinning(bones.repeat(bs,1,1), rts_fw, xyz_in, skin)
+        xyz, skin = blend_skinning(bones.repeat(bs,1,1), rts_fw, xyz_in, dskin)
         bones_dfm = bone_transform(bones, rts_fw) # bone coordinates after deform
     return xyz, skin, bones_dfm
 
@@ -508,6 +509,12 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
         query_xyz_chunk = query_xyz_chunk[:,None]
         bone_rts_fw = model.nerf_bone_rts(query_time)
 
+        ##TODO
+        #if opts.nerf_skin:
+        #    skin_backward=
+        #else:
+        #    skin_backward=None
+
         query_xyz_chunk,_,bones_dfm = lbs(bones, 
                                       bone_rts_fw,
                                       query_xyz_chunk)
@@ -535,8 +542,19 @@ def warp_fw(opts, model, rt_dict, vertices, frameid):
         bones = model.bones
         pts_can = pts_can[:,None]
         bone_rts_fw = model.nerf_bone_rts(query_time)
+        
+        ##TODO
+        if opts.nerf_skin:
+            rest_pose_code =  model.rest_pose_code
+            rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
+            rest_pose_code = rest_pose_code[None].repeat(num_pts, 1,1)
+            pts_can_embedded = model.embedding_xyz(pts_can)
+            skin_forward = mlp_skinning(model.nerf_skin, rest_pose_code, pts_can_embedded)
+        else:
+            skin_forward=None
 
-        pts_dfm,_,bones_dfm = lbs(bones, bone_rts_fw, pts_can,backward=False)
+        pts_dfm,_,bones_dfm = lbs(bones, bone_rts_fw, pts_can,backward=False,
+                                    dskin=skin_forward)
         pts_dfm = pts_dfm[:,0]
         rt_dict['bones'] = bones_dfm
     vertices = pts_dfm.cpu().numpy()

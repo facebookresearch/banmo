@@ -9,6 +9,7 @@ import torch
 import cv2
 from ext_utils.util_flow import readPFM
 from ext_utils.geometry import R_2vect
+from ext_utils.io import mkdir_p
 import glob
 import trimesh
 import pytorch3d.ops
@@ -43,8 +44,9 @@ seqname=dp_dir.split('/')[-2]
 config_path='configs/%s.config'%seqname
 config = configparser.RawConfigParser()
 config.read(config_path)
-Kmat=K2mat(torch.Tensor([int(float(i)) for i in \
-                 config.get('data_0', 'ks').split(' ')]))[0]
+Kvec=torch.Tensor([int(float(i)) for i in \
+                 config.get('data_0', 'ks').split(' ')])
+Kmat=K2mat(Kvec)[0]
 
 frames=[]
 for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
@@ -54,6 +56,7 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
     img_path = '%s/vis-%05d.jpg'%(dp_path.rsplit('/',1)[-2],idx)
     im = cv2.imread(img_path)
     im = cv2.resize(im, (w,h))
+
     dp= (dp *50).astype(np.int32)
     dpmask = dp>0
     x0,y0  =np.meshgrid(range(w),range(h))
@@ -67,10 +70,13 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
     p2d = p2d[dpmask]
     
     # from pnp
-    _,rvec,_ = cv2.solvePnP(dp_verts_mapped[:,None].numpy(),
+    _,rvec,tvec = cv2.solvePnP(dp_verts_mapped[:,None].numpy(),
                  p2d[:,None], Kmat.numpy(), 0, 
                  flags=cv2.SOLVEPNP_DLS)
-    rotmat = torch.Tensor(cv2.Rodrigues(rvec)[0])
+    rotmat_np = cv2.Rodrigues(rvec)[0]
+    rotmat = torch.Tensor(rotmat_np)
+    tmat_np = tvec[:,0]
+    tmat = torch.Tensor(tmat_np)
     
     #dp_verts_rot = dp_verts_mapped.matmul(rotmat.T)
     #mesh = trimesh.Trimesh(dp_verts_rot, vertex_colors = dp_color_mapped)
@@ -78,7 +84,7 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
         
    
     # render 
-    verts = obj_to_cam(dp_verts, rotmat, torch.Tensor([0,0,2]))
+    verts = obj_to_cam(dp_verts, rotmat, tmat)
     verts = pinhole_cam(verts, torch.Tensor([1,1,0,0]))
     renderer = sr.SoftRenderer(image_size=h, sigma_val=1e-12, 
                    camera_mode='look_at',perspective=False, aggr_func_rgb='hard',
@@ -89,9 +95,20 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
                                         dp_vis[None].cuda(), 
                                       texture_type='vertex')
     rendered_img = rendered[0,:3].permute(1,2,0).cpu().numpy()*255
+    rendered_img = cv2.resize(rendered_img, (w,h))
     rendered_img = np.concatenate([im, rendered_img[:,:,::-1]],1)
     cv2.imwrite('tmp/%05d.jpg'%idx,rendered_img)
     print('saved %d'%idx)
     frames.append(rendered_img[:,:,::-1])
+    
+    # save cams
+    rtk = np.eye(4)
+    rtk[:3,:3] = rotmat_np
+    rtk[:3,3] = tmat_np
+    rtk[3] = Kvec
+    cam_path = dp_path.replace('Densepose', 'Cameras').replace('.pfm', '.txt')
+    mkdir_p(cam_path.rsplit('/',1)[-2])
+    np.savetxt(cam_path, rtk)
+
 save_vid("tmp/dp-%s"%(seqname), frames, suffix='.gif',upsample_frame=150., is_flow=False)
 save_vid("tmp/dp-%s"%(seqname), frames, suffix='.mp4',upsample_frame=150., is_flow=False)

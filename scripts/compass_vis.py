@@ -49,6 +49,8 @@ Kvec=torch.Tensor([int(float(i)) for i in \
 Kmat=K2mat(Kvec)[0]
 
 frames=[]
+near=[]
+far=[]
 for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
     # read dp 
     dp = readPFM(dp_path)[0]
@@ -86,6 +88,8 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
     # render 
     verts = obj_to_cam(dp_verts, rotmat, tmat)
     verts = pinhole_cam(verts, torch.Tensor([1,1,0,0]))
+    near.append(verts[...,-1].min())
+    far.append( verts[...,-1].max())
     renderer = sr.SoftRenderer(image_size=h, sigma_val=1e-12, 
                    camera_mode='look_at',perspective=False, aggr_func_rgb='hard',
                    light_mode='vertex', light_intensity_ambient=1.,light_intensity_directionals=0.)
@@ -112,3 +116,9 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
 
 save_vid("tmp/dp-%s"%(seqname), frames, suffix='.gif',upsample_frame=150., is_flow=False)
 save_vid("tmp/dp-%s"%(seqname), frames, suffix='.mp4',upsample_frame=150., is_flow=False)
+
+near=max(0,np.min(near))
+far= np.max(far)
+config['data_0']['near_far'] = '%f, %f'%(near, far)
+with open('configs/%s.config'%(seqname), 'w') as configfile:
+    config.write(configfile)

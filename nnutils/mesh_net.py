@@ -23,14 +23,14 @@ import configparser
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from ext_nnutils.net_blocks import Encoder, CodePredictor
-from nnutils.nerf import Embedding, NeRF, RTHead, SE3head
+from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, evaluate_mlp
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
                                 canonical2ndc, obj_to_cam, vec_to_sim3, \
                                 near_far_to_bound
 from nnutils.rendering import render_rays
-from nnutils.loss_utils import eikonal_loss
+from nnutils.loss_utils import eikonal_loss, nerf_gradient
 from ext_utils.flowlib import cat_imgflo 
 from ext_utils.flowlib import warp_flow
 
@@ -129,12 +129,14 @@ flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
 flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 12, 'maximum number of bones')
 flags.DEFINE_integer('warmup_steps', 2000, 'steps used to learn root body pose')
-flags.DEFINE_integer('lbs_reinit_epochs', 0, 'epochs used to add all bones')
+flags.DEFINE_integer('lbs_reinit_epochs', 0, 'epochs to initialize bones')
+flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
 flags.DEFINE_bool('nerf_skin', False, 'use mlp skinning function')
-flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
+flags.DEFINE_float('init_beta', 0.1, 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
+flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -809,6 +811,15 @@ class v2s_net(nn.Module):
             total_loss = total_loss + ekl_loss
             aux_out['ekl_loss'] = ekl_loss
 
+        # bone location regularization: pull bones away from empth space (low sdf)
+        if opts.bone_loc_reg:
+            bone_xyz_embed = self.embedding_xyz(self.bones[:,None,:3])
+            density_at_bone = evaluate_mlp(self.nerf_coarse, bone_xyz_embed,
+                                            sigma_only=True)
+            bone_loc_loss = F.relu(-density_at_bone).mean()
+            total_loss = total_loss + bone_loc_loss
+            aux_out['bone_loc_loss'] = bone_loc_loss
+            
         # visibility loss
         if 'vis_loss' in rendered.keys():
             vis_loss = 0.01*rendered['vis_loss'].mean()
@@ -816,5 +827,6 @@ class v2s_net(nn.Module):
             aux_out['visibility_loss'] = vis_loss
             
         aux_out['total_loss'] = total_loss
+        aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]
         return total_loss, aux_out
 

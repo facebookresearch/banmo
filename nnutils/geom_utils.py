@@ -112,7 +112,7 @@ def skinning(bones, pts, dskin=None):
     mdis = (-10 * mdis.sum(3)) # bs,N,B
     
     if dskin is not None:
-        mdis = mdis+dskin*10
+        mdis = mdis+dskin
     
     # truncated softmax
     topk, indices = mdis.topk(3, 2, largest=True)

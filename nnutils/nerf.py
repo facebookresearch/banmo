@@ -239,14 +239,15 @@ class RTHead(NeRF):
         return rts
     
 
-def evaluate_mlp(model, embedded, chunk=32*1024, 
+def evaluate_mlp(model, xyz_embedded, chunk=32*1024, 
                 xyz=None,
                 code=None, sigma_only=False):
-    B,nbins,_ = embedded.shape
+    B,nbins,_ = xyz_embedded.shape
     out_chunks = []
     for i in range(0, B, chunk):
+        embedded = xyz_embedded[i:i+chunk]
         if code is not None:
-            embedded = torch.cat([embedded[i:i+chunk],
+            embedded = torch.cat([embedded,
                        code[i:i+chunk].repeat(1,nbins,1)], -1)
         out_chunks += [model(embedded, sigma_only=sigma_only, xyz=xyz)]
 

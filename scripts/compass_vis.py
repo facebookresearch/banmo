@@ -48,9 +48,12 @@ Kvec=torch.Tensor([int(float(i)) for i in \
                  config.get('data_0', 'ks').split(' ')])
 Kmat=K2mat(Kvec)[0]
 
+ims=[]
 frames=[]
 near=[]
 far=[]
+tvecs=[]
+rvecs=[]
 for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
     # read dp 
     dp = readPFM(dp_path)[0]
@@ -72,9 +75,32 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
     p2d = p2d[dpmask]
     
     # from pnp
-    _,rvec,tvec = cv2.solvePnP(dp_verts_mapped[:,None].numpy(),
+    retval,rvec,tvec,reproj_err = cv2.solvePnPGeneric(dp_verts_mapped[:,None].numpy(),
                  p2d[:,None], Kmat.numpy(), 0, 
                  flags=cv2.SOLVEPNP_DLS)
+    rvec=rvec[0]
+    tvec=tvec[0]
+    #retval,rvec,tvec,inliers = cv2.solvePnPRansac(dp_verts_mapped[:,None].numpy(),
+    #             p2d[:,None], Kmat.numpy(), 0, 
+    #             rvec=rvec,
+    #             tvec=tvec,
+    #             useExtrinsicGuess=True,
+    #             flags=cv2.SOLVEPNP_ITERATIVE)
+    #print(len(inliers))
+    
+    rvecs.append(rvec)
+    tvecs.append(tvec)
+    ims.append(im)
+
+tvecs=np.asarray(tvecs)
+#tmed=np.median(tvecs,0)
+#tvecs[:]=tmed
+
+for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
+    rvec=rvecs[idx]
+    tvec=tvecs[idx]
+    im=ims[idx]
+    
     rotmat_np = cv2.Rodrigues(rvec)[0]
     rotmat = torch.Tensor(rotmat_np)
     tmat_np = tvec[:,0]

@@ -134,7 +134,7 @@ flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
 flags.DEFINE_bool('nerf_skin', False, 'use mlp skinning function')
-flags.DEFINE_float('init_beta', 0.1, 'initial value for transparency beta')
+flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
 
@@ -442,7 +442,7 @@ class v2s_net(nn.Module):
         results['flo_coarse'] = flo_coarse/img_size * 2
         del results['xyz_coarse_target']
 
-        if opts.flow_dp:
+        if 'xyz_coarse_dentrg' in results.keys():
             weights_coarse = results['weights_coarse'].clone()
             xyz_coarse_dentrg = results['xyz_coarse_dentrg']
             xyz_coarse_dentrg = xyz_coarse_dentrg.view(weights_shape+(3,))

@@ -385,7 +385,7 @@ def render_rays(models,
 
         xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat, Tmat) 
         xyz_coarse_dentrg = pinhole_cam(xyz_coarse_dentrg,K)
-            
+        
         result['xyz_coarse_dentrg'] = xyz_coarse_dentrg
         
         

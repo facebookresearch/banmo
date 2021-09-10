@@ -167,6 +167,8 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_nerf_flowbw
             opts.learning_rate, # params_nerf_skin
             opts.learning_rate, # params_nerf_vis
+        #0.2*opts.learning_rate, # params_nerf_root_rts
+        #0.1*opts.learning_rate, # params_nerf_bone_rts
           2*opts.learning_rate, # params_nerf_root_rts
             opts.learning_rate, # params_nerf_bone_rts
             opts.learning_rate, # params_embed

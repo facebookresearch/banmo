@@ -303,9 +303,11 @@ class v2s_trainer(Trainer):
                 if 'flo' in k or 'fdp' in k: 
                     is_flow = True
                 else: is_flow = False
+                upsample_frame = min(30,len(rendered_seq[k]))
                 save_vid('%s/%s'%(self.save_dir,k), 
-                         rendered_seq[k].cpu().numpy(), 
-                        suffix='.gif', upsample_frame=-1, is_flow=is_flow)
+                        rendered_seq[k].cpu().numpy(), 
+                        suffix='.gif', upsample_frame=upsample_frame, 
+                        is_flow=is_flow)
 
         return rendered_seq, aux_seq
     

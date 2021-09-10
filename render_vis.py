@@ -60,6 +60,8 @@ parser.add_argument('--vp', default=0, type=int,
                     help='which viewpoint to render 0,1,2')
 parser.add_argument('--gtdir', default='',
                     help='path to gt dir')
+parser.add_argument('--num_test_views', default=-1, type=int,
+                    help='how many views to render')
 args = parser.parse_args()
 
 gt_meshes =   [trimesh.load(i, process=False) for i in sorted( glob.glob('%s/*.obj'%(args.gtdir)) )]
@@ -109,10 +111,15 @@ def main():
     opts_dict = {}
     opts_dict['seqname'] = args.seqname
     opts_dict['img_size'] = 512 # dummy value
+
     datasets = config_to_dataloader(opts_dict,is_eval=True)
     imglist = []
     for dataset in datasets.datasets:
         imglist += dataset.imglist[:-1] # excluding the last frame
+   
+    if args.num_test_views>0:
+        idx_render = np.linspace(0,len(imglist)-1, args.num_test_views, dtype=int)
+        imglist = [imglist[i] for i in idx_render]
 
     for name in imglist:
         rgb_img = cv2.imread(name)

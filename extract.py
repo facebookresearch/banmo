@@ -11,6 +11,7 @@ import trimesh
 from scipy.spatial.transform import Rotation as R
 import imageio
 
+from utils.io import save_vid
 from utils.colors import label_colormap
 from nnutils.train_utils import v2s_trainer
 from nnutils.geom_utils import obj_to_cam, tensor2array, vec_to_sim3, obj_to_cam
@@ -90,18 +91,19 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
         img_gt = rendered_seq['img'][i]
         flo_gt = rendered_seq['flo'][i]
         if save_flo: img_gt = cat_imgflo(img_gt, flo_gt)
-        cv2.imwrite('%s-img-gt-%05d.jpg'%(save_prefix, idx), img_gt)
+        #cv2.imwrite('%s-img-gt-%05d.jpg'%(save_prefix, idx), img_gt)
         flo_gt_vid.append(img_gt)
         
         img_p = rendered_seq['img_coarse'][i]
         flo_p = rendered_seq['flo_coarse'][i]
         if save_flo: img_p = cat_imgflo(img_p, flo_p)
-        cv2.imwrite('%s-img-p-%05d.jpg'%(save_prefix, idx), img_p)
+        #cv2.imwrite('%s-img-p-%05d.jpg'%(save_prefix, idx), img_p)
         flo_p_vid.append(img_p)
 
-    fps = 1./(5./len(flo_p_vid))
-    imageio.mimsave('%s-img-p.gif' %(save_prefix), flo_p_vid, fps=fps)
-    imageio.mimsave('%s-img-gt.gif'%(save_prefix), flo_gt_vid,fps=fps)
+#    fps = 1./(5./len(flo_p_vid))
+    upsample_frame = min(30, len(flo_p_vid))
+    save_vid('%s-img-p' %(save_prefix), flo_p_vid, upsample_frame=upsample_frame)
+    save_vid('%s-img-gt' %(save_prefix),flo_gt_vid,upsample_frame=upsample_frame)
 
 def transform_shape(mesh,rtk):
     """
@@ -122,9 +124,10 @@ def main(_):
     data_info = trainer.init_dataset()    
     trainer.define_model(data_info, no_ddp=True)
     seqname=opts.seqname
+    num_view = opts.num_test_views
 
     dynamic_mesh = opts.flowbw or opts.lbs
-    rendered_seq, aux_seq = trainer.eval(num_view=opts.num_test_views,
+    rendered_seq, aux_seq = trainer.eval(num_view=num_view,
                                                     dynamic_mesh=dynamic_mesh) 
     rendered_seq = tensor2array(rendered_seq)
     save_output(rendered_seq, aux_seq, seqname, save_flo=opts.use_corresp)

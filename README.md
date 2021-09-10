@@ -54,6 +54,7 @@ To re-render meshes
 ```
 bash scripts/render_result.sh syn-eagled-15h logdir/syn-eagled-15h-test3/params_20.pth --lbs --sample_grid3d 128 --queryfw
 bash scripts/render_result.sh mcat_6 logdir/mcat-6-corresp-lbs-flowdp-lr10-rot1-rmdp/params_11.pth --sample_grid3d 128 --queryfw --lbs
+CUDA_VISIBLE_DEVICES=1 bash scripts/render_result.sh mcats logdir/mcats5-lbs-correspd-ropt-100ep/params_100.pth 9 --sample_grid3d 16 --queryfw --use_corresp --nonerf_vis
 ```
 ## Additional Notes
 wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl

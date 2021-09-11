@@ -232,49 +232,64 @@ class v2s_trainer(Trainer):
             mesh_dict_rest = self.extract_mesh(self.model, opts.chunk, \
                                                     opts.sample_grid3d)
 
-            # render a grid image or the whold video
+            # choose a grid image or the whold video
             if num_view>0:
                 idx_render = np.linspace(0,len(self.evalloader)-1,num_view, dtype=int)
             else:
                 idx_render = np.asarray(range(len(self.evalloader)))
 
-            # render and save intermediate outputs
+            # render
+            batch = []
             rendered_seq = defaultdict(list)
+            for i in idx_render:
+                batch.append( self.evalloader.dataset[i] )
+            batch = self.evalloader.collate_fn(batch)
+            rendered = self.render_vid(self.model, batch)
+            for k, v in rendered.items():
+                rendered_seq[k] += [v]
+                
+            hbs=len(idx_render)
+            rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:hbs]]
+            rendered_seq['sil'] += [self.model.masks[...,None]      [:hbs]]
+            rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:hbs]]
+            rendered_seq['dpc'] += [self.model.dp_vis[self.model.dps.long()][:hbs]]
+            rendered_seq['occ'] += [self.model.occ[...,None]      [:hbs]]
+            rendered_seq['flo_coarse'][0] *= rendered_seq['sil_coarse'][0]
+            if opts.flow_dp:
+                rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
+                rendered_seq['dcf'] += [self.model.dp_conf[...,None][:hbs]/\
+                                        self.model.dp_thrd]
+
+            # save images
+            for k,v in rendered_seq.items():
+                #TODO save images
+                print('saving %s to gif'%k)
+                rendered_seq[k] = torch.cat(rendered_seq[k],0)
+                if 'flo' in k or 'fdp' in k: 
+                    is_flow = True
+                else: is_flow = False
+                upsample_frame = min(30,len(rendered_seq[k]))
+                save_vid('%s/%s'%(self.save_dir,k), 
+                        rendered_seq[k].cpu().numpy(), 
+                        suffix='.gif', upsample_frame=upsample_frame, 
+                        is_flow=is_flow)
+
+            # extract mesh sequences
             aux_seq = {'mesh_rest': mesh_dict_rest['mesh'],
                        'mesh':[],
                        'rtk':[],
                        'sim3_j2c':[],
                        'impath':[],
                        'bone':[],}
-
-            for i in idx_render:
-                batch = self.evalloader.dataset[i]
-                batch = self.evalloader.collate_fn([batch])
-                print('extracting frame %d'%(i))
-                rendered = self.render_vid(self.model, batch)
-                for k, v in rendered.items():
-                    rendered_seq[k] += [v]
-
-
-                # save images
-                rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:1]]
-                rendered_seq['sil'] += [self.model.masks[...,None]      [:1]]
-                rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:1]]
-                rendered_seq['dpc'] += [self.model.dp_vis[self.model.dps.long()][:1]]
-                rendered_seq['occ'] += [self.model.occ[...,None]      [:1]]
-                rendered_seq['flo_coarse'][-1] *= rendered_seq['sil_coarse'][-1]
-                if opts.flow_dp:
-                    rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:1]]
-                    rendered_seq['dcf'] += [self.model.dp_conf[...,None][:1]/\
-                                            self.model.dp_thrd]
-
+            for idx,frameid in enumerate(idx_render):
+                print('extracting frame %d'%(frameid))
                 # run marching cubes
                 if dynamic_mesh:
                     if not opts.queryfw:
                        mesh_dict_rest=None 
                     mesh_dict = self.extract_mesh(self.model,opts.chunk,
                                         opts.sample_grid3d, 
-                                    frameid=i, mesh_dict_in=mesh_dict_rest)
+                                    frameid=frameid, mesh_dict_in=mesh_dict_rest)
                     mesh=mesh_dict['mesh']
                     mesh.visual.vertex_colors = mesh_dict_rest['mesh'].\
                                visual.vertex_colors # assign rest surface color
@@ -288,26 +303,13 @@ class v2s_trainer(Trainer):
                 aux_seq['mesh'].append(mesh)
 
                 # save cams
-                aux_seq['rtk'].append(self.model.rtk[0].cpu().numpy())
-                sim3_j2c = self.model.sim3_j2c[self.model.dataid[0].long()]
+                aux_seq['rtk'].append(self.model.rtk[idx].cpu().numpy())
+                sim3_j2c = self.model.sim3_j2c[self.model.dataid[idx].long()]
                 aux_seq['sim3_j2c'].append(sim3_j2c.cpu().numpy())
                 
                 # save image list
-                impath = self.model.impath[self.model.frameid[0].long()]
+                impath = self.model.impath[self.model.frameid[idx].long()]
                 aux_seq['impath'].append(impath)
-
-            for k,v in rendered_seq.items():
-                #TODO save images
-                print('saving %s to gif'%k)
-                rendered_seq[k] = torch.cat(rendered_seq[k],0)
-                if 'flo' in k or 'fdp' in k: 
-                    is_flow = True
-                else: is_flow = False
-                upsample_frame = min(30,len(rendered_seq[k]))
-                save_vid('%s/%s'%(self.save_dir,k), 
-                        rendered_seq[k].cpu().numpy(), 
-                        suffix='.gif', upsample_frame=upsample_frame, 
-                        is_flow=is_flow)
 
         return rendered_seq, aux_seq
     
@@ -473,7 +475,8 @@ class v2s_trainer(Trainer):
         rendered, _ = model.nerf_render(rtk, kaug, frameid, render_size)
         rendered_first = {}
         for k,v in rendered.items():
-            if v.dim()>0: rendered_first[k] = v[:1] # remove loss term
+            bs=v.shape[0]
+            if v.dim()>0: rendered_first[k] = v[:bs//2] # remove loss term
         return rendered_first 
 
     @staticmethod

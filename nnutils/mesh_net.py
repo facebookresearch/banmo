@@ -381,7 +381,7 @@ class v2s_net(nn.Module):
         rays['sim3_j2c'] = rays['sim3_j2c'][:,None].repeat(1,rays['nsample'],1)
 
         # render rays
-        bs_rays = rays['bs']
+        bs_rays = rays['bs'] * rays['nsample']
         results=defaultdict(list)
         for i in range(0, bs_rays, opts.chunk):
             rays_chunk = chunk_rays(rays,i,opts.chunk)
@@ -525,15 +525,13 @@ class v2s_net(nn.Module):
         if self.opts.flow_dp:
             # densepose to correspondence
             # randomly choose 1 target image
-            if self.training:
-                order1 = np.asarray(range(2*bs))
-                is_degenerate_pair = len(set((self.frameid.cpu().numpy())))==2
-                while True:
-                    rand_dentrg = np.random.randint(0,2*bs,2*bs)
-                    if is_degenerate_pair or \
-            ((self.frameid[rand_dentrg]-self.frameid[order1])==0).sum()==0:
-                        break
-            else: rand_dentrg = np.asarray([1,0])
+            order1 = np.asarray(range(2*bs))
+            is_degenerate_pair = len(set((self.frameid.cpu().numpy())))==2
+            while True:
+                rand_dentrg = np.random.randint(0,2*bs,2*bs)
+                if is_degenerate_pair or \
+                ((self.frameid[rand_dentrg]-self.frameid[order1])==0).sum()==0:
+                    break
             self.rand_dentrg = rand_dentrg
             # downsample
             h_rszd,w_rszd=h//4,w//4

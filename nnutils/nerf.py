@@ -230,6 +230,8 @@ class RTHead(NeRF):
             rquat=F.normalize(rquat,2,-1)
             rmat=transforms.quaternion_to_matrix(rquat) 
         else:
+            #TODO add more variance to the network
+            #rot=rts[:,3:6] * 10
             rot=rts[:,3:6]
             rmat = transforms.so3_exponential_map(rot)
         rmat = rmat.view(-1,9)

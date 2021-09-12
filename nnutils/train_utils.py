@@ -200,19 +200,20 @@ class v2s_trainer(Trainer):
 
         # TODO: modify states to be compatible with possibly more datasets
         len_prev_fr = states['near_far'].shape[0]
-        len_prev_vid= states['sim3_j2c'].shape[0]
         self.model.near_far.data[:len_prev_fr] = states['near_far']
-        self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
+        self.del_key( states, 'near_far') 
+
+        if self.opts.use_sim3:
+            len_prev_vid= states['sim3_j2c'].shape[0]
+            self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
+        self.del_key( states, 'sim3_j2c')
+
         self.model.embedding_time.weight.data[:len_prev_fr] = \
            states['embedding_time.weight']
-
-        self.del_key( states, 'near_far') 
-        self.del_key( states, 'sim3_j2c')
         self.del_key( states, 'embedding_time.weight')
         self.del_key( states, 'nerf_bone_rts.0.weight')
 
         self.model.load_state_dict(states, strict=False)
-        #self.model.sim3_j2c.data[1,3:7] = torch.Tensor([0,0,1,0]).cuda()
     
         # load variables
         var_path = model_path.replace('params', 'vars').replace('.pth', '.npy')
@@ -304,8 +305,9 @@ class v2s_trainer(Trainer):
 
                 # save cams
                 aux_seq['rtk'].append(self.model.rtk[idx].cpu().numpy())
-                sim3_j2c = self.model.sim3_j2c[self.model.dataid[idx].long()]
-                aux_seq['sim3_j2c'].append(sim3_j2c.cpu().numpy())
+                if opts.use_sim3:
+                    sim3_j2c = self.model.sim3_j2c[self.model.dataid[idx].long()]
+                    aux_seq['sim3_j2c'].append(sim3_j2c.cpu().numpy())
                 
                 # save image list
                 impath = self.model.impath[self.model.frameid[idx].long()]
@@ -400,7 +402,9 @@ class v2s_trainer(Trainer):
                 for name,p in self.model.named_parameters():
                     try: 
                         pgrad_nan = p.grad.isnan()
-                        if pgrad_nan.sum()>0: pdb.set_trace()
+                        if pgrad_nan.sum()>0: 
+                            print(name)
+                            pdb.set_trace()
                     except: pass
                     if 'nerf_coarse' in name:
                         grad_nerf_coarse.append(p)
@@ -475,8 +479,9 @@ class v2s_trainer(Trainer):
         rendered, _ = model.nerf_render(rtk, kaug, frameid, render_size)
         rendered_first = {}
         for k,v in rendered.items():
-            bs=v.shape[0]
-            if v.dim()>0: rendered_first[k] = v[:bs//2] # remove loss term
+            if v.dim()>0: 
+                bs=v.shape[0]
+                rendered_first[k] = v[:bs//2] # remove loss term
         return rendered_first 
 
     @staticmethod

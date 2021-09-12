@@ -126,6 +126,7 @@ flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
 flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
 flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
+flags.DEFINE_bool('use_sim3', False, 'whether to use sim3 transformation')
 flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 12, 'maximum number of bones')
 flags.DEFINE_integer('warmup_steps', 2000, 'steps used to learn root body pose')
@@ -159,7 +160,8 @@ class v2s_net(nn.Module):
         self.impath      = data_info['impath']
         self.latest_vars = {}
         self.latest_vars['rtk'] = np.zeros((self.data_offset[-1], 4,4))
-        self.latest_vars['j2c'] = np.zeros((self.data_offset[-1], 10))
+        if opts.use_sim3:
+            self.latest_vars['j2c'] = np.zeros((self.data_offset[-1], 10))
         self.latest_vars['idk'] = np.zeros((self.data_offset[-1],))
         self.latest_vars['vis'] = np.zeros((self.data_offset[-1],
                                  opts.img_size,opts.img_size)).astype(bool)
@@ -180,13 +182,14 @@ class v2s_net(nn.Module):
         self.vis_min=np.asarray([[0,0,0]])
         self.vis_max=np.asarray([[1,1,1]])
         
-        # video specific sim3: from video to joint canonical space
-        self.sim3_j2c= generate_bones(self.num_vid, self.num_vid, 0, self.device)
-        if self.num_vid>1:
-            angle=opts.rot_angle*np.pi
-            init_rot = transforms.axis_angle_to_quaternion(torch.Tensor([0,angle,0]))
-            self.sim3_j2c.data[1,3:7] = init_rot.to(self.device) #TODO
-        self.sim3_j2c = nn.Parameter(self.sim3_j2c)
+        if opts.use_sim3:
+            # video specific sim3: from video to joint canonical space
+            self.sim3_j2c= generate_bones(self.num_vid, self.num_vid, 0, self.device)
+            if self.num_vid>1:
+                angle=opts.rot_angle*np.pi
+                init_rot = transforms.axis_angle_to_quaternion(torch.Tensor([0,angle,0]))
+                self.sim3_j2c.data[1,3:7] = init_rot.to(self.device) #TODO
+            self.sim3_j2c = nn.Parameter(self.sim3_j2c)
 
         # set nerf model
         self.num_freqs = 10
@@ -330,9 +333,10 @@ class v2s_net(nn.Module):
         Kinv = Kmatinv(Kaug.matmul(Kmat))
         bs = Kinv.shape[0]
         frameid = frameid.long().to(self.device)[:,None]
-        # don't update the canonical frame sim3
-        sim3_j2c = torch.cat([self.sim3_j2c[:1].detach(),  
-                              self.sim3_j2c[1:]],0)
+        if opts.use_sim3:
+            # don't update the canonical frame sim3
+            sim3_j2c = torch.cat([self.sim3_j2c[:1].detach(),  
+                                  self.sim3_j2c[1:]],0)
 
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
@@ -365,9 +369,10 @@ class v2s_net(nn.Module):
                     bone_rts_dentrg = self.nerf_bone_rts(frameid_dentrg) #bsxbs,x 
                     rays['bone_rts_dentrg'] = bone_rts_dentrg.repeat(1,rays['nsample'],1)
 
-                dataid_dentrg = self.dataid[self.rand_dentrg]
-                rays['sim3_j2c_dentrg'] = sim3_j2c[dataid_dentrg.long()]
-                rays['sim3_j2c_dentrg'] = rays['sim3_j2c_dentrg'][:,None].repeat(1,rays['nsample'],1)
+                if opts.use_sim3:
+                    dataid_dentrg = self.dataid[self.rand_dentrg]
+                    rays['sim3_j2c_dentrg'] = sim3_j2c[dataid_dentrg.long()]
+                    rays['sim3_j2c_dentrg'] = rays['sim3_j2c_dentrg'][:,None].repeat(1,rays['nsample'],1)
                  
         # pass time-dependent inputs
         time_embedded = self.embedding_time(frameid)
@@ -376,9 +381,10 @@ class v2s_net(nn.Module):
             bone_rts = self.nerf_bone_rts(frameid)
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
-        # pass the canonical to joint space transforms
-        rays['sim3_j2c'] = sim3_j2c[self.dataid.long()]
-        rays['sim3_j2c'] = rays['sim3_j2c'][:,None].repeat(1,rays['nsample'],1)
+        if opts.use_sim3:
+            # pass the canonical to joint space transforms
+            rays['sim3_j2c'] = sim3_j2c[self.dataid.long()]
+            rays['sim3_j2c'] = rays['sim3_j2c'][:,None].repeat(1,rays['nsample'],1)
 
         # render rays
         bs_rays = rays['bs'] * rays['nsample']
@@ -661,8 +667,9 @@ class v2s_net(nn.Module):
         Kaug = K2inv(self.kaug) # p = Kaug Kmat P
         rtk[:,3] = mat2K(Kaug.matmul(Kmat))
         self.latest_vars['rtk'][self.frameid.long()] = rtk.cpu().numpy()
-        self.latest_vars['j2c'][self.frameid.long()] = self.sim3_j2c.detach().cpu().numpy()\
-                                                        [self.dataid.long()]
+        if self.opts.use_sim3:
+            self.latest_vars['j2c'][self.frameid.long()] = \
+                    self.sim3_j2c.detach().cpu().numpy()[self.dataid.long()]
         self.latest_vars['idk'][self.frameid.long()] = 1
         self.latest_vars['vis'][self.frameid.long()] = self.vis2d.cpu().numpy()
         

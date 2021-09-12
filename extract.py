@@ -35,12 +35,13 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
         idx = int(impath.split('/')[-1].split('.')[-2])
         mesh = aux_seq['mesh'][i]
         rtk = aux_seq['rtk'][i]
-        sim3_j2c = aux_seq['sim3_j2c'][i]
-                
-        # save the video-specific mesh and bones
-        sim3_j2c = torch.Tensor(sim3_j2c)
-        Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(sim3_j2c)
-        Smat_j2c = Smat_j2c.mean(-1)[...,None]
+        
+        if len(aux_seq['sim3_j2c'])>0:
+            # save the video-specific mesh and bones
+            sim3_j2c = aux_seq['sim3_j2c'][i]
+            sim3_j2c = torch.Tensor(sim3_j2c)
+            Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(sim3_j2c)
+            Smat_j2c = Smat_j2c.mean(-1)[...,None]
 
         # convert bones to meshes TODO: warp with a function
         if 'bone' in aux_seq.keys() and len(aux_seq['bone'])>0:
@@ -66,27 +67,20 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
                 elips_list.append( trimesh.Trimesh(vertices = elips_verts, 
                                                            faces=elips.faces) )
             elips = trimesh.util.concatenate(elips_list)
-            #elips_verts = torch.Tensor(elips.vertices)
-            #elips_verts = obj_to_cam(elips_verts, Rmat_j2c, Tmat_j2c)
-            #elips_verts = elips_verts * Smat_j2c
-            #elips.vertices = elips_verts.numpy()
             
             colormap = label_colormap()[:B]
             colormap= np.tile(colormap[:,None], (1,N_elips,1)).reshape((-1,3))
             elips.visual.vertex_colors[:len(colormap),:3] = colormap
             elips.export('%s-bone-%05d.obj'%(save_prefix, idx))
-        
-        #mesh_verts = torch.Tensor(mesh.vertices)
-        #mesh_verts = obj_to_cam(mesh_verts, Rmat_j2c, Tmat_j2c)
-        #mesh_verts = mesh_verts * Smat_j2c
-        #mesh.vertices = mesh_verts.numpy()
-        # save the cameras relative to the joint canonical model
-        rtk[:3,3]  = rtk[:3,:3].dot(Tmat_j2c[...,None]*Smat_j2c)[...,0] + rtk[:3,3]
-        rtk[:3,:3] = rtk[:3,:3].dot(Rmat_j2c)
+       
+        if len(aux_seq['sim3_j2c'])>0:
+            # save the cameras relative to the joint canonical model
+            rtk[:3,3]  = rtk[:3,:3].dot(Tmat_j2c[...,None]*Smat_j2c)[...,0] + rtk[:3,3]
+            rtk[:3,:3] = rtk[:3,:3].dot(Rmat_j2c)
+            np.savetxt('%s-scale-%05d.txt'%(save_prefix, idx), Smat_j2c)
         
         mesh.export('%s-mesh-%05d.obj'%(save_prefix, idx))
         np.savetxt('%s-cam-%05d.txt'  %(save_prefix, idx), rtk)
-        np.savetxt('%s-scale-%05d.txt'%(save_prefix, idx), Smat_j2c)
             
         img_gt = rendered_seq['img'][i]
         flo_gt = rendered_seq['flo'][i]

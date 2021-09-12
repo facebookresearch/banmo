@@ -602,11 +602,14 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
     """
     device = near_far.device
     vars_tensor = array2tensor(vars_np, device=device)
-    j2c = vars_tensor['j2c']
     rtk = vars_tensor['rtk']
     idk = vars_tensor['idk']
+    if 'j2c' in vars_tensor.keys():
+        j2c = vars_tensor['j2c']
+    else:
+        j2c = None
 
-    pts = pts_to_view(pts, j2c, rtk, device)
+    pts = pts_to_view(pts, rtk, device, j2c=j2c)
 
     near= pts[...,-1].min(-1)[0]/tol_fac
     far = pts[...,-1].max(-1)[0]*tol_fac
@@ -617,22 +620,23 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
     return near_far
 
 
-def pts_to_view(pts, j2c, rtk, device):
+def pts_to_view(pts, rtk, device, j2c=None):
     """
     object to camera coordinates
     pts:        point coordinate N,3
-    j2c:        joint to canonical transform M, 10
     rtk:        object to camera transform, M,4,4
     idk:        indicator of obsered or not M
+    j2c:        joint to canonical transform M, 10
     """
     M = rtk.shape[0]
     pts = torch.Tensor(np.tile(pts[None],(M,1,1))).to(device) # M,N,3
 
     # pts to video canonical then to camera
-    Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(j2c)
-    Smat_j2c =Smat_j2c.mean(-1)[...,None,None]
-    pts = obj_to_cam(pts, Rmat_j2c, Tmat_j2c)
-    pts = pts * Smat_j2c
+    if j2c is not None:
+        Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(j2c)
+        Smat_j2c =Smat_j2c.mean(-1)[...,None,None]
+        pts = obj_to_cam(pts, Rmat_j2c, Tmat_j2c)
+        pts = pts * Smat_j2c
     pts = obj_to_cam(pts, rtk[:,:3,:3], rtk[:,:3,3])
     pts = pinhole_cam(pts, rtk[:,3])
     return pts
@@ -645,11 +649,15 @@ def compute_point_visibility(pts, vars_np, device):
     idk:        indicator of obsered or not M
     """
     vars_tensor = array2tensor(vars_np, device=device)
-    j2c = vars_tensor['j2c']
     rtk = vars_tensor['rtk']
     idk = vars_tensor['idk']
     vis = vars_tensor['vis']
-    pts = pts_to_view(pts, j2c, rtk, device) # T, N, 3
+    if 'j2c' in vars_tensor.keys():
+        j2c = vars_tensor['j2c']
+    else:
+        j2c = None
+    
+    pts = pts_to_view(pts, rtk, device, j2c=j2c) # T, N, 3
     h,w = vis.shape[1:]
 
     vis = vis[:,None]

@@ -231,14 +231,15 @@ def render_rays(models,
     xyz_coarse_sampled = rays_o.unsqueeze(1) + \
                          rays_d.unsqueeze(1) * z_vals.unsqueeze(2) # (N_rays, N_samples, 3)
 
-    # similarity transform to the joint canoical space
-    sim3_j2c = rays['sim3_j2c'][:,None]
-    Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(sim3_j2c)
-    Smat_j2c = Smat_j2c.mean(-1)[...,None]
-    Rmat_c2j, Tmat_c2j = rtmat_invert(Rmat_j2c, Tmat_j2c)
-
-    xyz_coarse_sampled = xyz_coarse_sampled / Smat_j2c
-    xyz_coarse_sampled = obj_to_cam(xyz_coarse_sampled, Rmat_c2j, Tmat_c2j)
+    if 'sim3_j2c' in rays.keys():
+        # similarity transform to the joint canoical space
+        sim3_j2c = rays['sim3_j2c'][:,None]
+        Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(sim3_j2c)
+        Smat_j2c = Smat_j2c.mean(-1)[...,None]
+        Rmat_c2j, Tmat_c2j = rtmat_invert(Rmat_j2c, Tmat_j2c)
+    
+        xyz_coarse_sampled = xyz_coarse_sampled / Smat_j2c
+        xyz_coarse_sampled = obj_to_cam(xyz_coarse_sampled, Rmat_c2j, Tmat_c2j)
 
     # root space point correspondence in t2
     xyz_coarse_target = xyz_coarse_sampled.clone()
@@ -348,10 +349,11 @@ def render_rays(models,
         flow_dp = evaluate_mlp(nerf_dp, xyz_joint_embedded, chunk)
         xyz_joint= xyz_joint + flow_dp
     result['joint_render'] = torch.sum(weights_coarse.unsqueeze(-1)*xyz_joint, -2)
-    
-    # similarity transform to the video canoical space
-    xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat_j2c, Tmat_j2c)
-    xyz_coarse_target = xyz_coarse_target * Smat_j2c
+   
+    if 'sim3_j2c' in rays.keys():
+        # similarity transform to the video canoical space
+        xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat_j2c, Tmat_j2c)
+        xyz_coarse_target = xyz_coarse_target * Smat_j2c
 
     # compute correspondence: root space to target view space
     # RT: root space to camera space
@@ -368,12 +370,13 @@ def render_rays(models,
     result['weights_coarse'] = weights_coarse
 
     if 'xyz_coarse_dentrg' in locals():
-        # similarity transform to the video canoical space
-        sim3_j2c_dt = rays['sim3_j2c_dentrg'][:,None]
-        Tmat_j2c_dt, Rmat_j2c_dt, Smat_j2c_dt = vec_to_sim3(sim3_j2c_dt)
-        Smat_j2c_dt = Smat_j2c_dt.mean(-1)[...,None]
-        xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat_j2c_dt, Tmat_j2c_dt)
-        xyz_coarse_dentrg = xyz_coarse_dentrg * Smat_j2c_dt
+        if 'sim3_j2c_dentrg' in rays.keys():
+            # similarity transform to the video canoical space
+            sim3_j2c_dt = rays['sim3_j2c_dentrg'][:,None]
+            Tmat_j2c_dt, Rmat_j2c_dt, Smat_j2c_dt = vec_to_sim3(sim3_j2c_dt)
+            Smat_j2c_dt = Smat_j2c_dt.mean(-1)[...,None]
+            xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat_j2c_dt, Tmat_j2c_dt)
+            xyz_coarse_dentrg = xyz_coarse_dentrg * Smat_j2c_dt
 
         # compute correspondence: root space to dentrg view space
         # RT: root space to camera space

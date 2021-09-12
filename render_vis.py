@@ -137,8 +137,10 @@ def main():
             
             cam = np.loadtxt('%s/%s-cam-%05d.txt'%(args.testdir, seqname, fr))
             all_cam.append(cam)
-            
-            scale = np.loadtxt('%s/%s-scale-%05d.txt'%(args.testdir, seqname, fr))
+
+            try:
+                scale = np.loadtxt('%s/%s-scale-%05d.txt'%(args.testdir, seqname, fr))
+            except:scale=np.asarray(1.)
             all_scale.append(scale)
 
             bone = trimesh.load('%s/%s-bone-%05d.obj'%(args.testdir, seqname,fr),process=False)

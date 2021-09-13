@@ -58,9 +58,10 @@ def main():
     for i in range(size):
         print(i)
         refcam = var['rtk'][0].copy()
+        mtrans = np.linalg.norm(var['rtk'][:,:3,3],2,-1).max() # max camera trans
         refcam[:2,3] = 0  # trans xy
-        refcam[2,3] = 15 # depth
-        refcam[3,:2] = img_size/2 # fl
+        refcam[2,3] = 2*mtrans # depth
+        refcam[3,:2] = 2*img_size/2 # fl
         refcam[3,2] = img_size/2
         refcam[3,3] = img_size/2
         vp_rmat = refcam[:3,:3]

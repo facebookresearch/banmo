@@ -21,7 +21,7 @@ def draw_cams(all_cam):
     """
     # scale: the scene bound
     all_cam = np.asarray(all_cam)
-    max_trans = np.linalg.norm(all_cam[:,:3,3],2,-1).mean()
+    max_trans = np.median(np.linalg.norm(all_cam[:,:3,3],2,-1))
     scale=max_trans
     traj_len = len(all_cam)
     elips_list = [] 

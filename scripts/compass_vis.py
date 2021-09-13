@@ -25,8 +25,9 @@ with open('mesh_material/sheep_5004.pkl', 'rb') as f:
     dp_faces = dp['faces']
     dp_faces = torch.Tensor(dp_faces)
     dp_verts = torch.Tensor(dp_verts)
+    # convert to -1,1
     dp_verts -= dp_verts.mean(0)[None]
-    dp_verts /= dp_verts.abs().max()
+    dp_verts /= dp_verts.abs().max() 
     
     # visualize
     dp_vis = dp_verts
@@ -93,8 +94,8 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
     ims.append(im)
 
 tvecs=np.asarray(tvecs)
-#tmed=np.median(tvecs,0)
-#tvecs[:]=tmed
+tmed=np.median(tvecs,0)
+tvecs[:]=tmed
 
 for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
     rvec=rvecs[idx]
@@ -143,8 +144,11 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
 save_vid("tmp/dp-%s"%(seqname), frames, suffix='.gif',upsample_frame=150., is_flow=False)
 save_vid("tmp/dp-%s"%(seqname), frames, suffix='.mp4',upsample_frame=150., is_flow=False)
 
-near=max(0,np.min(near))
-far= np.max(far)
+#near=max(0,np.min(near))
+#far= np.max(far)
+tmed = np.linalg.norm(tmed)
+near = tmed-1.5
+far = tmed+1.5
 config['data_0']['near_far'] = '%f, %f'%(near, far)
 with open('configs/%s.config'%(seqname), 'w') as configfile:
     config.write(configfile)

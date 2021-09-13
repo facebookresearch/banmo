@@ -375,9 +375,10 @@ def tensor2array(tdict):
 def array2tensor(adict, device='cpu'):
     tdict={}
     for k,v in adict.items():
-        try: tdict[k] = torch.Tensor(v)
+        try: 
+            tdict[k] = torch.Tensor(v)
+            if device != 'cpu': tdict[k] = tdict[k].to(device)
         except: pass # trimesh object
-        if device != 'cpu': tdict[k] = tdict[k].to(device)
     return tdict
 
 def raycast(xys, Rmat, Tmat, Kinv, near_far):

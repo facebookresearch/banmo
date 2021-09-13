@@ -167,11 +167,12 @@ class v2s_trainer(Trainer):
             opts.learning_rate, # params_nerf_flowbw
             opts.learning_rate, # params_nerf_skin
             opts.learning_rate, # params_nerf_vis
-        #0.2*opts.learning_rate, # params_nerf_root_rts
-        #0.1*opts.learning_rate, # params_nerf_bone_rts
-          2*opts.learning_rate, # params_nerf_root_rts
-            opts.learning_rate, # params_nerf_bone_rts
-            opts.learning_rate, # params_embed
+        5*0.2*opts.learning_rate, # params_nerf_root_rts
+        5*0.1*opts.learning_rate, # params_nerf_bone_rts
+        5*0.1*opts.learning_rate, # params_embed
+        #  2*opts.learning_rate, # params_nerf_root_rts
+        #    opts.learning_rate, # params_nerf_bone_rts
+        #    opts.learning_rate, # params_embed
             opts.learning_rate, # params_bones
             opts.learning_rate, # params_ks
             opts.learning_rate, # params_nerf_dp
@@ -439,6 +440,15 @@ class v2s_trainer(Trainer):
                     elif 'dp_verts' == name:
                         grad_dp_verts.append(p)
                     else: continue
+            
+                # freeze root pose when adding in sil/rgb loss 
+                if opts.root_opt and (not opts.use_cam):
+                    warmup_fac = (self.model.total_steps-opts.warmup_init_steps)
+                    warmup_fac = warmup_fac/opts.warmup_steps
+                    if warmup_fac>0 and warmup_fac<1:
+                        self.zero_grad_list(grad_embed)
+                        self.zero_grad_list(grad_nerf_root_rts)
+                        self.zero_grad_list(grad_nerf_bone_rts)
 
                 aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,  .1)
                 aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,    .1)
@@ -622,6 +632,15 @@ class v2s_trainer(Trainer):
         else:
             return False
 
+    @staticmethod
+    def zero_grad_list(paramlist):
+        """
+        Clears the gradients of all optimized :class:`torch.Tensor` 
+        """
+        for p in paramlist:
+            if p.grad is not None:
+                p.grad.detach_()
+                p.grad.zero_()
 
     def reset_dataset_crop_factor(self, percent):
         """

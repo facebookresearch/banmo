@@ -219,6 +219,19 @@ def obj_to_cam(in_verts, Rmat, Tmat):
     verts =  verts.matmul(Rmat) + Tmat 
     verts = verts.reshape(in_verts.shape)
     return verts
+
+def obj2cam_np(pts, Rmat, Tmat):
+    """
+    a wrapper for numpy array
+    pts: ..., 3
+    Rmat: 1,3,3
+    Tmat: 1,3,3
+    """
+    pts_shape = pts.shape
+    pts = torch.Tensor(pts).cuda().reshape(1,-1,3)
+    pts = obj_to_cam(pts, Rmat,Tmat)
+    return pts.view(pts_shape).cpu().numpy()
+
     
 def K2mat(K):
     """
@@ -362,7 +375,8 @@ def tensor2array(tdict):
 def array2tensor(adict, device='cpu'):
     tdict={}
     for k,v in adict.items():
-        tdict[k] = torch.Tensor(v)
+        try: tdict[k] = torch.Tensor(v)
+        except: pass # trimesh object
         if device != 'cpu': tdict[k] = tdict[k].to(device)
     return tdict
 

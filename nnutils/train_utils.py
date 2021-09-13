@@ -41,7 +41,7 @@ from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
-from utils.io import save_vid
+from utils.io import save_vid, draw_cams
 
 class v2s_trainer(Trainer):
     def __init__(self, opts):
@@ -219,7 +219,7 @@ class v2s_trainer(Trainer):
         var_path = model_path.replace('params', 'vars').replace('.pth', '.npy')
         self.model.latest_vars = np.load(var_path,allow_pickle=True)[()]
         return
-   
+  
     def eval(self, num_view=9, dynamic_mesh=False): 
         """
         num_view: number of views to render
@@ -266,9 +266,7 @@ class v2s_trainer(Trainer):
                 #TODO save images
                 print('saving %s to gif'%k)
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)
-                if 'flo' in k or 'fdp' in k: 
-                    is_flow = True
-                else: is_flow = False
+                is_flow = self.isflow(k)
                 upsample_frame = min(30,len(rendered_seq[k]))
                 save_vid('%s/%s'%(self.save_dir,k), 
                         rendered_seq[k].cpu().numpy(), 
@@ -313,6 +311,13 @@ class v2s_trainer(Trainer):
                 impath = self.model.impath[self.model.frameid[idx].long()]
                 aux_seq['impath'].append(impath)
 
+            # draw camera trajectory
+            mesh_cam = draw_cams(aux_seq['rtk'])
+            suffix_id=0
+            if hasattr(self.model, 'epoch'):
+                suffix_id = self.model.epoch
+            mesh_cam.export('%s/mesh_cam-%02d.obj'%(self.save_dir,suffix_id))
+
         return rendered_seq, aux_seq
     
     def train(self):
@@ -343,6 +348,7 @@ class v2s_trainer(Trainer):
             rendered_seq, aux_seq = self.eval()                
             mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
             mesh_rest = aux_seq['mesh'][0]
+            self.model.latest_vars['mesh_rest'] = mesh_rest
             mesh_rest.export(mesh_file)
 
             # reset object bound, only for visualization
@@ -578,12 +584,11 @@ class v2s_trainer(Trainer):
         for k,v in aux_output.items():
             self.add_scalar(log, k, aux_output,total_steps)
             
-    @staticmethod
-    def add_image(log,tag,timg,step,scale=True):
+    def add_image(self, log,tag,timg,step,scale=True):
         """
         timg, h,w,x
         """
-        if 'flo' in tag or 'fdp' in tag: 
+        if self.isflow(tag):
             timg = timg.detach().cpu().numpy()
             timg = flow_to_image(timg)
         if scale:
@@ -608,6 +613,15 @@ class v2s_trainer(Trainer):
     def del_key(states, key):
         if key in states.keys():
             del states[key]
+    
+    @staticmethod
+    def isflow(tag):
+        flolist = ['flo_coarse', 'fdp_coarse', 'flo', 'fdp']
+        if tag in flolist:
+           return True
+        else:
+            return False
+
 
     def reset_dataset_crop_factor(self, percent):
         """

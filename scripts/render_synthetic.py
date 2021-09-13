@@ -31,6 +31,8 @@ parser.add_argument('--xspeed', default=0,type=float,
                     help='times speed up')
 parser.add_argument('--focal', default=2,type=float,
                     help='focal length')
+parser.add_argument('--d_obj', default=3,type=float,
+                    help='object depth')
 parser.add_argument('--can_rand', dest='can_rand',action='store_true',
                     help='ranomize canonical space')
 parser.add_argument('--img_size', default=512,type=int,
@@ -41,7 +43,7 @@ args = parser.parse_args()
 img_size = args.img_size
 bgcolor = None
 #bgcolor = np.asarray([0,0,0])
-d_obj = 3
+d_obj = args.d_obj
 filedir='database'
 
 rot_rand = torch.Tensor(R.random().as_matrix()).cuda()

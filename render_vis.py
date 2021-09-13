@@ -17,13 +17,14 @@ import pdb
 import soft_renderer as sr
 import argparse
 import trimesh
-from nnutils.geom_utils import obj_to_cam, pinhole_cam
+from nnutils.geom_utils import obj_to_cam, pinhole_cam, obj2cam_np
 import pyrender
 from pyrender import IntrinsicsCamera,Mesh, Node, Scene,OffscreenRenderer
 import configparser
 import matplotlib
 cmap = matplotlib.cm.get_cmap('cool')
-from utils.io import config_to_dataloader
+from utils.io import config_to_dataloader, draw_cams
+
 
 parser = argparse.ArgumentParser(description='render mesh')
 parser.add_argument('--testdir', default='',
@@ -66,41 +67,11 @@ args = parser.parse_args()
 
 gt_meshes =   [trimesh.load(i, process=False) for i in sorted( glob.glob('%s/*.obj'%(args.gtdir)) )]
 
-def obj2cam_vis(pts, Rmat, Tmat):
-    """
-    pts: ..., 3
-    Rmat: 1,3,3
-    Tmat: 1,3,3
-    """
-    pts_shape = pts.shape
-    pts = torch.Tensor(pts).cuda().reshape(1,-1,3)
-    pts = obj_to_cam(pts, Rmat,Tmat)
-    return pts.view(pts_shape).cpu().numpy()
-
-def draw_joints_on_image(rgb_img, joints, visibility, region_colors, marker_types):
-    joints = joints[:, ::-1] # OpenCV works in (x, y) rather than (i, j)
-
-    disp_img = rgb_img.copy()    
-    for joint_coord, visible, color, marker_type in zip(joints, visibility, region_colors, marker_types):
-        if visible:
-            joint_coord = joint_coord.astype(int)
-            cv2.drawMarker(disp_img, tuple(joint_coord), color.tolist(), marker_type, 30, thickness = 10)
-    return disp_img
-
-def remesh(mesh):
-    mesh.export('tmp/input.obj')
-    print(subprocess.check_output(['./Manifold/build/manifold', 'tmp/input.obj', 'tmp/output.obj', '10000']))
-    mesh = trimesh.load('tmp/output.obj',process=False)
-    if args.overlay=='yes':
-        mesh.visual.vertex_colors[:,1:3] = 0
-        mesh.visual.vertex_colors[:,0] = 255
-    return mesh
-
 def main():
     print(args.testdir)
     if args.rest:
         mesh_rest = trimesh.load('%s/%s-mesh-rest.obj'%(args.testdir, args.seqname),process=False)
-    # store all the data
+    # read all the data
     all_anno = []
     all_mesh = []
     all_bone = []
@@ -148,7 +119,7 @@ def main():
         except: print('no mesh found')
 
 
-    # add bones?
+    # process bones, trajectories and cameras
     num_original_verts = []
     num_original_faces = []
     num_trajs = 0
@@ -184,20 +155,10 @@ def main():
     
         # change color according to time 
         if args.vis_cam:
-            elips_list = [] 
-            for j in range(traj_len):
-                cam_rot  = all_cam[j][:3,:3].T
-                cam_tran = -cam_rot.dot(all_cam[j][:3,3:])[:,0]
-            
-                elips = trimesh.creation.uv_sphere(radius=0.02*scene_scale,count=[16, 16])
-                elips.vertices = elips.vertices + cam_tran
-                elips.visual.vertex_colors = cmap(float(j)/traj_len)
-                elips_list.append(elips)
-            mesh_cam = trimesh.util.concatenate(elips_list)
+            mesh_cam = draw_cams(all_cam)
             mesh_cam.export('%s/mesh_cam-%s.obj'%(args.testdir,seqname))
 
-
-    # store all the results
+    # read images
     input_size = all_anno[0][0].shape[:2]
     output_size = (int(input_size[0] * 480/input_size[1]), 480)# 270x480
     frames=[]
@@ -226,6 +187,8 @@ def main():
                 #strx = strx.replace('JPEGImages', 'FlowBW')
                 #flowimg = cv2.imread('%s/vis-%s'%(strx.rsplit('/',1)[0],strx.rsplit('/',1)[1]))
                 #frames.append(cv2.resize(flowimg,output_size[::-1])[:,:,::-1]) 
+
+    # process cameras
     theta = 9*np.pi/9
     #theta = 7*np.pi/9
     init_light_pose = np.asarray([[1,0,0,0],[0,np.cos(theta),-np.sin(theta),0],[0,np.sin(theta),np.cos(theta),0],[0,0,0,1]])
@@ -292,6 +255,7 @@ def main():
         refcam_vp[:3,3]  = vp_tmat
         refcam_vp[3]     = vp_kmat
 
+        # render
         Rmat =  torch.Tensor(refcam_vp[None,:3,:3]).cuda()
         Tmat =  torch.Tensor(refcam_vp[None,:3,3]).cuda()
         ppoint =refcam_vp[3,2:]
@@ -306,11 +270,11 @@ def main():
             
         # project trajectories to image
         if args.vis_traj:
-            pts_trajs[i] = obj2cam_vis(pts_trajs[i]*refscale, Rmat, Tmat)
+            pts_trajs[i] = obj2cam_np(pts_trajs[i]*refscale, Rmat, Tmat)
 
         if args.vis_cam:
             mesh_cam_transformed = mesh_cam.copy()
-            mesh_cam_transformed.vertices = obj2cam_vis(mesh_cam_transformed.vertices, Rmat, Tmat)
+            mesh_cam_transformed.vertices = obj2cam_np(mesh_cam_transformed.vertices, Rmat, Tmat)
 
         # compute error if ground-truth is given
         if len(args.gtdir)>0:
@@ -341,7 +305,6 @@ def main():
             refface = refface_gt
             colors = cm(raw_cd)
         
-
         smooth=args.smooth
         if args.freeze:
             tbone = 0

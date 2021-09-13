@@ -50,6 +50,12 @@ bash scripts/template.sh syn-eagled-15h-lbs-corresp-root syn-eagled-15h 10045 --
 python submit.py scripts/template.sh ncat-509-correspdp-lbs-ropt-10f nerfies_cat_509 10170 --num_epochs 40 --use_corresp --lbs --flow_dp
 python submit.py scripts/template.sh redo-mcat-6-corresp-lbs-flowdp-rot1 mcat_6 10168 --num_epochs 40 --use_corresp --lbs --flow_dp --rot_angle 1
 ```
+
+To draw root pose trajectory
+```
+python scripts/render_root.py --testdir logdir/syn-eagle-15h-hr-lbs-corresp-root-nowarmup-64-16-olr/
+```
+
 To re-render meshes
 ```
 bash scripts/render_result.sh syn-eagled-15h logdir/syn-eagled-15h-test3/params_20.pth --lbs --sample_grid3d 128 --queryfw

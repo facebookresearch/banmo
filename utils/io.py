@@ -1,19 +1,44 @@
+from typing import Any, Dict, List, Tuple, Union
 import cv2
 import pdb
 import configparser
 import torch
 import numpy as np
 import imageio
-from typing import Any, Dict, List, Tuple, Union
+import trimesh
 import glob
+import matplotlib.cm
+cmap = matplotlib.cm.get_cmap('cool')
 
 import sys
 sys.path.insert(0,'third_party')
 import dataloader.vidbase as base_data
 from ext_utils.flowlib import flow_to_image
 
+def draw_cams(all_cam):
+    """
+    all_cam: a list of 4x4 cameras
+    """
+    # scale: the scene bound
+    all_cam = np.asarray(all_cam)
+    max_trans = np.linalg.norm(all_cam[:,:3,3],2,-1).mean()
+    scale=max_trans
+    traj_len = len(all_cam)
+    elips_list = [] 
+    for j in range(traj_len):
+        cam_rot  = all_cam[j][:3,:3].T
+        cam_tran = -cam_rot.dot(all_cam[j][:3,3:])[:,0]
+    
+        elips = trimesh.creation.uv_sphere(radius=0.02*scale,count=[8, 8])
+        elips.vertices = elips.vertices + cam_tran
+        elips.visual.vertex_colors = cmap(float(j)/traj_len)
+        elips_list.append(elips)
+    mesh_cam = trimesh.util.concatenate(elips_list)
+    return mesh_cam
 
-def save_vid(outpath, frames, suffix='.gif',upsample_frame=150., is_flow=False):
+
+def save_vid(outpath, frames, suffix='.gif',upsample_frame=150., fps=30,
+        is_flow=False):
     """
     save frames to video
     frames:     n,h,w,1 or n.
@@ -34,7 +59,7 @@ def save_vid(outpath, frames, suffix='.gif',upsample_frame=150., is_flow=False):
             fxy = np.sqrt(1e5/(h*w))
             frame = cv2.resize(frame,None,fx=fxy, fy=fxy)
         frame_150.append(frame)
-    imageio.mimsave('%s%s'%(outpath,suffix), frame_150, fps=30)
+    imageio.mimsave('%s%s'%(outpath,suffix), frame_150, fps=fps)
 
 class visObj(object):
     """

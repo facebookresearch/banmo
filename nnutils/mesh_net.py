@@ -129,7 +129,8 @@ flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
 flags.DEFINE_bool('use_sim3', False, 'whether to use sim3 transformation')
 flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 12, 'maximum number of bones')
-flags.DEFINE_integer('warmup_steps', 2000, 'steps used to learn root body pose')
+flags.DEFINE_integer('warmup_init_steps', 2000, 'steps before using sil loss')
+flags.DEFINE_integer('warmup_steps', 1000, 'steps used to increase sil loss')
 flags.DEFINE_integer('lbs_reinit_epochs', 0, 'epochs to initialize bones')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
@@ -138,6 +139,7 @@ flags.DEFINE_bool('nerf_skin', False, 'use mlp skinning function')
 flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
+flags.DEFINE_integer('nsample', 256, 'num of samples per image at optimization time')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -165,6 +167,7 @@ class v2s_net(nn.Module):
         self.latest_vars['idk'] = np.zeros((self.data_offset[-1],))
         self.latest_vars['vis'] = np.zeros((self.data_offset[-1],
                                  opts.img_size,opts.img_size)).astype(bool)
+        self.latest_vars['mesh_rest'] = trimesh.Trimesh()
 
         # get near-far plane
         try:
@@ -446,6 +449,7 @@ class v2s_net(nn.Module):
         #flo_coarse = xy_coarse_target - xys_unsq
 
         results['flo_coarse'] = flo_coarse/img_size * 2
+        results['flo_valid'] = (invalid_ind.sum(-1)==0).float()[...,None]
         del results['xyz_coarse_target']
 
         if 'xyz_coarse_dentrg' in results.keys():
@@ -470,6 +474,7 @@ class v2s_net(nn.Module):
             fdp = fdp.sum(-2)
 
             results['fdp_coarse'] = fdp/img_size * 2
+            results['fdp_valid'] = (invalid_ind.sum(-1)==0).float()[...,None]
             del results['xyz_coarse_dentrg']
         del results['weights_coarse']
 
@@ -705,7 +710,8 @@ class v2s_net(nn.Module):
 
 
         # Render
-        rendered, rand_inds = self.nerf_render(rtk, kaug, frameid, opts.img_size)
+        rendered, rand_inds = self.nerf_render(rtk, kaug, frameid, 
+                                opts.img_size, nsample=opts.nsample)
         rendered_img = rendered['img_coarse']
         rendered_sil = rendered['sil_coarse']
         img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3
@@ -737,7 +743,7 @@ class v2s_net(nn.Module):
 
             flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
             flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
-            sil_at_samp_flo = (sil_at_samp>0)
+            sil_at_samp_flo = (sil_at_samp>0) & (rendered['flo_valid']==1)
 
             # confidence weighting: 30x normalized distance
             cfd_at_samp = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
@@ -749,12 +755,12 @@ class v2s_net(nn.Module):
 
             # warm up by only using flow loss to optimize root pose
             if opts.root_opt and (not opts.use_cam):
-                warmup_fac = (self.total_steps-opts.warmup_steps)/1000.
+                warmup_fac = (self.total_steps-opts.warmup_init_steps)
+                warmup_fac = warmup_fac/opts.warmup_steps
                 warmup_fac = min(1,max(0,warmup_fac))
                 total_loss = total_loss*warmup_fac + flo_loss
             else:
                 total_loss = total_loss + flo_loss
-
             aux_out['flo_loss'] = flo_loss
         
         # flow densepose loss
@@ -776,7 +782,8 @@ class v2s_net(nn.Module):
             fdp_loss = (fdp_loss-0.02).relu() # ignore error < 1/20 unit
 
             # TODO confidence weighting
-            sil_at_samp_fdp = (sil_at_samp>0) & (dcf_at_samp<self.dp_thrd-1e-3)
+            sil_at_samp_fdp = (sil_at_samp>0) & (dcf_at_samp<self.dp_thrd-1e-3)\
+                                & (rendered['fdp_valid']==1)
             dcf_at_samp = (-30*dcf_at_samp).sigmoid()
             dcf_at_samp = dcf_at_samp / dcf_at_samp[sil_at_samp_fdp].mean()
             fdp_loss = fdp_loss * dcf_at_samp[...,0]

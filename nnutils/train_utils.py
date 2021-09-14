@@ -381,16 +381,18 @@ class v2s_trainer(Trainer):
                 self.model.iters=i
 
                 if self.opts.debug:
-                    torch.cuda.synchronize()
-                    start_time = time.time()
+                    if 'start_time' in locals().keys():
+                        torch.cuda.synchronize()
+                        print('load time:%.2f'%(time.time()-start_time))
 
                 self.optimizer.zero_grad()
                 total_loss,aux_out = self.model(batch)
                 total_loss.mean().backward()
                 
                 if self.opts.debug:
-                    torch.cuda.synchronize()
-                    print('forward back time:%.2f'%(time.time()-start_time))
+                    if 'start_time' in locals().keys():
+                        torch.cuda.synchronize()
+                        print('forward back time:%.2f'%(time.time()-start_time))
 
                 ## gradient clipping
                 grad_nerf_coarse=[]
@@ -442,7 +444,8 @@ class v2s_trainer(Trainer):
                     else: continue
             
                 # freeze root pose when adding in sil/rgb loss 
-                if opts.root_opt and (not opts.use_cam):
+                if opts.root_opt:
+                #if opts.root_opt and (not opts.use_cam):
                     warmup_fac = (self.model.total_steps-opts.warmup_init_steps)
                     warmup_fac = warmup_fac/opts.warmup_steps
                     if warmup_fac>0 and warmup_fac<1:
@@ -475,6 +478,13 @@ class v2s_trainer(Trainer):
 
                 if opts.local_rank==0: 
                     self.save_logs(log, aux_out, self.model.total_steps, epoch)
+                
+                if self.opts.debug:
+                    if 'start_time' in locals().keys():
+                        torch.cuda.synchronize()
+                        print('total step time:%.2f'%(time.time()-start_time))
+                    torch.cuda.synchronize()
+                    start_time = time.time()
 
             if (epoch+1) % opts.save_epoch_freq == 0:
                 print('saving the model at the end of epoch {:d}, iters {:d}'.\

@@ -743,7 +743,8 @@ class v2s_net(nn.Module):
 
             flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
             flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
-            sil_at_samp_flo = (sil_at_samp>0) & (rendered['flo_valid']==1)
+            sil_at_samp_flo = (sil_at_samp>0)\
+                    # & (rendered['flo_valid']==1)
 
             # confidence weighting: 30x normalized distance
             cfd_at_samp = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
@@ -754,7 +755,8 @@ class v2s_net(nn.Module):
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
             # warm up by only using flow loss to optimize root pose
-            if opts.root_opt and (not opts.use_cam):
+            #if opts.root_opt and (not opts.use_cam):
+            if opts.root_opt:
                 warmup_fac = (self.total_steps-opts.warmup_init_steps)
                 warmup_fac = warmup_fac/opts.warmup_steps
                 warmup_fac = min(1,max(0,warmup_fac))
@@ -783,7 +785,7 @@ class v2s_net(nn.Module):
 
             # TODO confidence weighting
             sil_at_samp_fdp = (sil_at_samp>0) & (dcf_at_samp<self.dp_thrd-1e-3)\
-                                & (rendered['fdp_valid']==1)
+#                                & (rendered['fdp_valid']==1)
             dcf_at_samp = (-30*dcf_at_samp).sigmoid()
             dcf_at_samp = dcf_at_samp / dcf_at_samp[sil_at_samp_fdp].mean()
             fdp_loss = fdp_loss * dcf_at_samp[...,0]

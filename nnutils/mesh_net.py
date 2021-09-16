@@ -23,7 +23,7 @@ import configparser
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from ext_nnutils.net_blocks import Encoder, CodePredictor
-from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, evaluate_mlp
+from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, RTExplicit, evaluate_mlp
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
@@ -119,6 +119,7 @@ flags.DEFINE_bool('ks_opt', False,   'whether to optimize camera intrinsics')
 flags.DEFINE_bool('bg', False, 'whether to optimize background')
 flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspondence')
 flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
+flags.DEFINE_bool('explicit_root', False, 'whether to use explicit root pose')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
 flags.DEFINE_integer('num_test_views', 0, 'number of test views, 0: use all viewsf')
 flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
@@ -140,6 +141,7 @@ flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
 flags.DEFINE_integer('nsample', 256, 'num of samples per image at optimization time')
+flags.DEFINE_integer('ndepth', 128, 'num of depth samples per px at optimization time')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -255,16 +257,18 @@ class v2s_net(nn.Module):
         
         # optimize camera
         if opts.root_opt:
+            if opts.use_cam: 
+                use_quat=False
+                out_channels=6
+            else:
+                use_quat=True
+                out_channels=7
             if opts.cnn_root:
                 self.nerf_root_rts = nn.Sequential(Encoder(self.cnn_shape, n_blocks=4),
                                                    CodePredictor(n_bones=1, n_hypo=1))
+            elif opts.explicit_root:
+                self.nerf_root_rts = RTExplicit(max_t, delta=opts.use_cam)
             else:
-                if opts.use_cam: 
-                    use_quat=False
-                    out_channels=6
-                else:
-                    use_quat=True
-                    out_channels=7
                 self.nerf_root_rts = nn.Sequential(self.embedding_time,
                                 RTHead(use_quat=use_quat, 
                                 #D=5,W=128,
@@ -501,6 +505,10 @@ class v2s_net(nn.Module):
         return results, rand_inds
 
     def set_input(self, batch):
+        opts = self.opts
+        if opts.debug:
+            torch.cuda.synchronize()
+            start_time = time.time()
         if len(batch['img'].shape)==5:
             bs,_,_,h,w = batch['img'].shape
         else:
@@ -515,6 +523,10 @@ class v2s_net(nn.Module):
         input_img_tensor = img_tensor.clone()
         for b in range(input_img_tensor.size(0)):
             input_img_tensor[b] = self.resnet_transform(input_img_tensor[b])
+        
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('before transer vars to cuda:%.2f'%(time.time()-start_time))
 
         self.input_imgs   = input_img_tensor.cuda()
         self.imgs         = img_tensor.cuda()
@@ -532,6 +544,10 @@ class v2s_net(nn.Module):
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1)
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)
+        
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('after transer vars to cuda:%.2f'%(time.time()-start_time))
 
         if self.opts.flow_dp:
             # densepose to correspondence
@@ -665,6 +681,10 @@ class v2s_net(nn.Module):
 
         if self.opts.ks_opt:
             self.rtk[:,3,:] = self.ks_param #TODO kmat
+        
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('before saving vars to cuda:%.2f'%(time.time()-start_time))
 
         # save latest variables
         rtk = self.rtk.clone().detach()
@@ -689,7 +709,14 @@ class v2s_net(nn.Module):
 
     def forward(self, batch):
         opts = self.opts
+        if opts.debug:
+            torch.cuda.synchronize()
+            start_time = time.time()
         bs = self.set_input(batch)
+        
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('set input time:%.2f'%(time.time()-start_time))
         rtk = self.rtk
         kaug= self.kaug
         frameid=self.frameid
@@ -710,8 +737,8 @@ class v2s_net(nn.Module):
 
 
         # Render
-        rendered, rand_inds = self.nerf_render(rtk, kaug, frameid, 
-                                opts.img_size, nsample=opts.nsample)
+        rendered, rand_inds = self.nerf_render(rtk, kaug, frameid, opts.img_size, 
+                nsample=opts.nsample, ndepth=opts.ndepth)
         rendered_img = rendered['img_coarse']
         rendered_sil = rendered['sil_coarse']
         img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3
@@ -755,12 +782,8 @@ class v2s_net(nn.Module):
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
             # warm up by only using flow loss to optimize root pose
-            #if opts.root_opt and (not opts.use_cam):
-            if opts.root_opt:
-                warmup_fac = (self.total_steps-opts.warmup_init_steps)
-                warmup_fac = warmup_fac/opts.warmup_steps
-                warmup_fac = min(1,max(0,warmup_fac))
-                total_loss = total_loss*warmup_fac + flo_loss
+            if opts.root_opt and self.pose_update:
+                total_loss = total_loss*0. + flo_loss
             else:
                 total_loss = total_loss + flo_loss
             aux_out['flo_loss'] = flo_loss

@@ -60,7 +60,8 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%imgdir))):
     msk_rszd = cv2.resize(msk,(w_rszd,h_rszd))
 
     # densepose
-    clst_verts, image_bgr1 = run_cse(predictor_dp, embedder, mesh_vertex_embeddings, 
+    clst_verts, image_bgr1, embedding = run_cse(predictor_dp, embedder, 
+                                                    mesh_vertex_embeddings, 
                                                     img_rszd, msk_rszd, 
                                                     mesh_name='sheep_5004')
     

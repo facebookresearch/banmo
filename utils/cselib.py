@@ -82,14 +82,15 @@ def run_cse(model, embedder, mesh_vertex_embeddings, image, mask, mesh_name='smp
     
     # inference
     model.eval()
-    features = model.backbone(image)
-    features = [features[f] for f in model.roi_heads.in_features]
-    features = [model.roi_heads.decoder(features)]
-    features_dp = model.roi_heads.densepose_pooler(features, [pred_boxes])
-    densepose_head_outputs = model.roi_heads.densepose_head(features_dp)
-    densepose_predictor_outputs = model.roi_heads.densepose_predictor(densepose_head_outputs)
-    coarse_segm_resized = densepose_predictor_outputs.coarse_segm[0]
-    embedding_resized = densepose_predictor_outputs.embedding[0]
+    with torch.no_grad():
+        features = model.backbone(image)
+        features = [features[f] for f in model.roi_heads.in_features]
+        features = [model.roi_heads.decoder(features)]
+        features_dp = model.roi_heads.densepose_pooler(features, [pred_boxes])
+        densepose_head_outputs = model.roi_heads.densepose_head(features_dp)
+        densepose_predictor_outputs = model.roi_heads.densepose_predictor(densepose_head_outputs)
+        coarse_segm_resized = densepose_predictor_outputs.coarse_segm[0]
+        embedding_resized = densepose_predictor_outputs.embedding[0]
     
     # use input mask
     x, y, xx, yy= bbox
@@ -106,6 +107,15 @@ def run_cse(model, embedder, mesh_vertex_embeddings, image, mask, mesh_name='smp
 
     clst_verts_box = F.interpolate(clst_verts_box[None,None].float(), (yy-y,xx-x),mode='nearest')[0,0].long()
     clst_verts_pad[y:yy,x:xx] = clst_verts_box
+    
+    # output embedding
+    pdb.set_trace()
+    embedding_pad = torch.zeros(16,h_rszd, w_rszd).cuda()
+    embedding_box = F.interpolate(embedding_resized[None], (yy-y,xx-x),mode='bilinear')[0]
+    embedding_pad[:,y:yy,x:xx] = embedding_box
+    embedding = embedding_pad[:h_rszd, :w_rszd]
+    embedding = F.interpolate(embedding[None], (h,w),mode='bilinear')[0]
+    embedding = embedding.cpu().numpy()
 
     # visualization
     embed_map = get_xyz_vertex_embedding(mesh_name, 'cuda')
@@ -120,4 +130,4 @@ def run_cse(model, embedder, mesh_vertex_embeddings, image, mask, mesh_name='smp
     clst_verts =clst_verts_pad[:h_rszd, :w_rszd]
     clst_verts = F.interpolate(clst_verts[None,None].float(), (h,w),mode='nearest')[0,0].long()
     clst_verts =clst_verts.cpu().numpy()
-    return clst_verts, image_bgr
+    return clst_verts, image_bgr, embedding

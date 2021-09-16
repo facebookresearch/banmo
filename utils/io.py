@@ -115,7 +115,8 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
     end_frame= attrs['end_frame']
     rtk_path= attrs['rtk_path']
     numvid =  len(config.sections())-1
-    if numvid==1: datapath='%s/%s'%(datapath, opts['seqname'])
+    if numvid==1 and not config.has_option(name, 'datapath'): 
+        datapath='%s/%s'%(datapath, opts['seqname'])
     
     imglist = sorted(glob.glob('%s/*'%datapath))
     try: flip=int(config.get(name, 'flip'))

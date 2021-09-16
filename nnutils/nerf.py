@@ -240,6 +240,49 @@ class RTHead(NeRF):
         rts = rts.view(bs,1,-1)
         return rts
     
+class RTExplicit(nn.Module):
+    """
+    index rigid transforms from a dictionary
+    """
+    def __init__(self, max_t, delta=False):
+        super(RTExplicit, self).__init__()
+        self.max_t = max_t
+        self.delta = delta
+
+        # initialize rotation
+        trans = torch.zeros(max_t, 3)
+        if delta:
+            rot = torch.zeros(max_t, 3) 
+        else:
+            rot = torch.rand(max_t, 4) * 2 - 1
+        se3 = torch.cat([trans, rot],-1)
+
+        self.se3 = nn.Parameter(se3)
+        self.num_output = se3.shape[-1]
+
+
+    def forward(self, x):
+        # output: NxBx(9 rotation + 3 translation)
+        bs = x.shape[0]
+        x = self.se3[x] # bs B,x
+        rts = x.view(-1,self.num_output)
+        B = rts.shape[0]//bs
+        
+        tmat= rts[:,0:3] *0.1
+
+        if self.delta:
+            rot=rts[:,3:6]
+            rmat = transforms.so3_exponential_map(rot)
+        else:
+            rquat=rts[:,3:7]
+            rquat=F.normalize(rquat,2,-1)
+            rmat=transforms.quaternion_to_matrix(rquat) 
+        rmat = rmat.view(-1,9)
+
+        rts = torch.cat([rmat,tmat],-1)
+        rts = rts.view(bs,1,-1)
+        return rts
+    
 
 def evaluate_mlp(model, xyz_embedded, chunk=32*1024, 
                 xyz=None,

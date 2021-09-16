@@ -38,6 +38,7 @@ def _init_fn(worker_id):
 #----------------------------------#
 def data_loader(opts, shuffle=True):
     num_workers = opts.n_data_workers * opts.batch_size
+    num_workers = min(num_workers, 8)
     #num_workers = 0
     print('# workers: %d'%num_workers)
     print('# pairs: %d'%opts.batch_size)

@@ -42,25 +42,31 @@ def main():
                         if 'latest.npy' not in i]
     varlist = sorted(varlist, 
             key=lambda x:int(x.split('/')[-1].split('vars_')[-1].split('.npy')[0]))
+    
+    # get first index that is used for optimization
+    var = np.load(varlist[-1],allow_pickle=True)[()]
+    first_valid_idx = np.linalg.norm(var['rtk'][:,:3,3], 2,-1)>0
+    first_valid_idx = np.argmax(first_valid_idx)
     varlist = varlist[1:]
     size = len(varlist)
-    
+
     mesh_cams = []
     mesh_objs = []
     for var_path in varlist:
         # construct camera mesh
         var = np.load(var_path,allow_pickle=True)[()]
-        mesh_cams.append(draw_cams(var['rtk']))
+        mesh_cams.append(draw_cams(var['rtk'][first_valid_idx:]))
         mesh_objs.append(var['mesh_rest'])
        
     frames = []
     # process cameras
     for i in range(size):
         print(i)
-        refcam = var['rtk'][0].copy()
-        mtrans = np.linalg.norm(var['rtk'][:,:3,3],2,-1).max() # max camera trans
+        refcam = var['rtk'][first_valid_idx].copy()
+        # median camera trans
+        mtrans = np.median(np.linalg.norm(var['rtk'][first_valid_idx:,:3,3],2,-1)) 
         refcam[:2,3] = 0  # trans xy
-        refcam[2,3] = 2*mtrans # depth
+        refcam[2,3] = 4*mtrans # depth
         refcam[3,:2] = 2*img_size/2 # fl
         refcam[3,2] = img_size/2
         refcam[3,3] = img_size/2

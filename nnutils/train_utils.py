@@ -102,6 +102,7 @@ class v2s_trainer(Trainer):
         self.model.final_steps = opts.num_epochs * len(self.dataloader)
 
         params_nerf_coarse=[]
+        params_nerf_beta=[]
         params_nerf_fine=[]
         params_nerf_flowbw=[]
         params_nerf_skin=[]
@@ -115,8 +116,10 @@ class v2s_trainer(Trainer):
         params_sim3_j2c=[]
         params_dp_verts=[]
         for name,p in self.model.named_parameters():
-            if 'nerf_coarse' in name:
+            if 'nerf_coarse' in name and 'beta' not in name:
                 params_nerf_coarse.append(p)
+            if 'nerf_coarse' in name and 'beta' in name:
+                params_nerf_beta.append(p)
             elif 'nerf_fine' in name:
                 params_nerf_fine.append(p)
             elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
@@ -146,6 +149,7 @@ class v2s_trainer(Trainer):
 
         self.optimizer = torch.optim.AdamW(
             [{'params': params_nerf_coarse},
+             {'params': params_nerf_beta},
              {'params': params_nerf_fine},
              {'params': params_nerf_flowbw},
              {'params': params_nerf_skin},
@@ -161,23 +165,25 @@ class v2s_trainer(Trainer):
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
+        if opts.explicit_root:
+            lr_nerf_root_rts = 100
+        else:
+            lr_nerf_root_rts = 1
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer,\
-           [opts.learning_rate, # params_nerf_coarse
-            opts.learning_rate, # params_nerf_fine
-            opts.learning_rate, # params_nerf_flowbw
-            opts.learning_rate, # params_nerf_skin
-            opts.learning_rate, # params_nerf_vis
-        5*0.2*opts.learning_rate, # params_nerf_root_rts
-        5*0.1*opts.learning_rate, # params_nerf_bone_rts
-        5*0.1*opts.learning_rate, # params_embed
-        #  2*opts.learning_rate, # params_nerf_root_rts
-        #    opts.learning_rate, # params_nerf_bone_rts
-        #    opts.learning_rate, # params_embed
-            opts.learning_rate, # params_bones
-            opts.learning_rate, # params_ks
-            opts.learning_rate, # params_nerf_dp
-         10*opts.learning_rate, # params_sim3_j2c
-          0*opts.learning_rate, # params_dp_verts
+                        [opts.learning_rate, # params_nerf_coarse
+                      10*opts.learning_rate, # params_nerf_beta
+                         opts.learning_rate, # params_nerf_fine
+                         opts.learning_rate, # params_nerf_flowbw
+                         opts.learning_rate, # params_nerf_skin
+                         opts.learning_rate, # params_nerf_vis
+        lr_nerf_root_rts*opts.learning_rate, # params_nerf_root_rts
+                     0.5*opts.learning_rate, # params_nerf_bone_rts
+                     0.5*opts.learning_rate, # params_embed
+                         opts.learning_rate, # params_bones
+                         opts.learning_rate, # params_ks
+                         opts.learning_rate, # params_nerf_dp
+                      10*opts.learning_rate, # params_sim3_j2c
+                       0*opts.learning_rate, # params_dp_verts
             ],
             self.model.final_steps,
             pct_start=2./opts.num_epochs, # use 2 epochs to warm up
@@ -379,6 +385,11 @@ class v2s_trainer(Trainer):
             self.model.train()
             for i, batch in enumerate(self.dataloader):
                 self.model.iters=i
+                # whether to update pose (with flo)
+                if i%2 == 0:
+                    self.model.pose_update = True
+                else:
+                    self.model.pose_update = False
 
                 if self.opts.debug:
                     if 'start_time' in locals().keys():
@@ -387,6 +398,12 @@ class v2s_trainer(Trainer):
 
                 self.optimizer.zero_grad()
                 total_loss,aux_out = self.model(batch)
+
+                if self.opts.debug:
+                    if 'start_time' in locals().keys():
+                        torch.cuda.synchronize()
+                        print('forward time:%.2f'%(time.time()-start_time))
+
                 total_loss.mean().backward()
                 
                 if self.opts.debug:
@@ -396,6 +413,7 @@ class v2s_trainer(Trainer):
 
                 ## gradient clipping
                 grad_nerf_coarse=[]
+                grad_nerf_beta=[]
                 grad_nerf_fine=[]
                 grad_nerf_flowbw=[]
                 grad_nerf_skin=[]
@@ -415,8 +433,10 @@ class v2s_trainer(Trainer):
                             print(name)
                             pdb.set_trace()
                     except: pass
-                    if 'nerf_coarse' in name:
+                    if 'nerf_coarse' in name and 'beta' not in name:
                         grad_nerf_coarse.append(p)
+                    if 'nerf_coarse' in name and 'beta' in name:
+                        grad_nerf_beta.append(p)
                     elif 'nerf_fine' in name:
                         grad_nerf_fine.append(p)
                     elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
@@ -444,16 +464,13 @@ class v2s_trainer(Trainer):
                     else: continue
             
                 # freeze root pose when adding in sil/rgb loss 
-                if opts.root_opt:
-                #if opts.root_opt and (not opts.use_cam):
-                    warmup_fac = (self.model.total_steps-opts.warmup_init_steps)
-                    warmup_fac = warmup_fac/opts.warmup_steps
-                    if warmup_fac>0 and warmup_fac<1:
-                        self.zero_grad_list(grad_embed)
-                        self.zero_grad_list(grad_nerf_root_rts)
-                        self.zero_grad_list(grad_nerf_bone_rts)
+                if opts.root_opt and not self.model.pose_update:
+                    self.zero_grad_list(grad_embed)
+                    self.zero_grad_list(grad_nerf_root_rts)
+                    self.zero_grad_list(grad_nerf_bone_rts)
 
                 aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,  .1)
+                aux_out['nerf_beta_g']   = clip_grad_norm_(grad_nerf_beta,  .1)
                 aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,    .1)
                 aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,  .1)
                 aux_out['nerf_skin_g']   = clip_grad_norm_(grad_nerf_skin,  .1)

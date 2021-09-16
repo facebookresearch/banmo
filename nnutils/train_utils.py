@@ -167,6 +167,8 @@ class v2s_trainer(Trainer):
 
         if opts.explicit_root:
             lr_nerf_root_rts = 100
+        elif opts.cnn_root:
+            lr_nerf_root_rts = 0.2
         else:
             lr_nerf_root_rts = 1
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer,\
@@ -262,6 +264,7 @@ class v2s_trainer(Trainer):
             rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:hbs]]
             rendered_seq['dpc'] += [self.model.dp_vis[self.model.dps.long()][:hbs]]
             rendered_seq['occ'] += [self.model.occ[...,None]      [:hbs]]
+            rendered_seq['feat']+= [self.model.dp_feats.std(1)[...,None][:hbs]]
             rendered_seq['flo_coarse'][0] *= rendered_seq['sil_coarse'][0]
             if opts.flow_dp:
                 rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
@@ -386,10 +389,17 @@ class v2s_trainer(Trainer):
             for i, batch in enumerate(self.dataloader):
                 self.model.iters=i
                 # whether to update pose (with flo)
-                if i%2 == 0:
-                    self.model.pose_update = True
+                # 0: update all,  flo
+                # 1: freeze pose, flo/sil/rgb
+                # 2: update all,  flo/sil/rgb
+                if not opts.root_opt or \
+         self.model.total_steps > (opts.warmup_init_steps + opts.warmup_steps):
+                    self.model.pose_update = 2
+                elif self.model.total_steps < opts.warmup_init_steps or \
+                        i%2 == 0:
+                    self.model.pose_update = 0
                 else:
-                    self.model.pose_update = False
+                    self.model.pose_update = 1
 
                 if self.opts.debug:
                     if 'start_time' in locals().keys():
@@ -464,7 +474,7 @@ class v2s_trainer(Trainer):
                     else: continue
             
                 # freeze root pose when adding in sil/rgb loss 
-                if opts.root_opt and not self.model.pose_update:
+                if self.model.pose_update == 1:
                     self.zero_grad_list(grad_embed)
                     self.zero_grad_list(grad_nerf_root_rts)
                     self.zero_grad_list(grad_nerf_bone_rts)

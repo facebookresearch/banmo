@@ -22,8 +22,8 @@ import configparser
 
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
-from ext_nnutils.net_blocks import Encoder, CodePredictor
-from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, RTExplicit, evaluate_mlp
+from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, RTExplicit, Encoder,\
+                    evaluate_mlp
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
@@ -264,8 +264,11 @@ class v2s_net(nn.Module):
                 use_quat=True
                 out_channels=7
             if opts.cnn_root:
-                self.nerf_root_rts = nn.Sequential(Encoder(self.cnn_shape, n_blocks=4),
-                                                   CodePredictor(n_bones=1, n_hypo=1))
+                self.nerf_root_rts = nn.Sequential(
+                                Encoder((112,112), out_channels=128),
+                                RTHead(use_quat=use_quat, D=1,
+                                in_channels_xyz=t_embed_dim,in_channels_dir=0,
+                                out_channels=out_channels, raw_feat=True))
             elif opts.explicit_root:
                 self.nerf_root_rts = RTExplicit(max_t, delta=opts.use_cam)
             else:
@@ -535,6 +538,9 @@ class v2s_net(nn.Module):
         self.masks        = batch['mask']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.vis2d        = batch['vis2d']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.dps          = batch['dp']          .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
+        dpfd = 16
+        dpfs = 112
+        self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(self.device)
         self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
         self.cams         = batch['cam']         .view(bs,-1,7).permute(1,0,2).reshape(-1,7)          .to(self.device)  
@@ -661,16 +667,12 @@ class v2s_net(nn.Module):
         if self.opts.root_opt:
             frameid = self.frameid.long().to(self.device)
             if self.opts.cnn_root:
-                input_imgs = F.interpolate(self.input_imgs, self.cnn_shape, mode='bilinear')
-                _, root_tmat1, root_rmat, root_tmat2, _ = \
-                    self.nerf_root_rts(input_imgs)
-                root_tmat = torch.cat([root_tmat1, root_tmat2],-1)
-                root_tmat = root_tmat
-                root_rmat = root_rmat.view(bs,3,3)
+                frame_code = self.dp_feats/10
+                root_rts = self.nerf_root_rts(frame_code)
             else:
                 root_rts = self.nerf_root_rts(frameid)
-                root_rmat = root_rts[:,0,:9].view(-1,3,3)
-                root_tmat = root_rts[:,0,9:12]
+            root_rmat = root_rts[:,0,:9].view(-1,3,3)
+            root_tmat = root_rts[:,0,9:12]
     
             rmat = self.rtk[:,:3,:3]
             tmat = self.rtk[:,:3,3]
@@ -782,7 +784,7 @@ class v2s_net(nn.Module):
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
             # warm up by only using flow loss to optimize root pose
-            if opts.root_opt and self.pose_update:
+            if self.pose_update == 0:
                 total_loss = total_loss*0. + flo_loss
             else:
                 total_loss = total_loss + flo_loss

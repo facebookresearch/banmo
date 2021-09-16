@@ -188,11 +188,18 @@ class BaseDataset(Dataset):
         try:
             dp = readPFM(self.dplist[im0idx])[0]
             dpn= readPFM(self.dplist[im1idx])[0]
+            dp_feat = readPFM(self.featlist[im0idx])[0]
+            dp_featn= readPFM(self.featlist[im1idx])[0]
         except:
+            print('error loading densepose')
             dp = np.zeros_like(occ)
             dpn = np.zeros_like(occ)
+            dp_feat =  np.zeros((16*112,112))
+            dp_featn = np.zeros((16*112,112))
         dp= (dp *50).astype(np.int32)
         dpn=(dpn*50).astype(np.int32)
+        dp_feat = dp_feat.reshape((16,112,112))
+        dp_featn=dp_featn.reshape((16,112,112))
 
         # create mask for visible vs unkonwn
         vis2d = np.ones_like(mask)
@@ -361,7 +368,8 @@ class BaseDataset(Dataset):
             'occ':          np.stack([occ, occn]),
             'pps':          np.stack([pps, ppsn]),
             'depth':        np.stack([depth, depthn]),
-            'dp':        np.stack([dp, dpn]),
+            'dp':           np.stack([dp, dpn]),
+            'dp_feat':      np.stack([dp_feat, dp_featn]),
             'vis2d':        vis2d,
             'cam':          np.stack([cam, camn]),
             'kp':           np.stack([kp, kpn]),

@@ -3,7 +3,12 @@ import pdb
 import torch
 from torch import nn
 import torch.nn.functional as F
+import torchvision
 from pytorch3d import transforms
+
+import sys
+sys.path.insert(0, 'third_party')
+from ext_nnutils.net_blocks import conv2d, net_init, fc_stack
 
 class Embedding(nn.Module):
     def __init__(self, in_channels, N_freqs, logscale=True, alpha=None):
@@ -282,6 +287,50 @@ class RTExplicit(nn.Module):
         rts = torch.cat([rmat,tmat],-1)
         rts = rts.view(bs,1,-1)
         return rts
+
+class ResNetConv(nn.Module):
+    def __init__(self):
+        super(ResNetConv, self).__init__()
+        self.resnet = torchvision.models.resnet18(pretrained=True)
+        self.resnet.conv1 = nn.Conv2d(16, 64, kernel_size=(7, 7), 
+                                    stride=(2, 2), padding=(3, 3), bias=False)
+        self.resnet.fc=None
+
+    def forward(self, x):
+        x = self.resnet.conv1(x)
+        x = self.resnet.bn1(x)
+        x = self.resnet.relu(x)
+        x = self.resnet.maxpool(x)
+        x = self.resnet.layer1(x)
+        x = self.resnet.layer2(x)
+        x = self.resnet.layer3(x)
+        x = self.resnet.layer4(x)
+        return x
+
+class Encoder(nn.Module):
+    """
+    Current:
+    Resnet with 4 blocks (x32 spatial dim reduction)
+    Another conv with stride 2 (x64)
+    This is sent to 2 fc layers with final output nz_feat.
+    """
+
+    def __init__(self, input_shape, out_channels=128, batch_norm=True):
+        super(Encoder, self).__init__()
+        self.resnet_conv = ResNetConv()
+        self.enc_conv1 = conv2d(batch_norm, 512, 256, stride=1, kernel_size=3)
+        nc_input = int( 256 * np.ceil(input_shape[0] / 32.) \
+                            * np.ceil(input_shape[1] / 32.))
+        self.enc_fc = fc_stack(nc_input, out_channels, 2)
+
+        net_init(self.enc_conv1)
+
+    def forward(self, img):
+        resnet_feat = self.resnet_conv.forward(img)
+        out_enc_conv1 = self.enc_conv1(resnet_feat)
+        out_enc_conv1 = out_enc_conv1.view(img.size(0), -1)
+        feat = self.enc_fc.forward(out_enc_conv1)
+        return feat
     
 
 def evaluate_mlp(model, xyz_embedded, chunk=32*1024, 

@@ -69,8 +69,12 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%imgdir))):
 
     # assume max 10k/200 max
     clst_verts = (clst_verts/50.).astype(np.float32)
-
     write_pfm(  '%s/%05d.pfm'%(dpdir,counter), clst_verts)
+
+    #embedding = np.transpose(embedding, [1,2,0])
+    #embedding  = cv2.resize(embedding,  (w,h))
+    embedding = embedding.reshape((-1,embedding.shape[-1]))
+    write_pfm(  '%s/feat-%05d.pfm'%(dpdir,counter), embedding)
     
     # vis
     #v = Visualizer(img_rszd, coco_metadata, scale=1, instance_mode=ColorMode.IMAGE_BW)

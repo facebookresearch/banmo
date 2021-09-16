@@ -109,12 +109,12 @@ def run_cse(model, embedder, mesh_vertex_embeddings, image, mask, mesh_name='smp
     clst_verts_pad[y:yy,x:xx] = clst_verts_box
     
     # output embedding
-    pdb.set_trace()
-    embedding_pad = torch.zeros(16,h_rszd, w_rszd).cuda()
-    embedding_box = F.interpolate(embedding_resized[None], (yy-y,xx-x),mode='bilinear')[0]
-    embedding_pad[:,y:yy,x:xx] = embedding_box
-    embedding = embedding_pad[:h_rszd, :w_rszd]
-    embedding = F.interpolate(embedding[None], (h,w),mode='bilinear')[0]
+    embedding = embedding_resized # size does not matter for a image code
+    #embedding_pad = torch.zeros(16,h_rszd, w_rszd).cuda()
+    #embedding_box = F.interpolate(embedding_resized[None], (yy-y,xx-x),mode='bilinear')[0]
+    #embedding_pad[:,y:yy,x:xx] = embedding_box
+    #embedding = embedding_pad[:h_rszd, :w_rszd]
+    #embedding = F.interpolate(embedding[None], (h,w),mode='bilinear')[0]
     embedding = embedding.cpu().numpy()
 
     # visualization

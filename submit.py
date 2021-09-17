@@ -13,7 +13,8 @@ for arg in sys.argv[1:]:
 #cmd_str = f'screen -dmS "viser" bash -c ". activate viser; %s"'%(cmd_str)
 with open(sys.argv[1]) as f:
     lines = f.readlines()
-ngpu = [int(l.split('ngpu=')[-1]) for l in lines if 'ngpu=' in l][0]
+#ngpu = [len(l.split(',')) for l in lines if 'dev=' in l][0]
+ngpu = len(sys.argv[2].split(','))
 
 # divide gpus
 numgpu=8
@@ -28,6 +29,8 @@ def run_cmd(run_cmd):
     os.system(run_cmd)
 
     
-executor.update_parameters(timeout_min=600, nodes=nodes, gpus_per_node=numgpu, cpus_per_task=8*numgpu, slurm_partition=partition, slurm_comment= '', name="text")  # timeout in min
+executor.update_parameters(timeout_min=600, nodes=nodes, gpus_per_node=numgpu, 
+        cpus_per_task=8*numgpu, mem_gb=256,
+        slurm_partition=partition, slurm_comment= '', name="text")  # timeout in min
 #run_cmd(cmd_str )
 job = executor.submit(run_cmd,cmd_str)

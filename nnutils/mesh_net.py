@@ -46,7 +46,7 @@ flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
 flags.DEFINE_string('logname', 'exp_name', 'Experiment Name')
 flags.DEFINE_integer('num_epochs', 1000, 'Number of epochs to train')
 flags.DEFINE_integer('num_pretrain_epochs', 0, 'If >0, we will pretain from an existing saved model.')
-flags.DEFINE_float('learning_rate', 1e-3, 'learning rate')
+flags.DEFINE_float('learning_rate', 5e-4, 'learning rate')
 flags.DEFINE_boolean('use_sgd', False, 'if true uses sgd instead of adam, beta1 is used as mmomentu')
 flags.DEFINE_integer('batch_size', 1, 'size of minibatches')
 flags.DEFINE_string('checkpoint_dir', 'logdir/', 'Root directory for output files')
@@ -508,6 +508,7 @@ class v2s_net(nn.Module):
         return results, rand_inds
 
     def set_input(self, batch):
+        device = self.device
         opts = self.opts
         if opts.debug:
             torch.cuda.synchronize()
@@ -531,25 +532,25 @@ class v2s_net(nn.Module):
             torch.cuda.synchronize()
             print('before transer vars to cuda:%.2f'%(time.time()-start_time))
 
-        self.input_imgs   = input_img_tensor.cuda()
-        self.imgs         = img_tensor.cuda()
-        self.flow         = batch['flow']        .view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(self.device)
+        self.input_imgs   = input_img_tensor.to(device)
+        self.imgs         = img_tensor.to(device)
+        self.flow         = batch['flow']        .view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(device)
         self.flow = self.flow[:,:2]
-        self.masks        = batch['mask']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
-        self.vis2d        = batch['vis2d']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
-        self.dps          = batch['dp']          .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
+        self.masks        = batch['mask']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(device)
+        self.vis2d        = batch['vis2d']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
+        self.dps          = batch['dp']          .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(device)
         dpfd = 16
         dpfs = 112
-        self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(self.device)
-        self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
-        self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(self.device)
-        self.cams         = batch['cam']         .view(bs,-1,7).permute(1,0,2).reshape(-1,7)          .to(self.device)  
-        self.pp           = batch['pps']         .view(bs,-1,2).permute(1,0,2).reshape(-1,2)          .to(self.device)  
-        self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)      .to(self.device)
-        self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)            .to(self.device)
-        self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1)
-        self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1)
-        self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1)
+        self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(device)
+        self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
+        self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
+        self.cams         = batch['cam']         .view(bs,-1,7).permute(1,0,2).reshape(-1,7)          .to(device)  
+        self.pp           = batch['pps']         .view(bs,-1,2).permute(1,0,2).reshape(-1,2)          .to(device)  
+        self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
+        self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
+        self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1).cpu()
+        self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1).cpu()
+        self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1).cpu()
         
         if opts.debug:
             torch.cuda.synchronize()
@@ -559,7 +560,7 @@ class v2s_net(nn.Module):
             # densepose to correspondence
             # randomly choose 1 target image
             order1 = np.asarray(range(2*bs))
-            is_degenerate_pair = len(set((self.frameid.cpu().numpy())))==2
+            is_degenerate_pair = len(set((self.frameid.numpy())))==2
             while True:
                 rand_dentrg = np.random.randint(0,2*bs,2*bs)
                 if is_degenerate_pair or \
@@ -568,8 +569,8 @@ class v2s_net(nn.Module):
             self.rand_dentrg = rand_dentrg
             # downsample
             h_rszd,w_rszd=h//4,w//4
-            self.dp_flow = torch.zeros(2*bs,2,h_rszd,w_rszd).to(self.device)
-            self.dp_conf = torch.zeros(2*bs,h_rszd,w_rszd).to(self.device)
+            self.dp_flow = torch.zeros(2*bs,2,h_rszd,w_rszd).to(device)
+            self.dp_conf = torch.zeros(2*bs,h_rszd,w_rszd).to(device)
             hw_rszd = h_rszd*w_rszd
             dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), mode='nearest')[:,0]
             for idx in range(2*bs):
@@ -657,7 +658,7 @@ class v2s_net(nn.Module):
 
         bs = self.imgs.shape[0]
         if not self.opts.use_cam:
-            self.rtk[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(self.device)
+            self.rtk[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(device)
             self.rtk[:,:2,3] = 0.
             if self.near_far is None:
                 self.rtk[:,2,3] = 3. # TODO heuristics of depth=3xobject size
@@ -665,7 +666,7 @@ class v2s_net(nn.Module):
                 self.rtk[:,2,3] = self.near_far.mean() # TODO need to deal with multi-videl
        
         if self.opts.root_opt:
-            frameid = self.frameid.long().to(self.device)
+            frameid = self.frameid.long().to(device)
             if self.opts.cnn_root:
                 frame_code = self.dp_feats/10
                 root_rts = self.nerf_root_rts(frame_code)

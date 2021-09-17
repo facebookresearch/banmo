@@ -497,9 +497,10 @@ def reinit_bones(model, mesh, num_bones):
     orient = orient.repeat(num_bones,1)
     scale = torch.zeros(num_bones,3).to(device)
     bones = torch.cat([center, orient, scale],-1)
-    
+
+    del model.bones
+    del model.nerf_bone_rts[1].rgb
     model.bones = nn.Parameter(bones)
-    model.nerf_models['bones'] = model.bones
     model.num_bones = num_bones
     model.nerf_bone_rts[1].rgb = rthead
     return

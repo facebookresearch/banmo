@@ -43,6 +43,22 @@ from nnutils.vis_utils import image_grid
 from dataloader import frameloader
 from utils.io import save_vid, draw_cams
 
+class DataParallelPassthrough(torch.nn.parallel.DistributedDataParallel):
+    """
+    for multi-gpu access
+    """
+    def __getattr__(self, name):
+        try:
+            return super().__getattr__(name)
+        except AttributeError:
+            return getattr(self.module, name)
+    
+    def __delattr__(self, name):
+        try:
+            return super().__delattr__(name)
+        except AttributeError:
+            return delattr(self.module, name)
+    
 class v2s_trainer(Trainer):
     def __init__(self, opts):
         self.opts = opts
@@ -71,13 +87,12 @@ class v2s_trainer(Trainer):
             self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
             self.model = self.model.to(self.device)
 
-            self.model = torch.nn.parallel.DistributedDataParallel(
+            self.model = DataParallelPassthrough(
                     self.model,
                     device_ids=[opts.local_rank],
                     output_device=opts.local_rank,
                     find_unused_parameters=True,
             )
-            self.model = self.model.module
         return
     
     def init_dataset(self):
@@ -99,7 +114,8 @@ class v2s_trainer(Trainer):
     
     def init_training(self):
         opts = self.opts
-        self.model.final_steps = opts.num_epochs * len(self.dataloader)
+        # set as module attributes since they do not change across gpus
+        self.model.module.final_steps = opts.num_epochs * len(self.dataloader)
 
         params_nerf_coarse=[]
         params_nerf_beta=[]
@@ -187,7 +203,7 @@ class v2s_trainer(Trainer):
                       10*opts.learning_rate, # params_sim3_j2c
                        0*opts.learning_rate, # params_dp_verts
             ],
-            self.model.final_steps,
+            self.model.module.final_steps,
             pct_start=2./opts.num_epochs, # use 2 epochs to warm up
             cycle_momentum=False, 
             anneal_strategy='linear',
@@ -204,8 +220,19 @@ class v2s_trainer(Trainer):
             np.save(var_path, self.model.latest_vars)
             return
     
+    @staticmethod
+    def rm_module_prefix(states):
+        new_dict = {}
+        for i in states.keys():
+            v = states[i]
+            if i[:6] == 'module':
+                i = i[7:]
+            new_dict[i] = v
+        return new_dict
+
     def load_network(self,model_path=None):
         states = torch.load(model_path,map_location='cpu')
+        states = self.rm_module_prefix(states)
 
         # TODO: modify states to be compatible with possibly more datasets
         len_prev_fr = states['near_far'].shape[0]
@@ -273,15 +300,15 @@ class v2s_trainer(Trainer):
 
             # save images
             for k,v in rendered_seq.items():
-                #TODO save images
-                print('saving %s to gif'%k)
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)
-                is_flow = self.isflow(k)
-                upsample_frame = min(30,len(rendered_seq[k]))
-                save_vid('%s/%s'%(self.save_dir,k), 
-                        rendered_seq[k].cpu().numpy(), 
-                        suffix='.gif', upsample_frame=upsample_frame, 
-                        is_flow=is_flow)
+                if opts.local_rank==0:
+                    print('saving %s to gif'%k)
+                    is_flow = self.isflow(k)
+                    upsample_frame = min(30,len(rendered_seq[k]))
+                    save_vid('%s/%s'%(self.save_dir,k), 
+                            rendered_seq[k].cpu().numpy(), 
+                            suffix='.gif', upsample_frame=upsample_frame, 
+                            is_flow=is_flow)
 
             # extract mesh sequences
             aux_seq = {'mesh_rest': mesh_dict_rest['mesh'],
@@ -322,19 +349,20 @@ class v2s_trainer(Trainer):
                 aux_seq['impath'].append(impath)
 
             # draw camera trajectory
-            mesh_cam = draw_cams(aux_seq['rtk'])
-            suffix_id=0
-            if hasattr(self.model, 'epoch'):
-                suffix_id = self.model.epoch
-            mesh_cam.export('%s/mesh_cam-%02d.obj'%(self.save_dir,suffix_id))
+            if opts.local_rank==0:
+                mesh_cam = draw_cams(aux_seq['rtk'])
+                suffix_id=0
+                if hasattr(self.model, 'epoch'):
+                    suffix_id = self.model.epoch
+                mesh_cam.export('%s/mesh_cam-%02d.obj'%(self.save_dir,suffix_id))
 
         return rendered_seq, aux_seq
-    
+
     def train(self):
         opts = self.opts
         if opts.local_rank==0:
             log = SummaryWriter('%s/%s'%(opts.checkpoint_dir,opts.logname), comment=opts.logname)
-        self.model.total_steps = 0
+        self.model.module.total_steps = 0
         dataset_size = len(self.dataloader)
         torch.manual_seed(8)  # do it again
         torch.cuda.manual_seed(1)
@@ -356,6 +384,13 @@ class v2s_trainer(Trainer):
             
             # evaluation
             rendered_seq, aux_seq = self.eval()                
+            if opts.local_rank==0:
+                for k,v in rendered_seq.items():
+                    grid_img = image_grid(rendered_seq[k],3,3)
+                    if k=='depth_coarse':scale=True
+                    else: scale=False
+                    self.add_image(log, k, grid_img, epoch, scale=scale)
+
             mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
             mesh_rest = aux_seq['mesh'][0]
             self.model.latest_vars['mesh_rest'] = mesh_rest
@@ -365,25 +400,34 @@ class v2s_trainer(Trainer):
             if epoch>int(opts.num_epochs/2):
                 self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
 
-            for k,v in rendered_seq.items():
-                grid_img = image_grid(rendered_seq[k],3,3)
-                if k=='depth_coarse':scale=True
-                else: scale=False
-                self.add_image(log, k, grid_img, epoch, scale=scale)
-               
+            
             # reinit bones based on extracted surface
             if opts.lbs and (epoch==opts.lbs_all_epochs or\
                              epoch==opts.lbs_reinit_epochs):
                 reinit_bones(self.model, mesh_rest, opts.num_bones)
                 self.init_training() # add new params to optimizer
-                self.model.num_bone_used = self.model.num_bones
 
             # change near-far plane after half epochs
             if epoch==int(opts.num_epochs/2):
                 self.model.near_far.data = get_near_far(mesh_rest.vertices,
                                              self.model.near_far.data,
                                              self.model.latest_vars)
- 
+
+            # broadcast variables to other models
+            dist.barrier()
+            dist.broadcast_object_list(
+                    [self.model.num_bones, 
+                    self.model.num_bone_used,],
+                    0)
+            dist.broadcast(self.model.bones,0)
+            self.model.nerf_models['bones'] = self.model.bones
+            dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].weight, 0)
+            dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].bias, 0)
+
+            dist.broadcast(self.model.near_far,0)
+            print(self.model.near_far)
+            print(self.model.bones)
+
             # training loop
             self.model.train()
             for i, batch in enumerate(self.dataloader):
@@ -393,13 +437,13 @@ class v2s_trainer(Trainer):
                 # 1: freeze pose, flo/sil/rgb
                 # 2: update all,  flo/sil/rgb
                 if not opts.root_opt or \
-         self.model.total_steps > (opts.warmup_init_steps + opts.warmup_steps):
-                    self.model.pose_update = 2
-                elif self.model.total_steps < opts.warmup_init_steps or \
+         self.model.module.total_steps > (opts.warmup_init_steps + opts.warmup_steps):
+                    self.model.module.pose_update = 2
+                elif self.model.module.total_steps < opts.warmup_init_steps or \
                         i%2 == 0:
-                    self.model.pose_update = 0
+                    self.model.module.pose_update = 0
                 else:
-                    self.model.pose_update = 1
+                    self.model.module.pose_update = 1
 
                 if self.opts.debug:
                     if 'start_time' in locals().keys():
@@ -474,7 +518,7 @@ class v2s_trainer(Trainer):
                     else: continue
             
                 # freeze root pose when adding in sil/rgb loss 
-                if self.model.pose_update == 1:
+                if self.model.module.pose_update == 1:
                     self.zero_grad_list(grad_embed)
                     self.zero_grad_list(grad_nerf_root_rts)
                     self.zero_grad_list(grad_nerf_bone_rts)
@@ -500,11 +544,12 @@ class v2s_trainer(Trainer):
                 #for param_group in self.optimizer.param_groups:
                 #    print(param_group['lr'])
 
-                self.model.total_steps += 1
+                self.model.module.total_steps += 1
                 epoch_iter += 1
 
                 if opts.local_rank==0: 
-                    self.save_logs(log, aux_out, self.model.total_steps, epoch)
+                    self.save_logs(log, aux_out, self.model.module.total_steps, 
+                            epoch)
                 
                 if self.opts.debug:
                     if 'start_time' in locals().keys():
@@ -515,7 +560,7 @@ class v2s_trainer(Trainer):
 
             if (epoch+1) % opts.save_epoch_freq == 0:
                 print('saving the model at the end of epoch {:d}, iters {:d}'.\
-                                         format(epoch, self.model.total_steps))
+                                  format(epoch, self.model.module.total_steps))
                 self.save_network('latest')
                 self.save_network(str(epoch+1))
    

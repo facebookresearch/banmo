@@ -41,7 +41,7 @@ from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
-from utils.io import save_vid, draw_cams
+from utils.io import save_vid, draw_cams, extract_data_info
 
 class DataParallelPassthrough(torch.nn.parallel.DistributedDataParallel):
     """
@@ -96,20 +96,19 @@ class v2s_trainer(Trainer):
         return
     
     def init_dataset(self):
-        self.dataloader = frameloader.data_loader(self.opts)
-        self.evalloader = frameloader.eval_loader(self.opts)
+        opts = self.opts
+        opts_dict = {}
+        opts_dict['n_data_workers'] = opts.n_data_workers
+        opts_dict['batch_size'] = opts.batch_size
+        opts_dict['seqname'] = opts.seqname
+        opts_dict['img_size'] = opts.img_size
+        opts_dict['ngpu'] = opts.ngpu
+        opts_dict['local_rank'] = opts.local_rank
+        self.dataloader = frameloader.data_loader(opts_dict)
+        self.evalloader = frameloader.eval_loader(opts_dict)
 
-        data_info = {}
         # compute data offset
-        dataset_list = self.evalloader.dataset.datasets
-        data_offset = [0]
-        impath = []
-        for dataset in dataset_list:
-            #data_offset.append( 100 )
-            impath += dataset.imglist
-            data_offset.append(len(dataset.imglist))
-        data_info['offset'] = np.asarray(data_offset).cumsum()
-        data_info['impath'] = impath
+        data_info = extract_data_info(self.evalloader)
         return data_info
     
     def init_training(self):
@@ -256,9 +255,9 @@ class v2s_trainer(Trainer):
         self.model.latest_vars = np.load(var_path,allow_pickle=True)[()]
         return
   
-    def eval(self, num_view=9, dynamic_mesh=False): 
+    def eval(self, idx_render=None, dynamic_mesh=False): 
         """
-        num_view: number of views to render
+        idx_render: list of frame index to render
         dynamic_mesh: whether to extract canonical shape, or dynamic shape
         """
         opts = self.opts
@@ -270,10 +269,8 @@ class v2s_trainer(Trainer):
                                                     opts.sample_grid3d)
 
             # choose a grid image or the whold video
-            if num_view>0:
-                idx_render = np.linspace(0,len(self.evalloader)-1,num_view, dtype=int)
-            else:
-                idx_render = np.asarray(range(len(self.evalloader)))
+            if idx_render is None: # render 9 frames
+                idx_render = np.linspace(0,len(self.evalloader)-1, 9, dtype=int)
 
             # render
             batch = []
@@ -425,8 +422,6 @@ class v2s_trainer(Trainer):
             dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].bias, 0)
 
             dist.broadcast(self.model.near_far,0)
-            print(self.model.near_far)
-            print(self.model.bones)
 
             # training loop
             self.model.train()

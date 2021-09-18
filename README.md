@@ -49,6 +49,7 @@ python submit.py scripts/template.sh syn-eagled-15h-lbs-corresp-can15 syn-eagled
 bash scripts/template.sh syn-eagled-15h-lbs-corresp-root syn-eagled-15h 10045 --num_epochs 30 --use_corresp --root_opt --nouse_cam --lbs
 python submit.py scripts/template.sh ncat-509-correspdp-lbs-ropt-10f nerfies_cat_509 10170 --num_epochs 40 --use_corresp --lbs --flow_dp
 python submit.py scripts/template.sh redo-mcat-6-corresp-lbs-flowdp-rot1 mcat_6 10168 --num_epochs 40 --use_corresp --lbs --flow_dp --rot_angle 1
+python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 cat_601-lbs-correspd-root-cnn-8gpu cat_601 10041 --num_epochs 30 --use_corresp --lbs --root_opt --flow_dp --nouse_cam --cnn_root
 ```
 
 To draw root pose trajectory
@@ -61,6 +62,7 @@ To re-render meshes
 bash scripts/render_result.sh syn-eagled-15h logdir/syn-eagled-15h-test3/params_20.pth --lbs --sample_grid3d 128 --queryfw
 bash scripts/render_result.sh mcat_6 logdir/mcat-6-corresp-lbs-flowdp-lr10-rot1-rmdp/params_11.pth --sample_grid3d 128 --queryfw --lbs
 CUDA_VISIBLE_DEVICES=1 bash scripts/render_result.sh mcats logdir/mcats5-lbs-correspd-ropt-100ep/params_100.pth 9 --sample_grid3d 16 --queryfw --use_corresp --nonerf_vis
+CUDA_VISIBLE_DEVICES=1 bash scripts/render_result.sh mcats logdir/mcats-lbs-correspd-root-exp-8gpu/params_100.pth 50 --sample_grid3d 128 --queryfw --lbs --root_opt --nouse_cam --explicit_root
 ```
 ## Additional Notes
 wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl

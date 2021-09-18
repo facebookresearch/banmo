@@ -11,7 +11,7 @@ import trimesh
 from scipy.spatial.transform import Rotation as R
 import imageio
 
-from utils.io import save_vid
+from utils.io import save_vid, str_to_frame
 from utils.colors import label_colormap
 from nnutils.train_utils import v2s_trainer
 from nnutils.geom_utils import obj_to_cam, tensor2array, vec_to_sim3, obj_to_cam
@@ -118,13 +118,17 @@ def main(_):
     data_info = trainer.init_dataset()    
     trainer.define_model(data_info, no_ddp=True)
     seqname=opts.seqname
-    num_view = opts.num_test_views
 
     dynamic_mesh = opts.flowbw or opts.lbs
-    rendered_seq, aux_seq = trainer.eval(num_view=num_view,
-                                                    dynamic_mesh=dynamic_mesh) 
-    rendered_seq = tensor2array(rendered_seq)
-    save_output(rendered_seq, aux_seq, seqname, save_flo=opts.use_corresp)
+    idx_render = str_to_frame(opts.test_frames, data_info)
+
+    chunk = 50
+    for i in range(0, len(idx_render), chunk):
+        rendered_seq, aux_seq = trainer.eval(idx_render=idx_render[i:i+chunk],
+                                             dynamic_mesh=dynamic_mesh) 
+        rendered_seq = tensor2array(rendered_seq)
+        save_output(rendered_seq, aux_seq, seqname, save_flo=opts.use_corresp)
+    #TODO merge the outputs
 
 if __name__ == '__main__':
     app.run(main)

@@ -36,44 +36,32 @@ def _init_fn(worker_id):
 
 #----------- Data Loader ----------#
 #----------------------------------#
-def data_loader(opts, shuffle=True):
-    num_workers = opts.n_data_workers * opts.batch_size
+def data_loader(opts_dict, shuffle=True):
+    num_workers = opts_dict['n_data_workers'] * opts_dict['batch_size']
     num_workers = min(num_workers, 8)
     #num_workers = 0
     print('# workers: %d'%num_workers)
-    print('# pairs: %d'%opts.batch_size)
+    print('# pairs: %d'%opts_dict['batch_size'])
    
-    opts_dict = {}
-    opts_dict['seqname'] = opts.seqname
-    opts_dict['img_size'] = opts.img_size
-    opts_dict['batch_size'] = opts.batch_size
-    opts_dict['ngpu'] = opts.ngpu
     data_inuse = config_to_dataloader(opts_dict)
 
     sampler = torch.utils.data.distributed.DistributedSampler(
     data_inuse,
-    num_replicas=opts.ngpu,
-    rank=opts.local_rank,
+    num_replicas=opts_dict['ngpu'],
+    rank=opts_dict['local_rank'],
     shuffle=True
     )
 
     data_inuse = DataLoader(data_inuse,
-         batch_size= opts.batch_size, num_workers=num_workers, drop_last=True, worker_init_fn=_init_fn, pin_memory=True,sampler=sampler)
+         batch_size= opts_dict['batch_size'], num_workers=num_workers, drop_last=True, worker_init_fn=_init_fn, pin_memory=True,sampler=sampler)
     return data_inuse
 
 #----------- Eval Data Loader ----------#
 #----------------------------------#
-def eval_loader(opts):
+def eval_loader(opts_dict):
     num_workers = 0
-    print('# pairs: %d'%opts.batch_size)
    
-    opts_dict = {}
-    opts_dict['seqname'] = opts.seqname
-    opts_dict['img_size'] = opts.img_size
     dataset = config_to_dataloader(opts_dict,is_eval=True)
-    
-    #dataset = get_config_info(opts, config, 'data', 0, is_eval=True)
-    #dataset = torch.utils.data.ConcatDataset(dataset)
     dataset = DataLoader(dataset,
          batch_size= 1, num_workers=num_workers, drop_last=False, pin_memory=True, shuffle=False)
     return dataset

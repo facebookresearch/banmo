@@ -18,12 +18,14 @@ import soft_renderer as sr
 import argparse
 import trimesh
 from nnutils.geom_utils import obj_to_cam, pinhole_cam, obj2cam_np
+from dataloader import frameloader
 import pyrender
 from pyrender import IntrinsicsCamera,Mesh, Node, Scene,OffscreenRenderer
 import configparser
 import matplotlib
 cmap = matplotlib.cm.get_cmap('cool')
-from utils.io import config_to_dataloader, draw_cams
+from utils.io import config_to_dataloader, draw_cams, str_to_frame, \
+        extract_data_info
 
 
 parser = argparse.ArgumentParser(description='render mesh')
@@ -61,8 +63,8 @@ parser.add_argument('--vp', default=0, type=int,
                     help='which viewpoint to render 0,1,2')
 parser.add_argument('--gtdir', default='',
                     help='path to gt dir')
-parser.add_argument('--num_test_views', default=-1, type=int,
-                    help='how many views to render')
+parser.add_argument('--test_frames', default='9',
+                    help='a list of video index or num of frames, {0,1,2}, 30')
 args = parser.parse_args()
 
 gt_meshes =   [trimesh.load(i, process=False) for i in sorted( glob.glob('%s/*.obj'%(args.gtdir)) )]
@@ -79,18 +81,19 @@ def main():
     all_scale = []
     all_fr = []
 
+    # eval dataloader
     opts_dict = {}
     opts_dict['seqname'] = args.seqname
     opts_dict['img_size'] = 512 # dummy value
+    evalloader = frameloader.eval_loader(opts_dict)
+    data_info = extract_data_info(evalloader)
+    idx_render = str_to_frame(args.test_frames, data_info)
 
-    datasets = config_to_dataloader(opts_dict,is_eval=True)
+    # get eval frames
     imglist = []
-    for dataset in datasets.datasets:
+    for dataset in evalloader.dataset.datasets:
         imglist += dataset.imglist[:-1] # excluding the last frame
-   
-    if args.num_test_views>0:
-        idx_render = np.linspace(0,len(imglist)-1, args.num_test_views, dtype=int)
-        imglist = [imglist[i] for i in idx_render]
+    imglist = [imglist[i] for i in idx_render]
 
     for name in imglist:
         rgb_img = cv2.imread(name)

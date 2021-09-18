@@ -121,7 +121,7 @@ flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspon
 flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
 flags.DEFINE_bool('explicit_root', False, 'whether to use explicit root pose')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
-flags.DEFINE_integer('num_test_views', 0, 'number of test views, 0: use all viewsf')
+flags.DEFINE_string('test_frames', '9', 'a list of video index or num of frames, {0,1,2}, 30')
 flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
 flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
 flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')

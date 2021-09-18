@@ -1,51 +1,51 @@
 seqname=$1
 model_path=$2
-num_views=$3
+test_frames=$3
 
 testdir=${model_path%/*} # %: from end
 add_args=${*: 3:$#-1}
 prefix=$testdir/$seqname
 #prefix=/scratch/gengshany/Dropbox/output/$seqname
 
-python extract.py --seqname $seqname \
-                  --model_path $model_path \
-                  --num_test_views $num_views \
-                  $add_args
+#python extract.py --seqname $seqname \
+#                  --model_path $model_path \
+#                  --test_frames $test_frames \
+#                  $add_args
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-frz \
                      --seqname $seqname \
-                     --num_test_views $num_views \
+                     --test_frames $test_frames \
                      --freeze \
                      --vis_cam
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-bne \
                      --seqname $seqname \
-                     --num_test_views $num_views \
+                     --test_frames $test_frames \
                      --vp -1 \
                      --vis_bones \
                      --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj0 \
                      --seqname $seqname \
-                     --num_test_views $num_views \
+                     --test_frames $test_frames \
                      --vp 0 \
                      --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj1 \
                      --seqname $seqname \
-                     --num_test_views $num_views \
+                     --test_frames $test_frames \
                      --vp 1 \
                      --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj2 \
                      --seqname $seqname \
-                     --num_test_views $num_views \
+                     --test_frames $test_frames \
                      --vp 2 \
                      --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-vid \
                      --seqname $seqname \
-                     --num_test_views $num_views \
+                     --test_frames $test_frames \
                      --append_img yes \
                      --append_render no
 #python render_vis.py --testdir $testdir \

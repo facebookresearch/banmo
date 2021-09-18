@@ -196,3 +196,30 @@ class VidDataset(base_data.BaseDataset):
         self.num_imgs = len(self.directlist)
         self.dataid = dataid
         print('%d pairs of images' % self.num_imgs)
+
+def str_to_frame(test_frames, data_info):
+    if test_frames[0]=='{':
+        # render a list of videos
+        idx_render = []
+        for i in test_frames[1:-1].split(','):
+            vid_idx = int(i)
+            idx_render += range(data_info['offset'][vid_idx], 
+                                data_info['offset'][vid_idx+1]-1)
+    else:
+        # render specific number of frames
+        idx_render = np.linspace(0,data_info['len_evalloader']-1,
+                               int(test_frames), dtype=int)
+    return idx_render
+
+def extract_data_info(loader):
+    data_info = {}
+    dataset_list = loader.dataset.datasets
+    data_offset = [0]
+    impath = []
+    for dataset in dataset_list:
+        impath += dataset.imglist
+        data_offset.append(len(dataset.imglist))
+    data_info['offset'] = np.asarray(data_offset).cumsum()
+    data_info['impath'] = impath
+    data_info['len_evalloader'] = len(loader)
+    return data_info

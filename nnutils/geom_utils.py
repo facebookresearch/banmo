@@ -1,4 +1,6 @@
 import pdb
+import time
+import cv2
 import numpy as np
 from pytorch3d import transforms
 import torch
@@ -7,6 +9,10 @@ import torch.nn.functional as F
 import soft_renderer as sr
 
 from nnutils.nerf import evaluate_mlp
+
+import sys
+sys.path.insert(0, 'third_party')
+from ext_utils.flowlib import warp_flow, cat_imgflo 
 
 def bone_transform(bones_in, rts):
     """ 
@@ -709,3 +715,126 @@ def rot_angle(mat):
     cos = cos.clamp(-1+eps,1-eps)
     angle = torch.acos(cos)
     return angle
+
+def match2coords(match, w_rszd, h_rszd, device):
+    tar_coord = torch.cat([match[:,None]%w_rszd, match[:,None]//w_rszd],-1)
+    tar_coord = tar_coord.float()
+    ref_coord = torch.Tensor(np.meshgrid(range(w_rszd), range(h_rszd)))
+    ref_coord = ref_coord.to(device).permute(1,2,0).view(-1,2)
+    return ref_coord, tar_coord
+
+def compute_flow_cse(cse_refr,cse_targ, warp_refr, warp_targ, img_size):
+    """
+    compute the flow between two frames under cse feature matching
+    cse:        16,h,w, feature image
+    flo_dp:     2,h,w
+    """
+    torch.cuda.synchronize()
+    start_time = time.time()
+    _,h_rszd,w_rszd = cse_refr.shape
+    hw_rszd = h_rszd*w_rszd
+    device = cse_refr.device
+
+    cost = (cse_targ[:,None,None] * cse_refr[...,None,None]).sum(0)
+    _,match = cost.view(hw_rszd, hw_rszd).max(1)
+    torch.cuda.synchronize()
+    print('compute dp match:%.2f'%(time.time()-start_time))
+
+    ref_coord, tar_coord = match2coords(match, w_rszd, h_rszd, device)
+    ref_coord = ref_coord.matmul(warp_refr[:2,:2]) + warp_refr[None,:2,2]
+    tar_coord = tar_coord.matmul(warp_targ[:2,:2]) + warp_targ[None,:2,2]
+
+    flo_dp = (tar_coord - ref_coord) / img_size * 2 # [-2,2]
+    flo_dp = flo_dp.view(h_rszd, w_rszd, 2)
+    flo_dp = flo_dp.permute(2,0,1)
+
+    xygrid = sample_xy(img_size, 1, 0, device, return_all=True)[0]
+    warp_refr_inv = Kmatinv(warp_refr)
+    xygrid = xygrid.matmul(warp_refr_inv[:2,:2]) + warp_refr_inv[None,:2,2]
+    xygrid = xygrid / 112 * 2 - 1 
+    flo_dp = F.grid_sample(flo_dp[None], xygrid.view(1,img_size,img_size,2))[0]
+    return flo_dp
+
+def compute_flow_geodist(dp_refr,dp_targ, geodists):
+    """
+    compute the flow between two frames under geodesic distance matching
+    dps:        h,w, canonical surface mapping index
+    geodists    N,N, distance matrix
+    flo_dp:     2,h,w
+    """
+    h_rszd,w_rszd = dp_refr.shape
+    hw_rszd = h_rszd*w_rszd
+    device = dp_refr.device
+    dp_refr = dp_refr.view(-1,1).repeat(1,hw_rszd).view(-1,1)
+    dp_targ = dp_targ.view(1,-1).repeat(hw_rszd,1).view(-1,1)
+
+    match = geodists[dp_refr, dp_targ]
+    dis_geo,match = match.view(hw_rszd, hw_rszd).min(1)
+    #match[dis_geo>0.1] = 0
+
+    # cx,cy
+    ref_coord, tar_coord = match2coords(match, w_rszd, h_rszd, device)
+    ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
+    tar_coord = tar_coord.view(h_rszd, w_rszd, 2)
+    flo_dp = (tar_coord - ref_coord) / w_rszd * 2 # [-2,2]
+    match = match.view(h_rszd, w_rszd)
+    flo_dp[match==0] = 0
+    flo_dp = flo_dp.permute(2,0,1)
+    return flo_dp
+
+
+
+def fb_flow_check(flo_refr, flo_targ, img_refr, img_targ, dp_thrd, 
+                    save_path=None):
+    """
+    apply forward backward consistency check on flow fields
+    flo_refr: 2,h,w forward flow
+    flo_targ: 2,h,w backward flow
+    fberr:    h,w forward backward error
+    """
+    h_rszd, w_rszd = flo_refr.shape[1:]
+    # clean up flow
+    flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
+    flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
+    flo_refr_mask = np.linalg.norm(flo_refr,2,-1)>0
+    flo_targ_mask = np.linalg.norm(flo_targ,2,-1)>0
+    flo_refr_px = flo_refr * w_rszd / 2
+    flo_targ_px = flo_targ * w_rszd / 2
+
+    #fb check
+    x0,y0  =np.meshgrid(range(w_rszd),range(h_rszd))
+    hp0 = np.stack([x0,y0],-1) # screen coord
+
+    flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
+    flo_fb = 2*flo_fb/w_rszd
+    fberr_fw = np.linalg.norm(flo_fb, 2,-1)
+    fberr_fw[~flo_refr_mask] = 0
+
+    flo_bf = warp_flow(hp0 + flo_refr_px, flo_targ_px) - hp0
+    flo_bf = 2*flo_bf/w_rszd
+    fberr_bw = np.linalg.norm(flo_bf, 2,-1)
+    fberr_bw[~flo_targ_mask] = 0
+
+    if save_path is not None:
+        # vis
+        thrd_vis = 0.01
+        img_refr = F.interpolate(img_refr, (h_rszd, w_rszd), mode='bilinear')[0]
+        img_refr = img_refr.permute(1,2,0).cpu().numpy()[:,:,::-1]
+        img_targ = F.interpolate(img_targ, (h_rszd, w_rszd), mode='bilinear')[0]
+        img_targ = img_targ.permute(1,2,0).cpu().numpy()[:,:,::-1]
+        flo_refr[:,:,0] = (flo_refr[:,:,0] + 2)/2
+        flo_targ[:,:,0] = (flo_targ[:,:,0] - 2)/2
+        flo_refr[fberr_fw>thrd_vis]=0.
+        flo_targ[fberr_bw>thrd_vis]=0.
+        flo_refr[~flo_refr_mask]=0.
+        flo_targ[~flo_targ_mask]=0.
+        img = np.concatenate([img_refr, img_targ], 1)
+        flo = np.concatenate([flo_refr, flo_targ], 1)
+        imgflo = cat_imgflo(img, flo)
+        imgcnf = np.concatenate([fberr_fw, fberr_bw],1)
+        imgcnf = np.clip(imgcnf, 0, dp_thrd)*(255/dp_thrd)
+        imgcnf = np.repeat(imgcnf[...,None],3,-1)
+        imgcnf = cv2.resize(imgcnf, imgflo.shape[::-1][1:])
+        imgflo_cnf = np.concatenate([imgflo, imgcnf],0)
+        cv2.imwrite(save_path, imgflo_cnf)
+    return fberr_fw, fberr_bw

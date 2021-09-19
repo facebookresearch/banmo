@@ -86,7 +86,7 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%datadir))):
     if (mask_rszd.sum())<1000: continue
 
     # densepose
-    clst_verts, image_bgr1, embedding = run_cse(predictor_dp, embedder, 
+    clst_verts, image_bgr1, embedding, bbox = run_cse(predictor_dp, embedder, 
                                                     mesh_vertex_embeddings, 
                                                     img_rszd, mask_rszd, 
                                                     mesh_name='sheep_5004')

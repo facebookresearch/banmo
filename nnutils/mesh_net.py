@@ -28,11 +28,10 @@ import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
                                 canonical2ndc, obj_to_cam, vec_to_sim3, \
-                                near_far_to_bound
+                                near_far_to_bound, compute_flow_geodist, \
+                                compute_flow_cse, fb_flow_check
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient
-from ext_utils.flowlib import cat_imgflo 
-from ext_utils.flowlib import warp_flow
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -142,6 +141,7 @@ flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
 flags.DEFINE_integer('nsample', 256, 'num of samples per image at optimization time')
 flags.DEFINE_integer('ndepth', 128, 'num of depth samples per px at optimization time')
+flags.DEFINE_bool('vis_dpflow', False, 'whether to visualize densepose flow')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -542,6 +542,8 @@ class v2s_net(nn.Module):
         dpfd = 16
         dpfs = 112
         self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(device)
+        self.dp_feats     = F.normalize(self.dp_feats, 2,1)
+        self.dp_bbox      = batch['dp_bbox']     .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
         self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
         self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
         self.cams         = batch['cam']         .view(bs,-1,7).permute(1,0,2).reshape(-1,7)          .to(device)  
@@ -567,84 +569,69 @@ class v2s_net(nn.Module):
                 ((self.frameid[rand_dentrg]-self.frameid[order1])==0).sum()==0:
                     break
             self.rand_dentrg = rand_dentrg
+
+            # densepose geodesic
             # downsample
-            h_rszd,w_rszd=h//4,w//4
+            geodesic=True
+            #geodesic=False
+            if geodesic: 
+                h_rszd,w_rszd=h//4,w//4
+                dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), 
+                                        mode='nearest')[:,0]
+                dps = dps.long()
+            else:
+                h_rszd,w_rszd = h,w
+                # densepose-cropped to dataloader cropped transformation
+                cropa2im = torch.cat([(self.dp_bbox[:,2:] - self.dp_bbox[:,:2]) / 112., 
+                                      self.dp_bbox[:,:2]],-1)
+                cropa2im = K2mat(cropa2im)
+                im2cropb = K2inv(self.kaug) 
+                cropa2b = im2cropb.matmul(cropa2im)
+            
+            hw_rszd = h_rszd*w_rszd
             self.dp_flow = torch.zeros(2*bs,2,h_rszd,w_rszd).to(device)
             self.dp_conf = torch.zeros(2*bs,h_rszd,w_rszd).to(device)
-            hw_rszd = h_rszd*w_rszd
-            dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), mode='nearest')[:,0]
+
             for idx in range(2*bs):
                 jdx = self.rand_dentrg[idx]
-                def compute_flow_geodist(dps,idx,jdx):
-                    h_rszd,w_rszd = dps.shape[1:]
-                    hw_rszd = h_rszd*w_rszd
-                    device = dps.device
-                    dps = dps.view(2*bs,-1).long()
-                    dp_refr = dps[idx].view(-1,1).repeat(1,hw_rszd).view(-1,1)
-                    dp_targ = dps[jdx].view(1,-1).repeat(hw_rszd,1).view(-1,1)
-                    match = self.geodists[dp_refr, dp_targ]
-                    dis_geo,match = match.view(hw_rszd, hw_rszd).min(1)
-                    #match[dis_geo>0.1] = 0
 
-                    # cx,cy
-                    tar_coord = torch.cat([match[:,None]%w_rszd, match[:,None]//w_rszd],-1)
-                    tar_coord = tar_coord.view(h_rszd, w_rszd, 2).float()
-                    ref_coord = torch.Tensor(np.meshgrid(range(w_rszd), range(h_rszd)))
-                    ref_coord = ref_coord.to(device).permute(1,2,0).view(-1,2)
-                    ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
-                    flo_dp = (tar_coord - ref_coord) / w_rszd * 2 # [-2,2]
-                    match = match.view(h_rszd, w_rszd)
-                    flo_dp[match==0] = 0
-                    flo_dp = flo_dp.permute(2,0,1)
-                    return flo_dp
-                flo_refr = compute_flow_geodist(dps,idx,jdx)
-                flo_targ = compute_flow_geodist(dps,jdx,idx)
+                if opts.debug:
+                    torch.cuda.synchronize()
+                    start_time = time.time()
+
+                if geodesic:
+                    flo_refr = compute_flow_geodist(dps[idx], dps[jdx], 
+                                                    self.geodists)
+                    flo_targ = compute_flow_geodist(dps[jdx], dps[idx], 
+                                                    self.geodists)
+                else:
+                    flo_refr = compute_flow_cse(self.dp_feats[idx],
+                                                self.dp_feats[jdx],
+                                                cropa2b[idx], cropa2b[jdx], 
+                                                opts.img_size)
+                    flo_targ = compute_flow_cse(self.dp_feats[jdx],
+                                                self.dp_feats[idx],
+                                                cropa2b[jdx], cropa2b[idx], 
+                                                opts.img_size)
+                
+
+                img_refr = self.imgs[idx:idx+1]
+                img_targ = self.imgs[jdx:jdx+1]
+                if opts.vis_dpflow:
+                    save_path = 'tmp/img-%05d-%05d.jpg'%(idx,jdx)
+                else: save_path = None
+                fberr_fw, fberr_bw = fb_flow_check(flo_refr, flo_targ,
+                                                   img_refr, img_targ, 
+                                                    self.dp_thrd,
+                                                    save_path = save_path)
+                
+                if opts.debug:
+                    torch.cuda.synchronize()
+                    print('compute dp flow:%.2f'%(time.time()-start_time))
+                
+
                 self.dp_flow[idx] = flo_refr
-
-                # clean up flow
-                flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
-                flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
-                flo_refr_mask = np.linalg.norm(flo_refr,2,-1)>0
-                flo_targ_mask = np.linalg.norm(flo_targ,2,-1)>0
-                flo_refr_px = flo_refr * w_rszd / 2
-                flo_targ_px = flo_targ * w_rszd / 2
-
-                #fb check
-                x0,y0  =np.meshgrid(range(w_rszd),range(h_rszd))
-                hp0 = np.stack([x0,y0],-1) # screen coord
-
-                flo_fb = warp_flow(hp0 + flo_targ_px, flo_refr_px) - hp0
-                flo_fb = 2*flo_fb/w_rszd
-                fberr_fw = np.linalg.norm(flo_fb, 2,-1)
-                fberr_fw[~flo_refr_mask] = 0
                 self.dp_conf[idx] = torch.Tensor(fberr_fw)
-
-                flo_bf = warp_flow(hp0 + flo_refr_px, flo_targ_px) - hp0
-                flo_bf = 2*flo_bf/w_rszd
-                fberr_bw = np.linalg.norm(flo_bf, 2,-1)
-                fberr_bw[~flo_targ_mask] = 0
-
-                ## vis
-                #thrd_vis = 0.01
-                #img_refr = F.interpolate(self.imgs[idx:idx+1], (h_rszd, w_rszd), mode='bilinear')[0]
-                #img_refr = img_refr.permute(1,2,0).cpu().numpy()[:,:,::-1]
-                #img_targ = F.interpolate(self.imgs[jdx:jdx+1], (h_rszd, w_rszd), mode='bilinear')[0]
-                #img_targ = img_targ.permute(1,2,0).cpu().numpy()[:,:,::-1]
-                #flo_refr[:,:,0] = (flo_refr[:,:,0] + 2)/2
-                #flo_targ[:,:,0] = (flo_targ[:,:,0] - 2)/2
-                #flo_refr[fberr_fw>thrd_vis]=0.
-                #flo_targ[fberr_bw>thrd_vis]=0.
-                #flo_refr[~flo_refr_mask]=0.
-                #flo_targ[~flo_targ_mask]=0.
-                #img = np.concatenate([img_refr, img_targ], 1)
-                #flo = np.concatenate([flo_refr, flo_targ], 1)
-                #imgflo = cat_imgflo(img, flo)
-                #imgcnf = np.concatenate([fberr_fw, fberr_bw],1)
-                #imgcnf = np.clip(imgcnf, 0, self.dp_thrd)*(255/self.dp_thrd)
-                #imgcnf = np.repeat(imgcnf[...,None],3,-1)
-                #imgcnf = cv2.resize(imgcnf, imgflo.shape[::-1][1:])
-                #imgflo_cnf = np.concatenate([imgflo, imgcnf],0)
-                #cv2.imwrite('tmp/img-%05d-%05d.jpg'%(idx,jdx), imgflo_cnf)
             self.dp_conf[self.dp_conf>self.dp_thrd] = self.dp_thrd
  
         ## TODO
@@ -668,7 +655,7 @@ class v2s_net(nn.Module):
         if self.opts.root_opt:
             frameid = self.frameid.long().to(device)
             if self.opts.cnn_root:
-                frame_code = self.dp_feats/10
+                frame_code = self.dp_feats
                 root_rts = self.nerf_root_rts(frame_code)
             else:
                 root_rts = self.nerf_root_rts(frameid)
@@ -797,7 +784,7 @@ class v2s_net(nn.Module):
             fdp_at_samp = []
             dcf_at_samp = []
             for i in range(bs):
-                # 1/4 resolution
+                # upsample to same resolution
                 dp_flow = F.interpolate(self.dp_flow[i][None], 
                              (opts.img_size,opts.img_size), mode='bilinear')[0]
                 dp_conf = F.interpolate(self.dp_conf[i][None,None], 

@@ -190,12 +190,16 @@ class BaseDataset(Dataset):
             dpn= readPFM(self.dplist[im1idx])[0]
             dp_feat = readPFM(self.featlist[im0idx])[0]
             dp_featn= readPFM(self.featlist[im1idx])[0]
+            dp_bbox =  np.loadtxt(self.bboxlist[im0idx])
+            dp_bboxn = np.loadtxt(self.bboxlist[im1idx])
         except:
             print('error loading densepose')
             dp = np.zeros_like(occ)
             dpn = np.zeros_like(occ)
             dp_feat =  np.zeros((16*112,112))
             dp_featn = np.zeros((16*112,112))
+            dp_bbox =  np.zeros((4))
+            dp_bboxn = np.zeros((4))
         dp= (dp *50).astype(np.int32)
         dpn=(dpn*50).astype(np.int32)
         dp_feat = dp_feat.reshape((16,112,112))
@@ -370,6 +374,7 @@ class BaseDataset(Dataset):
             'depth':        np.stack([depth, depthn]),
             'dp':           np.stack([dp, dpn]),
             'dp_feat':      np.stack([dp_feat, dp_featn]),
+            'dp_bbox':      np.stack([dp_bbox, dp_bboxn]),
             'vis2d':        vis2d,
             'cam':          np.stack([cam, camn]),
             'kp':           np.stack([kp, kpn]),

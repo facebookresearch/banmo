@@ -7,10 +7,10 @@ add_args=${*: 3:$#-1}
 prefix=$testdir/$seqname
 #prefix=/scratch/gengshany/Dropbox/output/$seqname
 
-#python extract.py --seqname $seqname \
-#                  --model_path $model_path \
-#                  --test_frames $test_frames \
-#                  $add_args
+python extract.py --seqname $seqname \
+                  --model_path $model_path \
+                  --test_frames $test_frames \
+                  $add_args
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-frz \
                      --seqname $seqname \

@@ -60,10 +60,16 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%imgdir))):
     msk_rszd = cv2.resize(msk,(w_rszd,h_rszd))
 
     # densepose
-    clst_verts, image_bgr1, embedding = run_cse(predictor_dp, embedder, 
+    clst_verts, image_bgr1, embedding, bbox = run_cse(predictor_dp, embedder, 
                                                     mesh_vertex_embeddings, 
                                                     img_rszd, msk_rszd, 
                                                     mesh_name='sheep_5004')
+    # resize to original size
+    bbox[0] *= w / clst_verts.shape[1]
+    bbox[2] *= w / clst_verts.shape[1]
+    bbox[1] *= h / clst_verts.shape[0]
+    bbox[3] *= h / clst_verts.shape[0]
+    np.savetxt( '%s/bbox-%05d.txt'%(dpdir,counter) , bbox)
     
     clst_verts = cv2.resize(clst_verts, (w,h), interpolation=cv2.INTER_NEAREST)
 
@@ -75,7 +81,7 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%imgdir))):
     #embedding  = cv2.resize(embedding,  (w,h))
     embedding = embedding.reshape((-1,embedding.shape[-1]))
     write_pfm(  '%s/feat-%05d.pfm'%(dpdir,counter), embedding)
-    
+
     # vis
     #v = Visualizer(img_rszd, coco_metadata, scale=1, instance_mode=ColorMode.IMAGE_BW)
     #outvis = visObj()

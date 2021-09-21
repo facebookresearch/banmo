@@ -559,28 +559,34 @@ class v2s_net(nn.Module):
             print('after transer vars to cuda:%.2f'%(time.time()-start_time))
 
         if self.opts.flow_dp:
-            # densepose to correspondence
-            # randomly choose 1 target image
-            order1 = np.asarray(range(2*bs))
+            # choose a forward-backward consistent pair
             is_degenerate_pair = len(set((self.frameid.numpy())))==2
-            while True:
-                rand_dentrg = np.random.randint(0,2*bs,2*bs)
-                if is_degenerate_pair or \
-                ((self.frameid[rand_dentrg]-self.frameid[order1])==0).sum()==0:
-                    break
-            self.rand_dentrg = rand_dentrg
+            if is_degenerate_pair:
+                rand_dentrg = np.asarray(range(2*bs))
+                rand_dentrg = rand_dentrg.reshape((2,-1)).flip(0).flatten()
+            else:
+                rand_dentrg = -1 * np.ones(2*bs)
+                for idx in range(2*bs):
+                    if rand_dentrg[idx] > -1: continue # already assigned
+                    while True:
+                        tidx = np.random.randint(0,2*bs)
+                        if idx!=tidx and rand_dentrg[tidx]==-1: break
+                    rand_dentrg[idx]  = tidx
+                    rand_dentrg[tidx] = idx
+            self.rand_dentrg = rand_dentrg.astype(int)
 
-            # densepose geodesic
-            # downsample
+            # densepose to correspondence
             geodesic=True
             #geodesic=False
             if geodesic: 
+                # densepose geodesic
+                # downsample
                 h_rszd,w_rszd=h//4,w//4
                 dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), 
                                         mode='nearest')[:,0]
                 dps = dps.long()
             else:
-                h_rszd,w_rszd = h,w
+                h_rszd,w_rszd = 112,112
                 # densepose-cropped to dataloader cropped transformation
                 cropa2im = torch.cat([(self.dp_bbox[:,2:] - self.dp_bbox[:,:2]) / 112., 
                                       self.dp_bbox[:,:2]],-1)
@@ -589,34 +595,38 @@ class v2s_net(nn.Module):
                 cropa2b = im2cropb.matmul(cropa2im)
             
             hw_rszd = h_rszd*w_rszd
-            self.dp_flow = torch.zeros(2*bs,2,h_rszd,w_rszd).to(device)
+            self.dp_flow   = torch.zeros(2*bs,2,h_rszd,w_rszd).to(device)
             self.dp_conf = torch.zeros(2*bs,h_rszd,w_rszd).to(device)
+
+            if opts.debug:
+                torch.cuda.synchronize()
+                start_time = time.time()
 
             for idx in range(2*bs):
                 jdx = self.rand_dentrg[idx]
-
-                if opts.debug:
-                    torch.cuda.synchronize()
-                    start_time = time.time()
-
+                if self.dp_flow[idx].abs().sum()!=0: continue # already computed 
                 if geodesic:
                     flo_refr = compute_flow_geodist(dps[idx], dps[jdx], 
                                                     self.geodists)
                     flo_targ = compute_flow_geodist(dps[jdx], dps[idx], 
                                                     self.geodists)
                 else:
-                    flo_refr = compute_flow_cse(self.dp_feats[idx],
+                    flo_refr, flo_targ = compute_flow_cse(self.dp_feats[idx],
                                                 self.dp_feats[jdx],
                                                 cropa2b[idx], cropa2b[jdx], 
                                                 opts.img_size)
-                    flo_targ = compute_flow_cse(self.dp_feats[jdx],
-                                                self.dp_feats[idx],
-                                                cropa2b[jdx], cropa2b[idx], 
-                                                opts.img_size)
-                
+                self.dp_flow[idx] = flo_refr
+                self.dp_flow[jdx] = flo_targ
+            if opts.debug:
+                torch.cuda.synchronize()
+                print('compute dp flow:%.2f'%(time.time()-start_time))
 
+            for idx in range(2*bs):
+                jdx = self.rand_dentrg[idx]
                 img_refr = self.imgs[idx:idx+1]
                 img_targ = self.imgs[jdx:jdx+1]
+                flo_refr = self.dp_flow[idx]
+                flo_targ = self.dp_flow[jdx]
                 if opts.vis_dpflow:
                     save_path = 'tmp/img-%05d-%05d.jpg'%(idx,jdx)
                 else: save_path = None
@@ -624,13 +634,7 @@ class v2s_net(nn.Module):
                                                    img_refr, img_targ, 
                                                     self.dp_thrd,
                                                     save_path = save_path)
-                
-                if opts.debug:
-                    torch.cuda.synchronize()
-                    print('compute dp flow:%.2f'%(time.time()-start_time))
-                
 
-                self.dp_flow[idx] = flo_refr
                 self.dp_conf[idx] = torch.Tensor(fberr_fw)
             self.dp_conf[self.dp_conf>self.dp_thrd] = self.dp_thrd
  

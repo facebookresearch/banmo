@@ -188,14 +188,17 @@ class BaseDataset(Dataset):
         try:
             dp = readPFM(self.dplist[im0idx])[0]
             dpn= readPFM(self.dplist[im1idx])[0]
+        except:
+            print('error loading densepose surface')
+            dp = np.zeros_like(occ)
+            dpn = np.zeros_like(occ)
+        try:
             dp_feat = readPFM(self.featlist[im0idx])[0]
             dp_featn= readPFM(self.featlist[im1idx])[0]
             dp_bbox =  np.loadtxt(self.bboxlist[im0idx])
             dp_bboxn = np.loadtxt(self.bboxlist[im1idx])
         except:
-            print('error loading densepose')
-            dp = np.zeros_like(occ)
-            dpn = np.zeros_like(occ)
+            print('error loading densepose feature')
             dp_feat =  np.zeros((16*112,112))
             dp_featn = np.zeros((16*112,112))
             dp_bbox =  np.zeros((4))
@@ -354,6 +357,7 @@ class BaseDataset(Dataset):
             rtkn = np.loadtxt(rtkn_path)
         except:
             print('warning: loading empty camera')
+            print(rtk_path)
             rtk = np.zeros((4,4))
             rtk[:3,:3] = np.eye(3)
             rtk[:3, 3] = np.asarray([0,0,10])

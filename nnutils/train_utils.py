@@ -104,6 +104,7 @@ class v2s_trainer(Trainer):
         opts_dict['img_size'] = opts.img_size
         opts_dict['ngpu'] = opts.ngpu
         opts_dict['local_rank'] = opts.local_rank
+        opts_dict['rtk_path'] = opts.rtk_path
         self.dataloader = frameloader.data_loader(opts_dict)
         self.evalloader = frameloader.eval_loader(opts_dict)
 
@@ -363,7 +364,6 @@ class v2s_trainer(Trainer):
         dataset_size = len(self.dataloader)
         torch.manual_seed(8)  # do it again
         torch.cuda.manual_seed(1)
-        self.save_network('0')
 
         # disable bones before warmup epochs are finished
         if opts.lbs: 
@@ -381,6 +381,7 @@ class v2s_trainer(Trainer):
             
             # evaluation
             rendered_seq, aux_seq = self.eval()                
+            if epoch==0: self.save_network('0') # to save some cameras
             if opts.local_rank==0:
                 for k,v in rendered_seq.items():
                     grid_img = image_grid(rendered_seq[k],3,3)

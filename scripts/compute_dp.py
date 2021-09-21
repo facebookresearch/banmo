@@ -60,7 +60,8 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%imgdir))):
     msk_rszd = cv2.resize(msk,(w_rszd,h_rszd))
 
     # densepose
-    clst_verts, image_bgr1, embedding, bbox = run_cse(predictor_dp, embedder, 
+    clst_verts, image_bgr1, embedding, embedding_norm, bbox = run_cse(
+                                                    predictor_dp, embedder, 
                                                     mesh_vertex_embeddings, 
                                                     img_rszd, msk_rszd, 
                                                     mesh_name='sheep_5004')
@@ -77,8 +78,8 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%imgdir))):
     clst_verts = (clst_verts/50.).astype(np.float32)
     write_pfm(  '%s/%05d.pfm'%(dpdir,counter), clst_verts)
 
-    #embedding = np.transpose(embedding, [1,2,0])
-    #embedding  = cv2.resize(embedding,  (w,h))
+    embedding_norm  = cv2.resize(embedding_norm,  (w,h))
+    write_pfm(  '%s/norm-%05d.pfm'%(dpdir,counter), embedding_norm)
     embedding = embedding.reshape((-1,embedding.shape[-1]))
     write_pfm(  '%s/feat-%05d.pfm'%(dpdir,counter), embedding)
 

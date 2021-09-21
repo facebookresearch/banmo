@@ -47,7 +47,7 @@ def main():
     var = np.load(varlist[-1],allow_pickle=True)[()]
     first_valid_idx = np.linalg.norm(var['rtk'][:,:3,3], 2,-1)>0
     first_valid_idx = np.argmax(first_valid_idx)
-    varlist = varlist[1:]
+    #varlist = varlist[1:]
     size = len(varlist)
 
     mesh_cams = []

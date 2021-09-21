@@ -55,16 +55,20 @@ near=[]
 far=[]
 tvecs=[]
 rvecs=[]
-for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
+norm_th = 15
+#TODO a dirty workaround to remove feat-*.pfm
+for idx, dp_path in enumerate(glob.glob('%s/0*.pfm'%dp_dir)): 
     # read dp 
     dp = readPFM(dp_path)[0]
     h,w = dp.shape
+    norm_path = '%s/norm-%05d.pfm'%(dp_path.rsplit('/',1)[-2],idx)
+    dp_norm = readPFM(norm_path)[0]
     img_path = '%s/vis-%05d.jpg'%(dp_path.rsplit('/',1)[-2],idx)
     im = cv2.imread(img_path)
     im = cv2.resize(im, (w,h))
 
     dp= (dp *50).astype(np.int32)
-    dpmask = dp>0
+    dpmask = np.logical_and(dp>0, dp_norm>norm_th) # use norm as uncertainty
     x0,y0  =np.meshgrid(range(w),range(h))
     p2d = np.concatenate([x0[...,None], y0[...,None]],-1).astype(np.float32)
     
@@ -97,7 +101,7 @@ for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
 #tmed=np.median(tvecs,0)
 #tvecs[:]=tmed
 
-for idx, dp_path in enumerate(glob.glob('%s/*.pfm'%dp_dir)):
+for idx, dp_path in enumerate(glob.glob('%s/0*.pfm'%dp_dir)):
     rvec=rvecs[idx]
     tvec=tvecs[idx]
     im=ims[idx]

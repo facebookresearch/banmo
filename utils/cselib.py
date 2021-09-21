@@ -111,12 +111,17 @@ def run_cse(model, embedder, mesh_vertex_embeddings, image, mask, mesh_name='smp
     # output embedding
     embedding = embedding_resized # size does not matter for a image code
     embedding = embedding * mask_box.float()[None]
-    #embedding_pad = torch.zeros(16,h_rszd, w_rszd).cuda()
-    #embedding_box = F.interpolate(embedding_resized[None], (yy-y,xx-x),mode='bilinear')[0]
-    #embedding_pad[:,y:yy,x:xx] = embedding_box
-    #embedding = embedding_pad[:h_rszd, :w_rszd]
-    #embedding = F.interpolate(embedding[None], (h,w),mode='bilinear')[0]
+    
+    # embedding norm
+    embedding_norm = embedding.norm(2,0)
+    embedding_norm_pad = torch.zeros(h_rszd, w_rszd).cuda()
+    embedding_norm_box = F.interpolate(embedding_norm[None,None], (yy-y,xx-x),mode='bilinear')[0,0]
+    embedding_norm_pad[y:yy,x:xx] = embedding_norm_box
+    embedding_norm = embedding_norm_pad[:h_rszd, :w_rszd]
+    embedding_norm = F.interpolate(embedding_norm[None,None], (h,w),mode='bilinear')[0][0]
+    
     embedding = embedding.cpu().numpy()
+    embedding_norm = embedding_norm.cpu().numpy()
 
     # visualization
     embed_map = get_xyz_vertex_embedding(mesh_name, 'cuda')
@@ -131,4 +136,4 @@ def run_cse(model, embedder, mesh_vertex_embeddings, image, mask, mesh_name='smp
     clst_verts =clst_verts_pad[:h_rszd, :w_rszd]
     clst_verts = F.interpolate(clst_verts[None,None].float(), (h,w),mode='nearest')[0,0].long()
     clst_verts =clst_verts.cpu().numpy()
-    return clst_verts, image_bgr, embedding, bbox
+    return clst_verts, image_bgr, embedding, embedding_norm, bbox

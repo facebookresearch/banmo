@@ -716,44 +716,47 @@ def rot_angle(mat):
     angle = torch.acos(cos)
     return angle
 
-def match2coords(match, w_rszd, h_rszd, device):
+def match2coords(match, w_rszd):
     tar_coord = torch.cat([match[:,None]%w_rszd, match[:,None]//w_rszd],-1)
     tar_coord = tar_coord.float()
-    ref_coord = torch.Tensor(np.meshgrid(range(w_rszd), range(h_rszd)))
-    ref_coord = ref_coord.to(device).permute(1,2,0).view(-1,2)
-    return ref_coord, tar_coord
+    return tar_coord
+    
+def match2flo(match, w_rszd, img_size, warp_r, warp_t, device):
+    ref_coord = sample_xy(w_rszd, 1, 0, device, return_all=True)[0].view(-1,2)
+    ref_coord = ref_coord.matmul(warp_r[:2,:2]) + warp_r[None,:2,2]
+    tar_coord = match2coords(match, w_rszd)
+    tar_coord = tar_coord.matmul(warp_t[:2,:2]) + warp_t[None,:2,2]
 
-def compute_flow_cse(cse_refr,cse_targ, warp_refr, warp_targ, img_size):
+    flo_dp = (tar_coord - ref_coord) / img_size * 2 # [-2,2]
+    flo_dp = flo_dp.view(w_rszd, w_rszd, 2)
+    flo_dp = flo_dp.permute(2,0,1)
+
+    xygrid = sample_xy(w_rszd, 1, 0, device, return_all=True)[0] # scale to img_size
+    xygrid = xygrid * float(img_size/w_rszd)
+    warp_r_inv = Kmatinv(warp_r)
+    xygrid = xygrid.matmul(warp_r_inv[:2,:2]) + warp_r_inv[None,:2,2]
+    xygrid = xygrid / w_rszd * 2 - 1 
+    flo_dp = F.grid_sample(flo_dp[None], xygrid.view(1,w_rszd,w_rszd,2))[0]
+    return flo_dp
+
+def compute_flow_cse(cse_a,cse_b, warp_a, warp_b, img_size):
     """
     compute the flow between two frames under cse feature matching
+    assuming two feature images have the same dimension (also rectangular)
     cse:        16,h,w, feature image
     flo_dp:     2,h,w
     """
-    torch.cuda.synchronize()
-    start_time = time.time()
-    _,h_rszd,w_rszd = cse_refr.shape
-    hw_rszd = h_rszd*w_rszd
-    device = cse_refr.device
+    _,_,w_rszd = cse_a.shape
+    hw_rszd = w_rszd*w_rszd
+    device = cse_a.device
 
-    cost = (cse_targ[:,None,None] * cse_refr[...,None,None]).sum(0)
-    _,match = cost.view(hw_rszd, hw_rszd).max(1)
-    torch.cuda.synchronize()
-    print('compute dp match:%.2f'%(time.time()-start_time))
+    cost = (cse_b[:,None,None] * cse_a[...,None,None]).sum(0)
+    _,match_a = cost.view(hw_rszd, hw_rszd).max(1)
+    _,match_b = cost.view(hw_rszd, hw_rszd).max(0)
 
-    ref_coord, tar_coord = match2coords(match, w_rszd, h_rszd, device)
-    ref_coord = ref_coord.matmul(warp_refr[:2,:2]) + warp_refr[None,:2,2]
-    tar_coord = tar_coord.matmul(warp_targ[:2,:2]) + warp_targ[None,:2,2]
-
-    flo_dp = (tar_coord - ref_coord) / img_size * 2 # [-2,2]
-    flo_dp = flo_dp.view(h_rszd, w_rszd, 2)
-    flo_dp = flo_dp.permute(2,0,1)
-
-    xygrid = sample_xy(img_size, 1, 0, device, return_all=True)[0]
-    warp_refr_inv = Kmatinv(warp_refr)
-    xygrid = xygrid.matmul(warp_refr_inv[:2,:2]) + warp_refr_inv[None,:2,2]
-    xygrid = xygrid / 112 * 2 - 1 
-    flo_dp = F.grid_sample(flo_dp[None], xygrid.view(1,img_size,img_size,2))[0]
-    return flo_dp
+    flo_a = match2flo(match_a, w_rszd, img_size, warp_a, warp_b, device)
+    flo_b = match2flo(match_b, w_rszd, img_size, warp_b, warp_a, device)
+    return flo_a, flo_b
 
 def compute_flow_geodist(dp_refr,dp_targ, geodists):
     """
@@ -773,7 +776,8 @@ def compute_flow_geodist(dp_refr,dp_targ, geodists):
     #match[dis_geo>0.1] = 0
 
     # cx,cy
-    ref_coord, tar_coord = match2coords(match, w_rszd, h_rszd, device)
+    tar_coord = match2coords(match, w_rszd)
+    ref_coord = sample_xy(w_rszd, 1, 0, device, return_all=True)[0].view(-1,2)
     ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
     tar_coord = tar_coord.view(h_rszd, w_rszd, 2)
     flo_dp = (tar_coord - ref_coord) / w_rszd * 2 # [-2,2]
@@ -796,7 +800,7 @@ def fb_flow_check(flo_refr, flo_targ, img_refr, img_targ, dp_thrd,
     # clean up flow
     flo_refr = flo_refr.permute(1,2,0).cpu().numpy()
     flo_targ = flo_targ.permute(1,2,0).cpu().numpy()
-    flo_refr_mask = np.linalg.norm(flo_refr,2,-1)>0
+    flo_refr_mask = np.linalg.norm(flo_refr,2,-1)>0 # this also removes 0 flows
     flo_targ_mask = np.linalg.norm(flo_targ,2,-1)>0
     flo_refr_px = flo_refr * w_rszd / 2
     flo_targ_px = flo_targ * w_rszd / 2

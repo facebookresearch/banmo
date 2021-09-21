@@ -21,8 +21,10 @@ def draw_cams(all_cam):
     """
     # scale: the scene bound
     all_cam = np.asarray(all_cam)
-    max_trans = np.median(np.linalg.norm(all_cam[:,:3,3],2,-1))
-    scale=max_trans
+    trans_norm = np.linalg.norm(all_cam[:,:3,3],2,-1)
+    valid_cams = trans_norm>0
+    trans_max = np.median(trans_norm[valid_cams])
+    scale=trans_max
     traj_len = len(all_cam)
     elips_list = [] 
     for j in range(traj_len):
@@ -113,7 +115,9 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
     can_frame =attrs['can_frame']
     init_frame=attrs['init_frame']
     end_frame= attrs['end_frame']
-    rtk_path= attrs['rtk_path']
+    rtk_path=opts['rtk_path']
+    if rtk_path =='':
+        rtk_path= attrs['rtk_path']
     numvid =  len(config.sections())-1
     if numvid==1 and not config.has_option(name, 'datapath'): 
         datapath='%s/%s'%(datapath, opts['seqname'])

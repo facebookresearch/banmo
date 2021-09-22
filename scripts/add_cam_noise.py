@@ -9,7 +9,11 @@ cam_dir=sys.argv[1]
 seqname=cam_dir.split('/')[-2]
 std=0.5
 
-for idx,path in enumerate(glob.glob('%s/*.txt'%(cam_dir))):
+camlist = glob.glob('%s/*.txt'%(cam_dir))
+camlist = [i for i in camlist if 'gauss' not in i]
+camlist = sorted(camlist)
+
+for idx,path in enumerate(camlist):
     rtk = np.loadtxt(path)
     rtk_mod = rtk.copy()
     # random rot
@@ -17,6 +21,6 @@ for idx,path in enumerate(glob.glob('%s/*.txt'%(cam_dir))):
     rot_rand = cv2.Rodrigues(rot_rand)[0]
     rtk_mod[:3,:3] = rot_rand.dot(rtk_mod[:3,:3])
 
-    path_mod = '%s/gauss-%05d.txt'%(cam_dir.rsplit('/',1)[-2],idx)
+    path_mod = '%s/gauss-%f-%05d.txt'%(cam_dir.rsplit('/',1)[-2],std,idx)
     np.savetxt(path_mod, rtk_mod)
     print(rtk)

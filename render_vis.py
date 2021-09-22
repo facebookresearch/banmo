@@ -85,6 +85,7 @@ def main():
     opts_dict = {}
     opts_dict['seqname'] = args.seqname
     opts_dict['img_size'] = 512 # dummy value
+    opts_dict['rtk_path'] = ''
     evalloader = frameloader.eval_loader(opts_dict)
     data_info = extract_data_info(evalloader)
     idx_render = str_to_frame(args.test_frames, data_info)

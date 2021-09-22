@@ -182,7 +182,7 @@ class v2s_trainer(Trainer):
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
         if opts.explicit_root:
-            lr_nerf_root_rts = 100
+            lr_nerf_root_rts = 10
         elif opts.cnn_root:
             lr_nerf_root_rts = 0.2
         else:

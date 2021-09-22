@@ -76,6 +76,7 @@ class v2s_trainer(Trainer):
         img_size = (opts.img_size, opts.img_size)
         self.device = torch.device('cuda:{}'.format(opts.local_rank))
         self.model = mesh_net.v2s_net(img_size, opts, data_info)
+        self.model.forward = self.model.forward_default
 
         if opts.model_path!='':
             self.load_network(opts.model_path)
@@ -359,14 +360,20 @@ class v2s_trainer(Trainer):
                     suffix_id = self.model.epoch
                 mesh_cam.export('%s/mesh_cam-%02d.obj'%(self.save_dir,suffix_id))
 
+        # save canonical mesh
+        mesh_rest = aux_seq['mesh'][0]
+        self.model.latest_vars['mesh_rest'] = mesh_rest
+        mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
+        mesh_rest.export(mesh_file)
+
         return rendered_seq, aux_seq
 
     def train(self):
         opts = self.opts
         if opts.local_rank==0:
             log = SummaryWriter('%s/%s'%(opts.checkpoint_dir,opts.logname), comment=opts.logname)
+        else: log=None
         self.model.module.total_steps = 0
-        dataset_size = len(self.dataloader)
         torch.manual_seed(8)  # do it again
         torch.cuda.manual_seed(1)
 
@@ -375,9 +382,11 @@ class v2s_trainer(Trainer):
             self.model.num_bone_used = 0
             del self.model.nerf_models['bones']
 
+        #TODO add CNN pose warmup
+        self.warmup_pose(log)
+
         # start training
         for epoch in range(0, opts.num_epochs):
-            epoch_iter = 0
             self.model.epoch = epoch
             self.model.ep_iters = len(self.dataloader)
 
@@ -387,188 +396,218 @@ class v2s_trainer(Trainer):
             # evaluation
             rendered_seq, aux_seq = self.eval()                
             if epoch==0: self.save_network('0') # to save some cameras
-            if opts.local_rank==0:
-                for k,v in rendered_seq.items():
-                    grid_img = image_grid(rendered_seq[k],3,3)
-                    if k=='depth_coarse':scale=True
-                    else: scale=False
-                    self.add_image(log, k, grid_img, epoch, scale=scale)
+            if opts.local_rank==0: self.add_image_grid(rendered_seq, log, epoch)
 
-            mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
-            mesh_rest = aux_seq['mesh'][0]
-            self.model.latest_vars['mesh_rest'] = mesh_rest
-            mesh_rest.export(mesh_file)
+            self.reset_hparams(epoch)
 
-            # reset object bound, only for visualization
-            if epoch>int(opts.num_epochs/2):
-                self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
-
-            
-            # reinit bones based on extracted surface
-            if opts.lbs and (epoch==opts.lbs_all_epochs or\
-                             epoch==opts.lbs_reinit_epochs):
-                reinit_bones(self.model, mesh_rest, opts.num_bones)
-                self.init_training() # add new params to optimizer
-
-            # change near-far plane after half epochs
-            if epoch==int(opts.num_epochs/2):
-                self.model.near_far.data = get_near_far(mesh_rest.vertices,
-                                             self.model.near_far.data,
-                                             self.model.latest_vars)
-
-            # broadcast variables to other models
-            dist.barrier()
-            dist.broadcast_object_list(
-                    [self.model.num_bones, 
-                    self.model.num_bone_used,],
-                    0)
-            dist.broadcast(self.model.bones,0)
-            self.model.nerf_models['bones'] = self.model.bones
-            dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].weight, 0)
-            dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].bias, 0)
-
-            dist.broadcast(self.model.near_far,0)
-
-            # training loop
-            self.model.train()
-            for i, batch in enumerate(self.dataloader):
-                self.model.iters=i
-                # whether to update pose (with flo)
-                # 0: update all,  flo
-                # 1: freeze pose, flo/sil/rgb
-                # 2: update all,  flo/sil/rgb
-                if not opts.root_opt or \
-         self.model.module.total_steps > (opts.warmup_init_steps + opts.warmup_steps):
-                    self.model.module.pose_update = 2
-                elif self.model.module.total_steps < opts.warmup_init_steps or \
-                        i%2 == 0:
-                    self.model.module.pose_update = 0
-                else:
-                    self.model.module.pose_update = 1
-
-                if self.opts.debug:
-                    if 'start_time' in locals().keys():
-                        torch.cuda.synchronize()
-                        print('load time:%.2f'%(time.time()-start_time))
-
-                self.optimizer.zero_grad()
-                total_loss,aux_out = self.model(batch)
-
-                if self.opts.debug:
-                    if 'start_time' in locals().keys():
-                        torch.cuda.synchronize()
-                        print('forward time:%.2f'%(time.time()-start_time))
-
-                total_loss.mean().backward()
-                
-                if self.opts.debug:
-                    if 'start_time' in locals().keys():
-                        torch.cuda.synchronize()
-                        print('forward back time:%.2f'%(time.time()-start_time))
-
-                ## gradient clipping
-                grad_nerf_coarse=[]
-                grad_nerf_beta=[]
-                grad_nerf_fine=[]
-                grad_nerf_flowbw=[]
-                grad_nerf_skin=[]
-                grad_nerf_vis=[]
-                grad_nerf_root_rts=[]
-                grad_nerf_bone_rts=[]
-                grad_embed=[]
-                grad_env_code=[]
-                grad_bones=[]
-                grad_ks=[]
-                grad_nerf_dp=[]
-                grad_sim3_j2c=[]
-                grad_dp_verts=[]
-                for name,p in self.model.named_parameters():
-                    try: 
-                        pgrad_nan = p.grad.isnan()
-                        if pgrad_nan.sum()>0: 
-                            print(name)
-                            pdb.set_trace()
-                    except: pass
-                    if 'nerf_coarse' in name and 'beta' not in name:
-                        grad_nerf_coarse.append(p)
-                    if 'nerf_coarse' in name and 'beta' in name:
-                        grad_nerf_beta.append(p)
-                    elif 'nerf_fine' in name:
-                        grad_nerf_fine.append(p)
-                    elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
-                        grad_nerf_flowbw.append(p)
-                    elif 'nerf_skin' in name:
-                        grad_nerf_skin.append(p)
-                    elif 'nerf_vis' in name:
-                        grad_nerf_vis.append(p)
-                    elif 'nerf_root_rts' in name:
-                        grad_nerf_root_rts.append(p)
-                    elif 'nerf_bone_rts' in name:
-                        grad_nerf_bone_rts.append(p)
-                    elif 'embedding_time' in name or 'rest_pose_code' in name:
-                        grad_embed.append(p)
-                    elif 'env_code' in name:
-                        grad_env_code.append(p)
-                    elif 'bones' == name:
-                        grad_bones.append(p)
-                    elif 'ks' == name:
-                        grad_ks.append(p)
-                    elif 'nerf_dp' in name:
-                        grad_nerf_dp.append(p)
-                    elif 'sim3_j2c' == name:
-                        grad_sim3_j2c.append(p)
-                    elif 'dp_verts' == name:
-                        grad_dp_verts.append(p)
-                    else: continue
-            
-                # freeze root pose when adding in sil/rgb loss 
-                if self.model.module.pose_update == 1:
-                    self.zero_grad_list(grad_embed)
-                    self.zero_grad_list(grad_nerf_root_rts)
-                    self.zero_grad_list(grad_nerf_bone_rts)
-
-                aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,  .1)
-                aux_out['nerf_beta_g']   = clip_grad_norm_(grad_nerf_beta,  .1)
-                aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,    .1)
-                aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,  .1)
-                aux_out['nerf_skin_g']   = clip_grad_norm_(grad_nerf_skin,  .1)
-                aux_out['nerf_vis_g']   = clip_grad_norm_(grad_nerf_vis,  .1)
-                aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts,.1)
-                aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts,.1)
-                aux_out['embedding_time_g']= clip_grad_norm_(grad_embed,        .1)
-                aux_out['env_code_g']= clip_grad_norm_(grad_env_code,        .1)
-                aux_out['bones_g']         = clip_grad_norm_(grad_bones,        .1)
-                aux_out['ks_g']            = clip_grad_norm_(grad_ks,           .1)
-                aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,      .1)
-                aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,     .1)
-                aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,     .1)
-
-                self.optimizer.step()
-                self.scheduler.step()
-
-                #for param_group in self.optimizer.param_groups:
-                #    print(param_group['lr'])
-
-                self.model.module.total_steps += 1
-                epoch_iter += 1
-
-                if opts.local_rank==0: 
-                    self.save_logs(log, aux_out, self.model.module.total_steps, 
-                            epoch)
-                
-                if self.opts.debug:
-                    if 'start_time' in locals().keys():
-                        torch.cuda.synchronize()
-                        print('total step time:%.2f'%(time.time()-start_time))
-                    torch.cuda.synchronize()
-                    start_time = time.time()
+            self.train_one_epoch(epoch, log)
 
             if (epoch+1) % opts.save_epoch_freq == 0:
                 print('saving the model at the end of epoch {:d}, iters {:d}'.\
                                   format(epoch, self.model.module.total_steps))
                 self.save_network('latest')
                 self.save_network(str(epoch+1))
+
+    def warmup_pose(self, log):
+        # start training
+        opts = self.opts
+        self.model.module.forward = self.model.module.forward_warmup
+        for epoch in range(0, opts.warmup_pose_ep):
+            self.model.epoch = epoch
+            self.model.ep_iters = len(self.dataloader)
+
+            self.train_one_epoch(epoch, log)
+        self.model.module.forward = self.model.module.forward_default
+            
+    def train_one_epoch(self, epoch, log):
+        """
+        training loop in a epoch
+        """
+        opts = self.opts
+        self.model.train()
+        for i, batch in enumerate(self.dataloader):
+            self.model.iters=i
+            self.update_pose_indicator(i)
+
+            if opts.debug:
+                if 'start_time' in locals().keys():
+                    torch.cuda.synchronize()
+                    print('load time:%.2f'%(time.time()-start_time))
+
+            self.optimizer.zero_grad()
+            total_loss,aux_out = self.model(batch)
+
+            if opts.debug:
+                if 'start_time' in locals().keys():
+                    torch.cuda.synchronize()
+                    print('forward time:%.2f'%(time.time()-start_time))
+
+            total_loss.mean().backward()
+            
+            if opts.debug:
+                if 'start_time' in locals().keys():
+                    torch.cuda.synchronize()
+                    print('forward back time:%.2f'%(time.time()-start_time))
+
+            self.clip_grad(aux_out)
+            self.optimizer.step()
+            self.scheduler.step()
+
+            #for param_group in self.optimizer.param_groups:
+            #    print(param_group['lr'])
+
+            self.model.module.total_steps += 1
+
+            if opts.local_rank==0: 
+                self.save_logs(log, aux_out, self.model.module.total_steps, 
+                        epoch)
+            
+            if opts.debug:
+                if 'start_time' in locals().keys():
+                    torch.cuda.synchronize()
+                    print('total step time:%.2f'%(time.time()-start_time))
+                torch.cuda.synchronize()
+                start_time = time.time()
+
+    def update_pose_indicator(self, i):
+        """
+        whether to update pose (with flo)
+        0: update all,  flo
+        1: freeze pose, flo/sil/rgb
+        2: update all,  flo/sil/rgb
+        """
+        opts = self.opts
+        if not opts.root_opt or \
+        self.model.module.total_steps > (opts.warmup_init_steps + opts.warmup_steps):
+            self.model.module.pose_update = 2
+        elif self.model.module.total_steps < opts.warmup_init_steps or \
+                i%2 == 0:
+            self.model.module.pose_update = 0
+        else:
+                self.model.module.pose_update = 1
+
+    def reset_hparams(self, epoch):
+        """
+        reset hyper-parameters based on current geometry / cameras
+        """
+        opts = self.opts
+        mesh_rest = self.model.latest_vars['mesh_rest']
+
+        # reset object bound, only for visualization
+        if epoch>int(opts.num_epochs/2):
+            self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
+        
+        # reinit bones based on extracted surface
+        if opts.lbs and (epoch==opts.lbs_all_epochs or\
+                         epoch==opts.lbs_reinit_epochs):
+            reinit_bones(self.model, mesh_rest, opts.num_bones)
+            self.init_training() # add new params to optimizer
+
+        # change near-far plane after half epochs
+        if epoch==int(opts.num_epochs/2):
+            self.model.near_far.data = get_near_far(mesh_rest.vertices,
+                                         self.model.near_far.data,
+                                         self.model.latest_vars)
+
+        self.broadcast()
+
+
+    def broadcast(self):
+        """
+        broadcast variables to other models
+        """
+        dist.barrier()
+        dist.broadcast_object_list(
+                [self.model.num_bones, 
+                self.model.num_bone_used,],
+                0)
+        dist.broadcast(self.model.bones,0)
+        self.model.nerf_models['bones'] = self.model.bones
+        dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].weight, 0)
+        dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].bias, 0)
+
+        dist.broadcast(self.model.near_far,0)
    
+    def clip_grad(self, aux_out):
+        """
+        gradient clipping
+        """
+        grad_nerf_coarse=[]
+        grad_nerf_beta=[]
+        grad_nerf_fine=[]
+        grad_nerf_flowbw=[]
+        grad_nerf_skin=[]
+        grad_nerf_vis=[]
+        grad_nerf_root_rts=[]
+        grad_nerf_bone_rts=[]
+        grad_embed=[]
+        grad_env_code=[]
+        grad_bones=[]
+        grad_ks=[]
+        grad_nerf_dp=[]
+        grad_sim3_j2c=[]
+        grad_dp_verts=[]
+        for name,p in self.model.named_parameters():
+            try: 
+                pgrad_nan = p.grad.isnan()
+                if pgrad_nan.sum()>0: 
+                    print(name)
+                    pdb.set_trace()
+            except: pass
+            if 'nerf_coarse' in name and 'beta' not in name:
+                grad_nerf_coarse.append(p)
+            if 'nerf_coarse' in name and 'beta' in name:
+                grad_nerf_beta.append(p)
+            elif 'nerf_fine' in name:
+                grad_nerf_fine.append(p)
+            elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
+                grad_nerf_flowbw.append(p)
+            elif 'nerf_skin' in name:
+                grad_nerf_skin.append(p)
+            elif 'nerf_vis' in name:
+                grad_nerf_vis.append(p)
+            elif 'nerf_root_rts' in name:
+                grad_nerf_root_rts.append(p)
+            elif 'nerf_bone_rts' in name:
+                grad_nerf_bone_rts.append(p)
+            elif 'embedding_time' in name or 'rest_pose_code' in name:
+                grad_embed.append(p)
+            elif 'env_code' in name:
+                grad_env_code.append(p)
+            elif 'bones' == name:
+                grad_bones.append(p)
+            elif 'ks' == name:
+                grad_ks.append(p)
+            elif 'nerf_dp' in name:
+                grad_nerf_dp.append(p)
+            elif 'sim3_j2c' == name:
+                grad_sim3_j2c.append(p)
+            elif 'dp_verts' == name:
+                grad_dp_verts.append(p)
+            else: continue
+        
+        # freeze root pose when adding in sil/rgb loss 
+        if self.model.module.pose_update == 1:
+            self.zero_grad_list(grad_embed)
+            self.zero_grad_list(grad_nerf_root_rts)
+            self.zero_grad_list(grad_nerf_bone_rts)
+
+        aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,  .1)
+        aux_out['nerf_beta_g']   = clip_grad_norm_(grad_nerf_beta,  .1)
+        aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,    .1)
+        aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,  .1)
+        aux_out['nerf_skin_g']   = clip_grad_norm_(grad_nerf_skin,  .1)
+        aux_out['nerf_vis_g']   = clip_grad_norm_(grad_nerf_vis,  .1)
+        aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts,.1)
+        aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts,.1)
+        aux_out['embedding_time_g']= clip_grad_norm_(grad_embed,        .1)
+        aux_out['env_code_g']= clip_grad_norm_(grad_env_code,        .1)
+        aux_out['bones_g']         = clip_grad_norm_(grad_bones,        .1)
+        aux_out['ks_g']            = clip_grad_norm_(grad_ks,           .1)
+        aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,      .1)
+        aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,     .1)
+        aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,     .1)
+
     @staticmethod 
     def render_vid(model, batch):
         opts=model.opts
@@ -678,7 +717,14 @@ class v2s_trainer(Trainer):
     def save_logs(self, log, aux_output, total_steps, epoch):
         for k,v in aux_output.items():
             self.add_scalar(log, k, aux_output,total_steps)
-            
+        
+    def add_image_grid(self, rendered_seq, log, epoch):
+        for k,v in rendered_seq.items():
+            grid_img = image_grid(rendered_seq[k],3,3)
+            if k=='depth_coarse':scale=True
+            else: scale=False
+            self.add_image(log, k, grid_img, epoch, scale=scale)
+
     def add_image(self, log,tag,timg,step,scale=True):
         """
         timg, h,w,x

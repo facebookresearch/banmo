@@ -107,15 +107,11 @@ class BaseDataset(Dataset):
         #ss = time.time()
         im0idx = self.baselist[index]
         im1idx = im0idx + self.dframe if self.directlist[index]==1 else im0idx-self.dframe
-        #if im0idx==0:pdb.set_trace()
         img_path = self.imglist[im0idx]
-        #img = imread(img_path) / 255.0
         img = cv2.imread(img_path)[:,:,::-1] / 255.0
 
         img_path = self.imglist[im1idx]
-        #imgn = imread(img_path) / 255.0
         imgn = cv2.imread(img_path)[:,:,::-1] / 255.0
-        # Some are grayscale:
         shape = img.shape
         if len(shape) == 2:
             img = np.repeat(np.expand_dims(img, 2), 3, axis=2)
@@ -144,10 +140,6 @@ class BaseDataset(Dataset):
         colorn = 1-imgn[maskn[:,:,0].astype(bool)].mean(0)[None,None,:]
         color[:]=0
         colorn[:]=0
-        #color = np.random.uniform(0,1,shape)
-        #colorn = np.random.uniform(0,1,shape)
-#        img =   img*(mask>0).astype(float)    + color  *(1-(mask>0).astype(float))
-#        imgn =   imgn*(maskn>0).astype(float) + colorn *(1-(maskn>0).astype(float))
 
         # flow
         if self.directlist[index]==1:
@@ -220,11 +212,6 @@ class BaseDataset(Dataset):
         length = ( (xid.max()-xid.min())//2, (yid.max()-yid.min())//2)
         lengthn = ( (xidn.max()-xidn.min())//2, (yidn.max()-yidn.min())//2)
         
-        #maxlength = int(1.2*max(length))
-        #maxlengthn = int(1.2*max(lengthn))
-        #length = (maxlength,maxlength)
-        #lengthn = (maxlengthn,maxlengthn)
-
         length = (int(self.crop_factor*length[0]), int(self.crop_factor*length[1]))
         lengthn= (int(self.crop_factor*lengthn[0]),int(self.crop_factor*lengthn[1]))
 
@@ -325,22 +312,10 @@ class BaseDataset(Dataset):
         else:
             pps  = np.asarray([-float( center[0] - length[0] ), float( center[1] - length[1]  )])
             ppsn = np.asarray([-float( centern[0]- lengthn[0]), float(centern[1] - lengthn[1] )])
-        if False:#osp.exists(self.camlist[im0idx]):
-            cam0=np.loadtxt(self.camlist[im0idx]).astype(np.float32)
-            cam1=np.loadtxt(self.camlist[im1idx]).astype(np.float32)
-            cam[:]=cam0[:-1]
-            camn[:]=cam1[:-1]
-            #cam[0]/=alp   # modify focal length according to rescale
-            #camn[0]/=alpn
-            cam[0]=1./alp[0]   # modify focal length according to rescale
-            camn[0]=1./alpn[0]
-            depth = cam0[-1:]
-            depthn = cam1[-1:]
-        else:
-            cam[:1]=1./alp[0]   # modify focal length according to rescale
-            camn[:1]=1./alpn[0]
-            cam[1:2]=1./alp[1]   # modify focal length according to rescale
-            camn[1:2]=1./alpn[1]
+        cam[:1]=1./alp[0]   # modify focal length according to rescale
+        camn[:1]=1./alpn[0]
+        cam[1:2]=1./alp[1]   # modify focal length according to rescale
+        camn[1:2]=1./alpn[1]
 
         mask = np.stack([mask,maskn])
         vis2d= np.stack([vis2d, vis2dn])

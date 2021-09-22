@@ -143,6 +143,7 @@ flags.DEFINE_integer('nsample', 256, 'num of samples per image at optimization t
 flags.DEFINE_integer('ndepth', 128, 'num of depth samples per px at optimization time')
 flags.DEFINE_bool('vis_dpflow', False, 'whether to visualize densepose flow')
 flags.DEFINE_bool('env_code', True, 'whether to use environment code for each video')
+flags.DEFINE_integer('warmup_pose_ep', 0, 'epochs to pre-train cnn pose predictor')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -715,7 +716,7 @@ class v2s_net(nn.Module):
 
         return bs
 
-    def forward(self, batch):
+    def forward_default(self, batch):
         opts = self.opts
         if opts.debug:
             torch.cuda.synchronize()
@@ -873,5 +874,24 @@ class v2s_net(nn.Module):
             
         aux_out['total_loss'] = total_loss
         aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]
+        return total_loss, aux_out
+
+    def forward_warmup(self, batch):
+        opts = self.opts
+        if opts.debug:
+            torch.cuda.synchronize()
+            start_time = time.time()
+        bs = self.set_input(batch)
+        
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('set input time:%.2f'%(time.time()-start_time))
+        rtk = self.rtk
+        kaug= self.kaug
+        frameid=self.frameid
+        aux_out={}
+        
+        # loss
+        total_loss = self.embedding_time.weight.sum()
         return total_loss, aux_out
 

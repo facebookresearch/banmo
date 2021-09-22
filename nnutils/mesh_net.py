@@ -142,6 +142,7 @@ flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
 flags.DEFINE_integer('nsample', 256, 'num of samples per image at optimization time')
 flags.DEFINE_integer('ndepth', 128, 'num of depth samples per px at optimization time')
 flags.DEFINE_bool('vis_dpflow', False, 'whether to visualize densepose flow')
+flags.DEFINE_bool('env_code', True, 'whether to use environment code for each video')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -196,10 +197,19 @@ class v2s_net(nn.Module):
                 self.sim3_j2c.data[1,3:7] = init_rot.to(self.device) #TODO
             self.sim3_j2c = nn.Parameter(self.sim3_j2c)
 
+        if opts.env_code:
+            # add video-speficit environment lighting embedding TODO
+            env_code_dim = 64
+            self.env_code = nn.Embedding(self.num_vid, env_code_dim)
+        else:
+            env_code_dim = 0
+
         # set nerf model
         self.num_freqs = 10
         in_channels_xyz=3+3*self.num_freqs*2
+        in_channels_dir=27
         self.nerf_coarse = NeRF(in_channels_xyz=in_channels_xyz, 
+                                in_channels_dir=in_channels_dir+env_code_dim,
                                 init_beta=opts.init_beta)
         self.embedding_xyz = Embedding(3,self.num_freqs,alpha=self.alpha.data[0])
         self.embedding_dir = Embedding(3,4,             alpha=self.alpha.data[0])
@@ -395,6 +405,10 @@ class v2s_net(nn.Module):
             # pass the canonical to joint space transforms
             rays['sim3_j2c'] = sim3_j2c[self.dataid.long()]
             rays['sim3_j2c'] = rays['sim3_j2c'][:,None].repeat(1,rays['nsample'],1)
+
+        if opts.env_code:
+            rays['env_code'] = self.env_code(self.dataid.long().to(self.device))
+            rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
 
         # render rays
         bs_rays = rays['bs'] * rays['nsample']

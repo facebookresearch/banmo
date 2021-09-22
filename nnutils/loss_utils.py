@@ -74,12 +74,12 @@ def visibility_loss(mlp, embed, xyz_pos, w_pos, bound, chunk):
     xyz_neg = torch.rand(1,nsample,3)*2*bound-bound
     xyz_neg = xyz_neg.to(device)
     xyz_neg_embedded = embed(xyz_neg)
-    vis_neg_pred = evaluate_mlp(mlp, xyz_neg_embedded, chunk)[...,0]
+    vis_neg_pred = evaluate_mlp(mlp, xyz_neg_embedded, chunk=chunk)[...,0]
     vis_loss_neg = -F.logsigmoid(-vis_neg_pred).sum()*0.1/nsample
       
     # positive examples
     xyz_pos_embedded = embed(xyz_pos)
-    vis_pos_pred = evaluate_mlp(mlp, xyz_pos_embedded, chunk)[...,0]
+    vis_pos_pred = evaluate_mlp(mlp, xyz_pos_embedded, chunk=chunk)[...,0]
     vis_loss_pos = -(F.logsigmoid(vis_pos_pred) * w_pos).sum()/nsample
 
     vis_loss = vis_loss_pos + vis_loss_neg

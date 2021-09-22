@@ -1,4 +1,8 @@
 import sys, os
+sys.path.append(os.path.dirname(os.path.dirname(sys.path[0])))
+os.environ["PYOPENGL_PLATFORM"] = "egl" #opengl seems to only work with TPU
+curr_dir = os.path.abspath(os.getcwd())
+sys.path.insert(0,curr_dir)
 import pdb
 import glob
 import numpy as np
@@ -8,6 +12,7 @@ import soft_renderer as sr
 import argparse
 import trimesh
 import configparser
+from utils.io import config_to_dataloader, draw_cams
 
        
 cam_dir=sys.argv[1]

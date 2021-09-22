@@ -496,7 +496,11 @@ def reinit_bones(model, mesh, num_bones):
     torch.nn.init.xavier_uniform_(rthead[0].weight, gain=0.5)
     torch.nn.init.zeros_(rthead[0].bias)
 
-    _, center = kmeans(X=points, num_clusters=num_bones, iter_limit=100,
+    if points.shape[0]<10:
+        bound = model.latest_vars['obj_bound']
+        center = torch.rand(num_bones, 3) *  bound*2 - bound
+    else:
+        _, center = kmeans(X=points, num_clusters=num_bones, iter_limit=100,
                         tqdm_flag=False, distance='euclidean', device=device)
     center=center.to(device)
     orient =  torch.Tensor([[1,0,0,0]]).to(device)

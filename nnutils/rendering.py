@@ -97,7 +97,8 @@ def render_rays(models,
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
 
-    def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, weights_only=False):
+    def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 
+            env_code=None, weights_only=False):
         """
         Helper function that performs model inference.
 
@@ -130,18 +131,23 @@ def render_rays(models,
 
         # Perform model inference to get rgb and raw sigma
         B = xyz_.shape[0]
-        out_chunks = []
-        for i in range(0, B, chunk):
-            # Embed positions by chunk
-            xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
-            if not weights_only:
-                xyzdir_embedded = torch.cat([xyz_embedded,
-                                             dir_embedded[i:i+chunk]], 1)
-            else:
-                xyzdir_embedded = xyz_embedded
-            out_chunks += [model(xyzdir_embedded, sigma_only=weights_only)]
+        #out_chunks = []
+        #for i in range(0, B, chunk):
+        #    # Embed positions by chunk
+        #    xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
+        #    if not weights_only:
+        #        xyzdir_embedded = torch.cat([xyz_embedded,
+        #                                     dir_embedded[i:i+chunk]], 1)
+        #    else:
+        #        xyzdir_embedded = xyz_embedded
+        #    out_chunks += [model(xyzdir_embedded, sigma_only=weights_only)]
+        #out = torch.cat(out_chunks, 0)
+        out = evaluate_mlp(model, xyz_.view(N_rays,N_samples,3), 
+                embed_xyz = embedding_xyz,
+                dir_embedded = dir_embedded.view(N_rays,N_samples,-1),
+                code=env_code,
+                chunk=chunk//N_samples, sigma_only=weights_only).view(B,-1)
 
-        out = torch.cat(out_chunks, 0)
         if weights_only:
             sigmas = out.view(N_rays, N_samples_)
         else:
@@ -197,6 +203,10 @@ def render_rays(models,
     model_coarse = models['coarse']
     embedding_xyz = embeddings['xyz']
     embedding_dir = embeddings['dir']
+    if 'env_code' in rays.keys():
+        env_code = rays['env_code']
+    else:
+        env_code = None
 
     # Decompose the inputs
     rays_o = rays['rays_o']
@@ -253,13 +263,13 @@ def render_rays(models,
         time_embedded = rays['time_embedded'][:,None]
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
         flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, 
-                             chunk, xyz=xyz_coarse_sampled, code=time_embedded)
+                             chunk=chunk//N_samples, xyz=xyz_coarse_sampled, code=time_embedded)
         xyz_coarse_sampled=xyz_coarse_sampled + flow_bw
         
         # cycle loss (in the joint canonical space)
         xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
         flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
-                              chunk, xyz=xyz_coarse_sampled,code=time_embedded)
+                              chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded)
         frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
         # rigidity loss
         frame_disp3d = flow_fw.norm(2,-1)
@@ -267,7 +277,7 @@ def render_rays(models,
         if "time_embedded_target" in rays.keys():
             time_embedded_target = rays['time_embedded_target'][:,None]
             flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
-                      chunk, xyz=xyz_coarse_sampled,code=time_embedded_target)
+                      chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded_target)
             xyz_coarse_target=xyz_coarse_sampled + flow_fw
 
 
@@ -330,12 +340,12 @@ def render_rays(models,
     if test_time:
         weights_coarse = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
-                      dir_embedded, z_vals, weights_only=True)
+                      dir_embedded, z_vals, weights_only=True, env_code=env_code)
         result = {'sil_coarse': weights_coarse[:,:-1].sum(1)}
     else:
         rgb_coarse, depth_coarse, weights_coarse, vis_coarse = \
             inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
-                      dir_embedded, z_vals, weights_only=False)
+                      dir_embedded, z_vals, weights_only=False, env_code=env_code)
         result = {'img_coarse': rgb_coarse,
                   'depth_coarse': depth_coarse,
                   'sil_coarse': weights_coarse[:,:-1].sum(1),
@@ -346,7 +356,7 @@ def render_rays(models,
         # render densepose surface
         nerf_dp = models['nerf_dp']
         xyz_joint_embedded = embedding_xyz(xyz_joint)
-        flow_dp = evaluate_mlp(nerf_dp, xyz_joint_embedded, chunk)
+        flow_dp = evaluate_mlp(nerf_dp, xyz_joint_embedded, chunk=chunk//N_samples)
         xyz_joint= xyz_joint + flow_dp
     result['joint_render'] = torch.sum(weights_coarse.unsqueeze(-1)*xyz_joint, -2)
    
@@ -433,7 +443,7 @@ def render_rays(models,
         model_fine = models['fine']
         rgb_fine, depth_fine, weights_fine, vis_fine = \
             inference(model_fine, embedding_xyz, xyz_fine_sampled, rays_d,
-                      dir_embedded, z_vals, weights_only=False)
+                      dir_embedded, z_vals, weights_only=False, env_code=env_code)
 
         result['img_fine'] = rgb_fine
         result['depth_fine'] = depth_fine

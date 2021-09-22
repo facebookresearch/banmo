@@ -78,7 +78,8 @@ class Embedding(nn.Module):
 class NeRF(nn.Module):
     def __init__(self,
                  D=8, W=256,
-                 in_channels_xyz=63, in_channels_dir=27, out_channels=3, 
+                 in_channels_xyz=63, in_channels_dir=27,
+                 out_channels=3, 
                  skips=[4], raw_feat=False, init_beta=1./100, activation=nn.ReLU(True)):
         """
         D: number of layers for density (sigma) encoder
@@ -333,16 +334,28 @@ class Encoder(nn.Module):
         return feat
     
 
-def evaluate_mlp(model, xyz_embedded, chunk=32*1024, 
+def evaluate_mlp(model, xyz_embedded, embed_xyz=None, dir_embedded=None,
+                chunk=32*1024, 
                 xyz=None,
                 code=None, sigma_only=False):
+    """
+    chunk is the point-level chunk divided by number of bins
+    """
     B,nbins,_ = xyz_embedded.shape
     out_chunks = []
     for i in range(0, B, chunk):
         embedded = xyz_embedded[i:i+chunk]
-        if code is not None:
+        if embed_xyz is not None:
+            embedded = embed_xyz(embedded)
+        if dir_embedded is not None:
             embedded = torch.cat([embedded,
-                       code[i:i+chunk].repeat(1,nbins,1)], -1)
+                       dir_embedded[i:i+chunk]], -1)
+        if code is not None:
+            code_chunk = code[i:i+chunk]
+            if code_chunk.dim() == 2: 
+                code_chunk = code_chunk[:,None]
+            code_chunk = code_chunk.repeat(1,nbins,1)
+            embedded = torch.cat([embedded,code_chunk], -1)
         out_chunks += [model(embedded, sigma_only=sigma_only, xyz=xyz)]
 
     out = torch.cat(out_chunks, 0)

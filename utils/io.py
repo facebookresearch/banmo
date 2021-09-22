@@ -208,8 +208,8 @@ def str_to_frame(test_frames, data_info):
         idx_render = []
         for i in test_frames[1:-1].split(','):
             vid_idx = int(i)
-            idx_render += range(data_info['offset'][vid_idx], 
-                                data_info['offset'][vid_idx+1]-1)
+            idx_render += range(data_info['offset'][vid_idx]-vid_idx, 
+                                data_info['offset'][vid_idx+1]-vid_idx-1)
     else:
         # render specific number of frames
         idx_render = np.linspace(0,data_info['len_evalloader']-1,

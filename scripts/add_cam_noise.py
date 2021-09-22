@@ -7,7 +7,7 @@ import glob
 
 cam_dir=sys.argv[1]
 seqname=cam_dir.split('/')[-2]
-std=0.5
+std=1.0
 
 camlist = glob.glob('%s/*.txt'%(cam_dir))
 camlist = [i for i in camlist if 'gauss' not in i]

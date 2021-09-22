@@ -126,6 +126,7 @@ class v2s_trainer(Trainer):
         params_nerf_root_rts=[]
         params_nerf_bone_rts=[]
         params_embed=[]
+        params_env_code=[]
         params_bones=[]
         params_ks=[]
         params_nerf_dp=[]
@@ -150,6 +151,8 @@ class v2s_trainer(Trainer):
                 params_nerf_bone_rts.append(p)
             elif 'embedding_time' in name or 'rest_pose_code' in name:
                 params_embed.append(p)
+            elif 'env_code' in name:
+                params_env_code.append(p)
             elif 'bones' == name:
                 params_bones.append(p)
             elif 'ks' == name:
@@ -173,6 +176,7 @@ class v2s_trainer(Trainer):
              {'params': params_nerf_root_rts},
              {'params': params_nerf_bone_rts},
              {'params': params_embed},
+             {'params': params_env_code},
              {'params': params_bones},
              {'params': params_ks},
              {'params': params_nerf_dp},
@@ -197,6 +201,7 @@ class v2s_trainer(Trainer):
         lr_nerf_root_rts*opts.learning_rate, # params_nerf_root_rts
                      0.5*opts.learning_rate, # params_nerf_bone_rts
                      0.5*opts.learning_rate, # params_embed
+                         opts.learning_rate, # params_env_code
                          opts.learning_rate, # params_bones
                          opts.learning_rate, # params_ks
                          opts.learning_rate, # params_nerf_dp
@@ -471,6 +476,7 @@ class v2s_trainer(Trainer):
                 grad_nerf_root_rts=[]
                 grad_nerf_bone_rts=[]
                 grad_embed=[]
+                grad_env_code=[]
                 grad_bones=[]
                 grad_ks=[]
                 grad_nerf_dp=[]
@@ -501,6 +507,8 @@ class v2s_trainer(Trainer):
                         grad_nerf_bone_rts.append(p)
                     elif 'embedding_time' in name or 'rest_pose_code' in name:
                         grad_embed.append(p)
+                    elif 'env_code' in name:
+                        grad_env_code.append(p)
                     elif 'bones' == name:
                         grad_bones.append(p)
                     elif 'ks' == name:
@@ -528,6 +536,7 @@ class v2s_trainer(Trainer):
                 aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts,.1)
                 aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts,.1)
                 aux_out['embedding_time_g']= clip_grad_norm_(grad_embed,        .1)
+                aux_out['env_code_g']= clip_grad_norm_(grad_env_code,        .1)
                 aux_out['bones_g']         = clip_grad_norm_(grad_bones,        .1)
                 aux_out['ks_g']            = clip_grad_norm_(grad_ks,           .1)
                 aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,      .1)
@@ -609,11 +618,9 @@ class v2s_trainer(Trainer):
                                                    query_xyz_chunk, frameid)
                     
                 xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
-                dir_embedded = model.embedding_dir(query_dir_chunk) # (N, embed_dir_channels)
-                xyzdir_embedded = torch.cat([xyz_embedded, dir_embedded], 1)
-                out_chunks += [model.nerf_coarse(xyzdir_embedded)]
-            vol_rgbo = torch.cat(out_chunks, 0)
-            vol_o = vol_rgbo[...,-1].view(grid_size, grid_size, grid_size)
+                out_chunks += [model.nerf_coarse(xyz_embedded, sigma_only=True)]
+            vol_o = torch.cat(out_chunks, 0)
+            vol_o = vol_o.view(grid_size, grid_size, grid_size)
             #vol_o = F.softplus(vol_o)
 
             #TODO set density of non-observable points to small value

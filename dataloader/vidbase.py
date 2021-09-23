@@ -102,9 +102,7 @@ class BaseDataset(Dataset):
     def __len__(self):
         return self.num_imgs
 
-    def __getitem__(self, index):
-        #pdb.set_trace()
-        #ss = time.time()
+    def read_raw(self, index):
         im0idx = self.baselist[index]
         im1idx = im0idx + self.dframe if self.directlist[index]==1 else im0idx-self.dframe
         img_path = self.imglist[im0idx]
@@ -135,12 +133,6 @@ class BaseDataset(Dataset):
             maskn = binary_erosion(maskn,iterations=1)
         maskn = np.expand_dims(maskn, 2)
 
-        # compement color
-        color = 1-img[mask[:,:,0].astype(bool)].mean(0)[None,None,:]
-        colorn = 1-imgn[maskn[:,:,0].astype(bool)].mean(0)[None,None,:]
-        color[:]=0
-        colorn[:]=0
-
         # flow
         if self.directlist[index]==1:
             flowpath = self.flowfwlist[im0idx]
@@ -161,22 +153,7 @@ class BaseDataset(Dataset):
             occn = np.zeros_like(mask)
         occ[occluder] = 0
         occn[occludern] = 0
-        try:
-            depth = readPFM(flowpath.replace('flo-', 'depth-').replace('FlowBW', 'Depth').replace('FlowFW', 'Depth'))[0]
-            depthn= readPFM(flowpathn.replace('flo-', 'depth-').replace('FlowBW', 'Depth').replace('FlowFW', 'Depth'))[0]
-        except:
-            depth = np.zeros_like(occ)
-            depthn = np.zeros_like(occ)
-        #print('time: %f'%(time.time()-ss))
 
-        # read kp
-        try:
-            kp = read_json('%s'%self.kplist[im0idx], mask)
-            kpn= read_json('%s'%self.kplist[im1idx], maskn)
-        except:
-            kp = np.zeros((25,3))
-            kpn = np.zeros((25,3))
-        
         try:
             dp = readPFM(self.dplist[im0idx])[0]
             dpn= readPFM(self.dplist[im1idx])[0]
@@ -204,7 +181,28 @@ class BaseDataset(Dataset):
         vis2d = np.ones_like(mask)
         vis2dn= np.ones_like(mask)
 
-        # crop box
+        rt_dict = {}
+        rt_dict['img']   = img     
+        rt_dict['mask']  = mask  
+        rt_dict['flow']  = flow  
+        rt_dict['occ']   = occ   
+        rt_dict['dp']    = dp    
+        rt_dict['vis2d'] = vis2d 
+        rt_dict['dp_feat'] = dp_feat
+        rt_dict['dp_bbox'] = dp_bbox
+                                 
+        rt_dict['imgn']  = imgn  
+        rt_dict['maskn'] = maskn 
+        rt_dict['flown'] = flown 
+        rt_dict['occn']  = occn  
+        rt_dict['dpn']   = dpn   
+        rt_dict['vis2dn']= vis2dn
+        rt_dict['dp_featn'] = dp_featn
+        rt_dict['dp_bboxn'] = dp_bboxn
+
+        return rt_dict
+
+    def compute_crop_params(self, mask, maskn):
         indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
         indicesn = np.where(maskn>0); xidn = indicesn[1]; yidn = indicesn[0]
         center = ( (xid.max()+xid.min())//2, (yid.max()+yid.min())//2)
@@ -220,8 +218,20 @@ class BaseDataset(Dataset):
         orisizen= (2*lengthn[0], 2*lengthn[1])
         alp =  [orisize[0]/maxw  ,orisize[1]/maxw]
         alpn = [orisizen[0]/maxw ,orisizen[1]/maxw]
-        x0,y0  =np.meshgrid(range(maxw),range(maxh))
+        
+        # intrinsics induced by augmentation: augmented to to original img
+        # correct cx,cy at clip space (not tx, ty)
+        if self.flip==0:
+            pps  = np.asarray([float( center[0] - length[0] ), float( center[1] - length[1]  )])
+            ppsn = np.asarray([float( centern[0]- lengthn[0]), float(centern[1] - lengthn[1] )])
+        else:
+            pps  = np.asarray([-float( center[0] - length[0] ), float( center[1] - length[1]  )])
+            ppsn = np.asarray([-float( centern[0]- lengthn[0]), float(centern[1] - lengthn[1] )])
+        kaug = np.asarray([alp[0], alp[1], pps[0], pps[1]])
+        kaugn= np.asarray([alpn[0],alpn[1],ppsn[0],ppsn[1]])
+
         # geometric augmentation for img, mask, flow, occ
+        x0,y0  =np.meshgrid(range(maxw),range(maxh))
         A,Ap = self.geo_augment(x0)
         B = np.asarray([[alp[0],0,(center[0]-length[0])],
                         [0,alp[1],(center[1]-length[1])],
@@ -234,31 +244,51 @@ class BaseDataset(Dataset):
         hp1 = np.stack([x0,y0,np.ones_like(x0)],-1)  # screen coord
         hp0 = np.dot(hp0,A).dot(B)                   # image coord
         hp1 = np.dot(hp1,Ap).dot(Bp)                  # image coord
+        return kaug, kaugn, hp0, hp1, A,B,Ap,Bp
+
+    def __getitem__(self, index):
+        #pdb.set_trace()
+        #ss = time.time()
+        maxw=self.img_size;maxh=self.img_size
+        im0idx = self.baselist[index]
+        im1idx = im0idx + self.dframe if self.directlist[index]==1 else im0idx-self.dframe
+        rt_dict = self.read_raw(index)
+        img   = rt_dict['img']  
+        mask  = rt_dict['mask']
+        flow  = rt_dict['flow']
+        occ   = rt_dict['occ']
+        dp    = rt_dict['dp']
+        vis2d = rt_dict['vis2d']
+        dp_feat = rt_dict['dp_feat']
+        dp_bbox = rt_dict['dp_bbox'] 
+
+        imgn  = rt_dict['imgn']
+        maskn = rt_dict['maskn']
+        flown = rt_dict['flown']
+        occn  = rt_dict['occn']
+        dpn   = rt_dict['dpn'] 
+        vis2dn= rt_dict['vis2dn']
+        dp_featn = rt_dict['dp_featn']
+        dp_bboxn = rt_dict['dp_bboxn'] 
+
+        kaug, kaugn, hp0, hp1, A,B,Ap,Bp= self.compute_crop_params(mask, maskn)
+        
+        ## warp images
         x0 = hp0[:,:,0].astype(np.float32)
         y0 = hp0[:,:,1].astype(np.float32)
         x0n = hp1[:,:,0].astype(np.float32)
         y0n = hp1[:,:,1].astype(np.float32)
-        
-        kp[:,:2] = np.concatenate([kp[:,:2], np.ones_like(kp[:,:1])],-1).dot(np.linalg.inv(A.dot(B)))[:,:2]
-        kpn[:,:2]= np.concatenate([kpn[:,:2],np.ones_like(kpn[:,:1])],-1).dot(np.linalg.inv(Ap.dot(Bp)))[:,:2]
-        kp[:,0] = kp[:,0] / maxw * 2-1
-        kp[:,1] = kp[:,1] / maxh * 2-1
-        kpn[:,0] = kpn[:,0] / maxw * 2-1
-        kpn[:,1] = kpn[:,1] / maxh * 2-1
-        
-        img = cv2.remap(img,x0,y0,interpolation=cv2.INTER_LINEAR,borderValue=color[0,0])
+        img = cv2.remap(img,x0,y0,interpolation=cv2.INTER_LINEAR)
         mask = cv2.remap(mask.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
         flow = cv2.remap(flow,x0,y0,interpolation=cv2.INTER_LINEAR)
         occ = cv2.remap(occ,x0,y0,interpolation=cv2.INTER_LINEAR)
-        depth=cv2.remap(depth,x0,y0,interpolation=cv2.INTER_LINEAR)
         dp   =cv2.remap(dp,   x0,y0,interpolation=cv2.INTER_NEAREST)
         vis2d=cv2.remap(vis2d.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
 
-        imgn = cv2.remap(imgn,x0n,y0n,interpolation=cv2.INTER_LINEAR,borderValue=colorn[0,0])
+        imgn = cv2.remap(imgn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
         maskn = cv2.remap(maskn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
         flown = cv2.remap(flown,x0n,y0n,interpolation=cv2.INTER_LINEAR)
         occn = cv2.remap(occn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
-        depthn = cv2.remap(depthn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
         dpn    =cv2.remap(dpn,    x0n,y0n,interpolation=cv2.INTER_NEAREST)
         vis2dn=cv2.remap(vis2dn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
 
@@ -293,32 +323,11 @@ class BaseDataset(Dataset):
 
         # Finally transpose the image to 3xHxW
         img = np.transpose(img, (2, 0, 1))
-        mask = (mask>0).astype(float)
-        
         imgn = np.transpose(imgn, (2, 0, 1))
+        mask = (mask>0).astype(float)
         maskn = (maskn>0).astype(float)
         flow = np.transpose(flow, (2, 0, 1))
         flown = np.transpose(flown, (2, 0, 1))
-            
-
-        cam = np.zeros((7,))
-        cam = np.asarray([1.,0.,0. ,1.,0.,0.,0.])
-        camn = np.asarray([1.,0.,0. ,1.,0.,0.,0.])
-        #depth=0.; depthn=0.
-        # correct cx,cy at clip space (not tx, ty)
-        if self.flip==0:
-            pps  = np.asarray([float( center[0] - length[0] ), float( center[1] - length[1]  )])
-            ppsn = np.asarray([float( centern[0]- lengthn[0]), float(centern[1] - lengthn[1] )])
-        else:
-            pps  = np.asarray([-float( center[0] - length[0] ), float( center[1] - length[1]  )])
-            ppsn = np.asarray([-float( centern[0]- lengthn[0]), float(centern[1] - lengthn[1] )])
-        cam[:1]=1./alp[0]   # modify focal length according to rescale
-        camn[:1]=1./alpn[0]
-        cam[1:2]=1./alp[1]   # modify focal length according to rescale
-        camn[1:2]=1./alpn[1]
-
-        mask = np.stack([mask,maskn])
-        vis2d= np.stack([vis2d, vis2dn])
 
         try:dataid = self.dataid
         except: dataid=0
@@ -339,24 +348,17 @@ class BaseDataset(Dataset):
             rtk[3, :]  = np.asarray([512,512,256,256]) 
             rtkn = rtk.copy()
 
-        # intrinsics induced by augmentation: augmented to to original img
-        kaug = np.asarray([alp[0], alp[1], pps[0], pps[1]])
-        kaugn= np.asarray([alpn[0],alpn[1],ppsn[0],ppsn[1]])
 
         # remove background
         elem = {
             'img':          np.stack([img, imgn]),
-            'mask':         mask,
+            'mask':         np.stack([mask,maskn]),
             'flow':         np.stack([flow, flown]),
             'occ':          np.stack([occ, occn]),
-            'pps':          np.stack([pps, ppsn]),
-            'depth':        np.stack([depth, depthn]),
             'dp':           np.stack([dp, dpn]),
             'dp_feat':      np.stack([dp_feat, dp_featn]),
             'dp_bbox':      np.stack([dp_bbox, dp_bboxn]),
-            'vis2d':        vis2d,
-            'cam':          np.stack([cam, camn]),
-            'kp':           np.stack([kp, kpn]),
+            'vis2d':        np.stack([vis2d, vis2dn]),
             'rtk':          np.stack([rtk, rtkn]),            
             'kaug':         np.stack([kaug,kaugn]),            
 

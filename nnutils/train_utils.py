@@ -189,6 +189,7 @@ class v2s_trainer(Trainer):
         if opts.explicit_root:
             lr_nerf_root_rts = 10
         elif opts.cnn_root:
+            #lr_nerf_root_rts = 0.05
             lr_nerf_root_rts = 0.2
         else:
             lr_nerf_root_rts = 1
@@ -383,7 +384,7 @@ class v2s_trainer(Trainer):
             del self.model.nerf_models['bones']
 
         #TODO add CNN pose warmup
-        self.warmup_pose(log)
+        if opts.cnn_root: self.warmup_pose(log)
 
         # start training
         for epoch in range(0, opts.num_epochs):
@@ -415,11 +416,16 @@ class v2s_trainer(Trainer):
         for epoch in range(0, opts.warmup_pose_ep):
             self.model.epoch = epoch
             self.model.ep_iters = len(self.dataloader)
-
-            self.train_one_epoch(epoch, log)
+            self.train_one_epoch(epoch, log, warmup=True)
         self.model.module.forward = self.model.module.forward_default
+        
+        #TODO store cameras
+
+        # start from low learning rate again
+        self.init_training()
+        self.model.module.total_steps = 0
             
-    def train_one_epoch(self, epoch, log):
+    def train_one_epoch(self, epoch, log, warmup=False):
         """
         training loop in a epoch
         """
@@ -427,7 +433,8 @@ class v2s_trainer(Trainer):
         self.model.train()
         for i, batch in enumerate(self.dataloader):
             self.model.iters=i
-            self.update_pose_indicator(i)
+            if not warmup:
+                self.update_pose_indicator(i)
 
             if opts.debug:
                 if 'start_time' in locals().keys():
@@ -484,7 +491,7 @@ class v2s_trainer(Trainer):
                 i%2 == 0:
             self.model.module.pose_update = 0
         else:
-                self.model.module.pose_update = 1
+            self.model.module.pose_update = 1
 
     def reset_hparams(self, epoch):
         """

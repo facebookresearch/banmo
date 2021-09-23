@@ -31,7 +31,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 near_far_to_bound, compute_flow_geodist, \
                                 compute_flow_cse, fb_flow_check
 from nnutils.rendering import render_rays
-from nnutils.loss_utils import eikonal_loss, nerf_gradient
+from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -40,7 +40,6 @@ flags.DEFINE_float('random_geo', 1, 'Random geometric augmentation')
 flags.DEFINE_string('seqname', 'syn-spot-40', 'name of the sequence')
 flags.DEFINE_integer('img_size', 512, 'image size')
 flags.DEFINE_enum('split', 'train', ['train', 'val', 'all', 'test'], 'eval split')
-flags.DEFINE_integer('num_kps', 15, 'The dataloader should override these.')
 flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
 flags.DEFINE_string('logname', 'exp_name', 'Experiment Name')
 flags.DEFINE_integer('num_epochs', 1000, 'Number of epochs to train')
@@ -69,7 +68,6 @@ flags.DEFINE_integer('display_single_pane_ncols', 0, 'if positive, display all i
 flags.DEFINE_boolean('reg3d', False, 'register in 3d')
 flags.DEFINE_boolean('emd', False, 'deubg')
 flags.DEFINE_boolean('debug', False, 'deubg')
-flags.DEFINE_boolean('usekp', False, 'deubg: use kp')
 flags.DEFINE_boolean('ibraug', False, 'deubg: use image based rendering augmentation')
 flags.DEFINE_boolean('freeze_weights', False, 'Freeze network weights')
 flags.DEFINE_boolean('noise', True, 'Add random noise to pose')
@@ -159,6 +157,7 @@ class v2s_net(nn.Module):
         self.config.read('configs/%s.config'%opts.seqname)
         self.alpha=torch.Tensor([opts.alpha])
         self.alpha=nn.Parameter(self.alpha)
+        self.pose_update = 2 # by default, update all, use all losses
         
         # multi-video mode
         self.num_vid =  len(self.config.sections())-1
@@ -559,10 +558,7 @@ class v2s_net(nn.Module):
         self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(device)
         self.dp_feats     = F.normalize(self.dp_feats, 2,1)
         self.dp_bbox      = batch['dp_bbox']     .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
-        self.depth        = batch['depth']       .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
         self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
-        self.cams         = batch['cam']         .view(bs,-1,7).permute(1,0,2).reshape(-1,7)          .to(device)  
-        self.pp           = batch['pps']         .view(bs,-1,2).permute(1,0,2).reshape(-1,2)          .to(device)  
         self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
         self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1).cpu()
@@ -663,6 +659,7 @@ class v2s_net(nn.Module):
         self.sils =  self.sils.float()
 
         bs = self.imgs.shape[0]
+        self.rtk_raw = self.rtk.clone()
         if not self.opts.use_cam:
             self.rtk[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(device)
             self.rtk[:,:2,3] = 0.
@@ -871,27 +868,22 @@ class v2s_net(nn.Module):
             vis_loss = 0.01*rendered['vis_loss'].mean()
             total_loss = total_loss + vis_loss
             aux_out['visibility_loss'] = vis_loss
-            
+
         aux_out['total_loss'] = total_loss
         aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]
         return total_loss, aux_out
 
     def forward_warmup(self, batch):
         opts = self.opts
-        if opts.debug:
-            torch.cuda.synchronize()
-            start_time = time.time()
         bs = self.set_input(batch)
-        
-        if opts.debug:
-            torch.cuda.synchronize()
-            print('set input time:%.2f'%(time.time()-start_time))
         rtk = self.rtk
-        kaug= self.kaug
-        frameid=self.frameid
         aux_out={}
+
+        # TODO render ground-truth data
         
         # loss
-        total_loss = self.embedding_time.weight.sum()
+        total_loss = rtk_loss(self.rtk, self.rtk_raw, aux_out)
+        aux_out['total_loss'] = total_loss
+
         return total_loss, aux_out
 

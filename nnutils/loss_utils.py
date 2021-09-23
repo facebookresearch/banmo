@@ -1,6 +1,7 @@
 import pdb
 import torch
 from nnutils.nerf import evaluate_mlp
+from nnutils.geom_utils import rot_angle
 import torch.nn.functional as F
 
 def nerf_gradient(mlp, embed, pts, use_xyz=False,code=None, sigma_only=False):
@@ -84,3 +85,17 @@ def visibility_loss(mlp, embed, xyz_pos, w_pos, bound, chunk):
 
     vis_loss = vis_loss_pos + vis_loss_neg
     return vis_loss
+
+def rtk_loss(rtk, rtk_raw, aux_out):
+    rot_pred = rtk[:,:3,:3]
+    rot_gt = rtk_raw[:,:3,:3]
+    rot_loss = rot_angle(rot_pred.matmul(rot_gt.permute(0,2,1))).mean()
+    rot_loss = 0.01*rot_loss
+
+    trn_pred = rtk[:,:3,3]
+    trn_gt = rtk_raw[:,:3,3]
+    trn_loss = (trn_pred - trn_gt).pow(2).sum(-1).mean()
+    total_loss = rot_loss + trn_loss
+    aux_out['rot_loss'] = rot_loss
+    aux_out['trn_loss'] = trn_loss
+    return total_loss

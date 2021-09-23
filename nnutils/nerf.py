@@ -319,20 +319,15 @@ class Encoder(nn.Module):
     def __init__(self, input_shape, out_channels=128, batch_norm=True):
         super(Encoder, self).__init__()
         self.resnet_conv = ResNetConv()
-        self.enc_conv1 = conv2d(batch_norm, 512, 256, stride=1, kernel_size=3)
-        nc_input = int( 256 * np.ceil(input_shape[0] / 32.) \
-                            * np.ceil(input_shape[1] / 32.))
-        self.enc_fc = fc_stack(nc_input, out_channels, 2)
-
-        net_init(self.enc_conv1)
+        self.conv1 = conv2d(batch_norm, 512, 128, stride=1, kernel_size=3)
+        net_init(self.conv1)
 
     def forward(self, img):
-        resnet_feat = self.resnet_conv.forward(img)
-        out_enc_conv1 = self.enc_conv1(resnet_feat)
-        out_enc_conv1 = out_enc_conv1.view(img.size(0), -1)
-        feat = self.enc_fc.forward(out_enc_conv1)
+        feat = self.resnet_conv.forward(img) # 512,4,4
+        feat = self.conv1(feat) # 128,4,4
+        feat = F.max_pool2d(feat, 4, 4)
+        feat = feat.view(img.size(0), -1)
         return feat
-    
 
 def evaluate_mlp(model, xyz_embedded, embed_xyz=None, dir_embedded=None,
                 chunk=32*1024, 

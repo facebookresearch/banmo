@@ -39,6 +39,7 @@ from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,
                                compute_point_visibility
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
+from ext_utils.io import mkdir_p
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
 from utils.io import save_vid, draw_cams, extract_data_info
@@ -186,13 +187,13 @@ class v2s_trainer(Trainer):
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
-        if opts.explicit_root:
+        if self.model.root_basis=='exp':
             lr_nerf_root_rts = 10
-        elif opts.cnn_root:
-            #lr_nerf_root_rts = 0.05
+        elif self.model.root_basis=='cnn':
             lr_nerf_root_rts = 0.2
-        else:
+        elif self.model.root_basis=='mlp':
             lr_nerf_root_rts = 1
+        else: print('error'); exit()
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer,\
                         [opts.learning_rate, # params_nerf_coarse
                       10*opts.learning_rate, # params_nerf_beta
@@ -262,6 +263,36 @@ class v2s_trainer(Trainer):
         var_path = model_path.replace('params', 'vars').replace('.pth', '.npy')
         self.model.latest_vars = np.load(var_path,allow_pickle=True)[()]
         return
+    
+    def eval_cam(self, idx_render=None): 
+        """
+        idx_render: list of frame index to render
+        """
+        opts = self.opts
+        with torch.no_grad():
+            self.model.eval()
+            # render
+            batch = []
+            for i in idx_render:
+                batch.append( self.evalloader.dataset[i] )
+            batch = self.evalloader.collate_fn(batch)
+            #TODO can be first accelerated
+            self.model.set_input(batch)
+                
+            # extract mesh sequences
+            aux_seq = {
+                       'rtk':[],
+                       'impath':[],
+                       }
+            for idx,frameid in enumerate(idx_render):
+                print('extracting frame %d'%(frameid))
+                # save cams
+                aux_seq['rtk'].append(self.model.rtk[idx].cpu().numpy())
+                
+                # save image list
+                impath = self.model.impath[self.model.frameid[idx].long()]
+                aux_seq['impath'].append(impath)
+        return aux_seq
   
     def eval(self, idx_render=None, dynamic_mesh=False): 
         """
@@ -384,7 +415,7 @@ class v2s_trainer(Trainer):
             del self.model.nerf_models['bones']
 
         #TODO add CNN pose warmup
-        if opts.cnn_root: self.warmup_pose(log)
+        if opts.warmup_pose_ep>0:self.warmup_pose(log)
 
         # start training
         for epoch in range(0, opts.num_epochs):
@@ -409,17 +440,77 @@ class v2s_trainer(Trainer):
                 self.save_network('latest')
                 self.save_network(str(epoch+1))
 
+    @staticmethod
+    def save_cams(aux_seq, save_dir, datasets, evalsets):
+        """
+        save cameras to dir and modify dataset 
+        """
+        save_prefix = '%s/init-cam'%(save_dir)
+        mkdir_p(save_prefix)
+        dataset_dict={dataset.imglist[0].split('/')[-2]:dataset for dataset in datasets}
+        evalset_dict={dataset.imglist[0].split('/')[-2]:dataset for dataset in evalsets}
+
+        length = len(aux_seq['impath'])
+        for i in range(length):
+            rtk = aux_seq['rtk'][i]
+            impath = aux_seq['impath'][i]
+            seqname = impath.split('/')[-2]
+            rtklist = dataset_dict[seqname].rtklist
+            idx = int(impath.split('/')[-1].split('.')[-2])
+            save_path = '%s/%s-%05d.txt'%(save_prefix, seqname, idx)
+            np.savetxt(save_path, rtk)
+            rtklist[idx] = save_path
+            evalset_dict[seqname].rtklist[idx] = save_path
+
+            if idx==len(rtklist)-2:
+                # to cover the last
+                save_path = '%s/%s-%05d.txt'%(save_prefix, seqname, idx+1)
+                print('writing cam %s'%save_path)
+                np.savetxt(save_path, rtk)
+                rtklist[idx+1] = save_path
+                evalset_dict[seqname].rtklist[idx+1] = save_path
+
     def warmup_pose(self, log):
-        # start training
         opts = self.opts
+
+        # force using warmup forward, dataloader, cnn root
+        self.model.module.root_basis = 'cnn'
+        self.model.module.use_cam = False
         self.model.module.forward = self.model.module.forward_warmup
+        full_loader = self.dataloader  # store original loader
+        self.dataloader = range(200)
+        original_rp = self.model.module.nerf_root_rts
+        self.model.module.nerf_root_rts = self.model.module.dp_root_rts
+        del self.model.module.dp_root_rts
+
+        # training
+        self.init_training()
         for epoch in range(0, opts.warmup_pose_ep):
             self.model.epoch = epoch
             self.model.ep_iters = len(self.dataloader)
             self.train_one_epoch(epoch, log, warmup=True)
+
+            # eval
+            #_,_ = self.model.forward_warmup(None)
+            # rendered_seq = self.model.warmup_rendered 
+            # if opts.local_rank==0: self.add_image_grid(rendered_seq, log, epoch)
+
+        # store cameras
+        idx_render = range(len(self.evalloader))
+        chunk = 50
+        for i in range(0, len(idx_render), chunk):
+            aux_seq = self.eval_cam(idx_render=idx_render[i:i+chunk])
+            self.save_cams(aux_seq, self.save_dir,
+                    full_loader.dataset.datasets,
+                self.evalloader.dataset.datasets)
+
+        # restore dataloader, rts, forward function
+        self.model.module.root_basis=opts.root_basis
+        self.model.module.use_cam = opts.use_cam
         self.model.module.forward = self.model.module.forward_default
-        
-        #TODO store cameras
+        self.dataloader = full_loader
+        del self.model.module.nerf_root_rts
+        self.model.module.nerf_root_rts = original_rp
 
         # start from low learning rate again
         self.init_training()

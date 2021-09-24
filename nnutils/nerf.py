@@ -228,7 +228,7 @@ class RTHead(NeRF):
         bs = x.shape[0]
         rts = x.view(-1,self.num_output)  # bs B,x
         B = rts.shape[0]//bs
-        
+
         tmat= rts[:,0:3] *0.1
 
         if self.use_quat:

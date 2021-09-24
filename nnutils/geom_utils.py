@@ -326,9 +326,9 @@ def render_color(renderer, in_verts, faces, colors, texture_type='vertex'):
     rendered: ...,4,...
     """
     verts = in_verts.clone()
-    verts = verts.view(-1,verts.shape[1],3)
-    faces = faces.view(-1,faces.shape[1],3)
-    if texture_type=='vertex':  colors = colors.view(-1,colors.shape[1],3)
+    verts = verts.view(-1,verts.shape[-2],3)
+    faces = faces.view(-1,faces.shape[-2],3)
+    if texture_type=='vertex':  colors = colors.view(-1,colors.shape[-2],3)
     elif texture_type=='surface': colors = colors.view(-1,colors.shape[1],colors.shape[2],3)
     device=verts.device
 

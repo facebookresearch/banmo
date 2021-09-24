@@ -29,7 +29,8 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 chunk_rays, generate_bones,\
                                 canonical2ndc, obj_to_cam, vec_to_sim3, \
                                 near_far_to_bound, compute_flow_geodist, \
-                                compute_flow_cse, fb_flow_check
+                                compute_flow_cse, fb_flow_check, pinhole_cam, \
+                                render_color
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss
 
@@ -115,8 +116,7 @@ flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
 flags.DEFINE_bool('ks_opt', False,   'whether to optimize camera intrinsics')
 flags.DEFINE_bool('bg', False, 'whether to optimize background')
 flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspondence')
-flags.DEFINE_bool('cnn_root', False, 'whether to use cnn encoder for root pose')
-flags.DEFINE_bool('explicit_root', False, 'whether to use explicit root pose')
+flags.DEFINE_string('root_basis', 'mlp', 'which root pose basis to use {mlp, cnn, exp}')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
 flags.DEFINE_string('test_frames', '9', 'a list of video index or num of frames, {0,1,2}, 30')
 flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
@@ -158,6 +158,8 @@ class v2s_net(nn.Module):
         self.alpha=torch.Tensor([opts.alpha])
         self.alpha=nn.Parameter(self.alpha)
         self.pose_update = 2 # by default, update all, use all losses
+        self.root_basis = opts.root_basis
+        self.use_cam = opts.use_cam
         
         # multi-video mode
         self.num_vid =  len(self.config.sections())-1
@@ -267,27 +269,34 @@ class v2s_net(nn.Module):
         
         # optimize camera
         if opts.root_opt:
-            if opts.use_cam: 
+            if self.use_cam: 
                 use_quat=False
                 out_channels=6
             else:
                 use_quat=True
                 out_channels=7
-            if opts.cnn_root:
+            # train a cnn pose predictor for warmup
+            self.dp_root_rts = nn.Sequential(
+                            Encoder((112,112), out_channels=128),
+                            RTHead(use_quat=True, D=1,
+                            in_channels_xyz=t_embed_dim,in_channels_dir=0,
+                            out_channels=7, raw_feat=True))
+            if self.root_basis == 'cnn':
                 self.nerf_root_rts = nn.Sequential(
                                 Encoder((112,112), out_channels=128),
                                 RTHead(use_quat=use_quat, D=1,
                                 in_channels_xyz=t_embed_dim,in_channels_dir=0,
                                 out_channels=out_channels, raw_feat=True))
-            elif opts.explicit_root:
-                self.nerf_root_rts = RTExplicit(max_t, delta=opts.use_cam)
-            else:
+            elif self.root_basis == 'exp':
+                self.nerf_root_rts = RTExplicit(max_t, delta=self.use_cam)
+            elif self.root_basis == 'mlp':
                 self.nerf_root_rts = nn.Sequential(self.embedding_time,
                                 RTHead(use_quat=use_quat, 
                                 #D=5,W=128,
                                 #activation=nn.Tanh(),
                                 in_channels_xyz=t_embed_dim,in_channels_dir=0,
                                 out_channels=out_channels, raw_feat=True))
+            else: print('error'); exit()
 
         if opts.ks_opt:
             # TODO: change according to multiple video
@@ -312,9 +321,11 @@ class v2s_net(nn.Module):
             self.dp_verts = dp['vertices']
             self.dp_faces = dp['faces']
             self.dp_verts = torch.Tensor(self.dp_verts).cuda(self.device)
+            self.dp_faces = torch.Tensor(self.dp_faces).cuda(self.device).long()
             
             self.dp_verts -= self.dp_verts.mean(0)[None]
             self.dp_verts /= self.dp_verts.abs().max()
+            self.dp_verts_unit = self.dp_verts.clone()
             self.dp_verts *= (self.near_far[:,1] - self.near_far[:,0]).mean()/2
             
             # visualize
@@ -339,6 +350,21 @@ class v2s_net(nn.Module):
         if opts.use_viser:
             from ext_nnutils.viser_net import MeshNet
             self.viser = MeshNet(self.cnn_shape, opts)
+
+        # load densepose surface features
+        if opts.warmup_pose_ep>0:
+            from utils.cselib import create_cse
+            detbase='../detectron2/'
+            config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k.yaml'%(detbase)
+            weight_path = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k/253498611/model_final_6d69b7.pkl'
+            predictor_dp, embedder, mesh_vertex_embeddings = create_cse(config_path,
+                                                            weight_path)
+            self.dp_embed = mesh_vertex_embeddings['sheep_5004']
+            # soft renderer
+            self.mesh_renderer = sr.SoftRenderer(image_size=112, sigma_val=1e-12, 
+                           camera_mode='look_at',perspective=False, aggr_func_rgb='hard',
+                           light_mode='vertex', light_intensity_ambient=1.,light_intensity_directionals=0.)
+
 
         self.resnet_transform = torchvision.transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
@@ -660,21 +686,17 @@ class v2s_net(nn.Module):
 
         bs = self.imgs.shape[0]
         self.rtk_raw = self.rtk.clone()
-        if not self.opts.use_cam:
-            self.rtk[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(device)
-            self.rtk[:,:2,3] = 0.
-            if self.near_far is None:
-                self.rtk[:,2,3] = 3. # TODO heuristics of depth=3xobject size
-            else:
-                self.rtk[:,2,3] = self.near_far.mean() # TODO need to deal with multi-videl
-       
+        if not self.use_cam:
+            self.rtk[:,:3] = self.create_base_se3(self.near_far, bs, self.device)
+
         if self.opts.root_opt:
             frameid = self.frameid.long().to(device)
-            if self.opts.cnn_root:
+            if self.root_basis == 'cnn':
                 frame_code = self.dp_feats
                 root_rts = self.nerf_root_rts(frame_code)
-            else:
+            elif self.root_basis == 'mlp' or self.root_basis == 'exp':
                 root_rts = self.nerf_root_rts(frameid)
+            else: print('error'); exit()
             root_rmat = root_rts[:,0,:9].view(-1,3,3)
             root_tmat = root_rts[:,0,9:12]
     
@@ -874,16 +896,133 @@ class v2s_net(nn.Module):
         return total_loss, aux_out
 
     def forward_warmup(self, batch):
-        opts = self.opts
-        bs = self.set_input(batch)
-        rtk = self.rtk
-        aux_out={}
+        """
+        batch variable is not never being used here
+        """
+        # render ground-truth data
+        bs_rd = 16
+        with torch.no_grad():
+            dp_feats_rd, rtk_raw = self.render_dp(self.dp_verts_unit, 
+                    self.dp_faces, self.dp_embed, self.near_far, self.device, 
+                    self.mesh_renderer, bs_rd)
 
-        # TODO render ground-truth data
+        # predict delta se3
+        root_rts = self.nerf_root_rts(dp_feats_rd)
+        root_rmat = root_rts[:,0,:9].view(-1,3,3)
+        root_tmat = root_rts[:,0,9:12]    
+
+        # construct base se3
+        rtk = torch.zeros(bs_rd, 4,4).to(self.device)
+        rtk[:,:3] = self.create_base_se3(self.near_far, bs_rd, self.device)
+
+        # compose se3
+        rmat = rtk[:,:3,:3]
+        tmat = rtk[:,:3,3]
+        tmat = tmat + rmat.matmul(root_tmat[...,None])[...,0]
+        rmat = rmat.matmul(root_rmat)
+        rtk[:,:3,:3] = rmat
+        rtk[:,:3,3] = tmat
         
         # loss
-        total_loss = rtk_loss(self.rtk, self.rtk_raw, aux_out)
+        aux_out={}
+        total_loss = rtk_loss(rtk, rtk_raw, aux_out)
         aux_out['total_loss'] = total_loss
 
         return total_loss, aux_out
+    
+    @staticmethod
+    def render_dp(dp_verts_unit, dp_faces, dp_embed, near_far, device, 
+                  mesh_renderer, bs):
+        """
+        render a pair of (densepose feature bsx16x112x112, se3)
+        input is densepose surface model and near-far plane
+        """
+        verts = dp_verts_unit
+        faces = dp_faces
+        dp_embed = dp_embed
+        num_verts, embed_dim = dp_embed.shape
+        img_size = 112
+        focal = 2
+        std = 6.28 # rotation std
+        
+        # TODO match surface to pixel
+        #costmap = (dp_embed[600,:,None,None]*dp_feats[0]).sum(0)
+        #costmap[costmap==0] = costmap.median()
+        #cv2.imwrite('0.png', costmap.cpu().numpy()*255)
 
+        # scale geometry and translation based on near-far plane
+        d_obj = near_far.mean()
+        verts = verts / 3 * d_obj
+        
+        # set cameras
+        rot_rand = np.random.normal(0,std,(bs,3))
+        rot_rand = torch.Tensor(rot_rand).to(device)
+        Rmat = transforms.axis_angle_to_matrix(rot_rand)
+        Tmat = torch.Tensor([[0,0,d_obj]]).to(device).repeat(bs,1)
+        K =    torch.Tensor([[focal,focal,0,0]]).to(device).repeat(bs,1)
+        
+        # add RTK: [R_3x3|T_3x1]
+        #          [fx,fy,px,py], to the ndc space
+        Kimg = torch.Tensor([[focal*img_size/2.,focal*img_size/2.,img_size/2.,
+                            img_size/2.]]).to(device).repeat(bs,1)
+        rtk = torch.zeros(bs,4,4).to(device)
+        rtk[:,:3,:3] = Rmat
+        rtk[:,:3, 3] = Tmat
+        rtk[:,3, :]  = Kimg
+
+        # repeat mesh
+        verts = verts[None].repeat(bs,1,1)
+        faces = faces[None].repeat(bs,1,1)
+        dp_embed = dp_embed[None].repeat(bs,1,1)
+
+        # obj-cam transform 
+        verts = obj_to_cam(verts, Rmat, Tmat)
+        
+        # pespective projection
+        verts = pinhole_cam(verts, K)
+        
+        # render sil+rgb
+        rendered = []
+        for i in range(0,embed_dim,3):
+            dp_chunk = dp_embed[...,i:i+3]
+            dp_chunk_size = dp_chunk.shape[-1]
+            if dp_chunk_size<3:
+                dp_chunk = torch.cat([dp_chunk,
+                    dp_embed[...,:(3-dp_chunk_size)]],-1)
+            rendered_chunk = render_color(mesh_renderer, verts, faces, 
+                    dp_chunk,  texture_type='vertex')
+            rendered_chunk = rendered_chunk[:,:3]
+            rendered.append(rendered_chunk)
+        rendered = torch.cat(rendered, 1)
+        rendered = rendered[:,:embed_dim]
+
+        # resize to bounding box
+        for i in range(bs):
+            mask = rendered[i].max(0)[0]>0
+            mask = mask.cpu().numpy()
+            indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
+            center = ( (xid.max()+xid.min())//2, (yid.max()+yid.min())//2)
+            length = ( int((xid.max()-xid.min())*1.//2 ), 
+                      int((yid.max()-yid.min())*1.//2  ))
+            left,top,w,h = [center[0]-length[0], center[1]-length[1],
+                    length[0]*2, length[1]*2]
+            rendered[i] = torchvision.transforms.functional.resized_crop(\
+                    rendered[i], top,left,h,w,(img_size,img_size))
+            #cv2.imwrite('%d.png'%i, rendered[i].std(0).cpu().numpy()*1000) 
+
+        rendered = F.normalize(rendered, 2,1)
+        return rendered, rtk
+
+    @staticmethod
+    def create_base_se3(near_far, bs, device):
+        """
+        create a base se3 based on near-far plane
+        """
+        rt = torch.zeros(bs,3,4).to(device)
+        rt[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(device)
+        rt[:,:2,3] = 0.
+        if near_far is None:
+            rt[:,2,3] = 3. # TODO heuristics of depth=3xobject size
+        else:
+            rt[:,2,3] = near_far.mean() # TODO need to deal with multi-videl
+        return rt

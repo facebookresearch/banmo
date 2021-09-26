@@ -441,7 +441,7 @@ class v2s_trainer(Trainer):
                 self.save_network(str(epoch+1))
 
     @staticmethod
-    def save_cams(aux_seq, save_dir, datasets, evalsets):
+    def save_cams(aux_seq, save_dir, datasets, evalsets, obj_scale):
         """
         save cameras to dir and modify dataset 
         """
@@ -453,6 +453,8 @@ class v2s_trainer(Trainer):
         length = len(aux_seq['impath'])
         for i in range(length):
             rtk = aux_seq['rtk'][i]
+            # rescale translation according to input near-far plane
+            rtk[:3,3] = rtk[:3,3]*obj_scale
             impath = aux_seq['impath'][i]
             seqname = impath.split('/')[-2]
             rtklist = dataset_dict[seqname].rtklist
@@ -502,7 +504,8 @@ class v2s_trainer(Trainer):
             aux_seq = self.eval_cam(idx_render=idx_render[i:i+chunk])
             self.save_cams(aux_seq, self.save_dir,
                     full_loader.dataset.datasets,
-                self.evalloader.dataset.datasets)
+                self.evalloader.dataset.datasets,
+                self.model.obj_scale)
 
         # restore dataloader, rts, forward function
         self.model.module.root_basis=opts.root_basis

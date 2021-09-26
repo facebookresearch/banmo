@@ -181,8 +181,12 @@ class v2s_net(nn.Module):
                 self.near_far[self.data_offset[nvid]:self.data_offset[nvid+1]]=\
         [float(i) for i in self.config.get('data_%d'%nvid, 'near_far').split(',')]
             self.near_far = torch.Tensor(self.near_far).to(self.device)
+            self.obj_scale = float(near_far_to_bound(self.near_far)) / 0.3 # to 0.3
+            self.near_far = self.near_far / self.obj_scale
             self.near_far = nn.Parameter(self.near_far)
-        except: self.near_far = None
+        except: 
+            self.near_far = None
+            self.obj_scale = 1
     
         # object bound
         self.latest_vars['obj_bound'] = near_far_to_bound(self.near_far)
@@ -361,7 +365,7 @@ class v2s_net(nn.Module):
                                                             weight_path)
             self.dp_embed = mesh_vertex_embeddings['sheep_5004']
             # soft renderer
-            self.mesh_renderer = sr.SoftRenderer(image_size=112, sigma_val=1e-12, 
+            self.mesh_renderer = sr.SoftRenderer(image_size=256, sigma_val=1e-12, 
                            camera_mode='look_at',perspective=False, aggr_func_rgb='hard',
                            light_mode='vertex', light_intensity_ambient=1.,light_intensity_directionals=0.)
 
@@ -685,6 +689,8 @@ class v2s_net(nn.Module):
         self.sils =  self.sils.float()
 
         bs = self.imgs.shape[0]
+        #TODO change scale of input cameras
+        self.rtk[:,:3,3] = self.rtk[:,:3,3] / self.obj_scale
         self.rtk_raw = self.rtk.clone()
         if not self.use_cam:
             self.rtk[:,:3] = self.create_base_se3(self.near_far, bs, self.device)
@@ -921,7 +927,7 @@ class v2s_net(nn.Module):
         tmat = tmat + rmat.matmul(root_tmat[...,None])[...,0]
         rmat = rmat.matmul(root_rmat)
         rtk[:,:3,:3] = rmat
-        rtk[:,:3,3] = tmat
+        rtk[:,:3,3] = tmat.detach() # do not train translation
         
         # loss
         aux_out={}
@@ -941,24 +947,26 @@ class v2s_net(nn.Module):
         faces = dp_faces
         dp_embed = dp_embed
         num_verts, embed_dim = dp_embed.shape
-        img_size = 112
+        img_size = 256
+        crop_size = 112
         focal = 2
-        std = 6.28 # rotation std
-        
-        # TODO match surface to pixel
-        #costmap = (dp_embed[600,:,None,None]*dp_feats[0]).sum(0)
-        #costmap[costmap==0] = costmap.median()
-        #cv2.imwrite('0.png', costmap.cpu().numpy()*255)
+        std_rot = 6.28 # rotation std
+        std_dep = 0.5 # depth std
+
 
         # scale geometry and translation based on near-far plane
-        d_obj = near_far.mean()
-        verts = verts / 3 * d_obj
+        d_mean = near_far.mean()
+        verts = verts / 3 * d_mean # scale based on mean depth
+        dep_rand = 1 + np.random.normal(0,std_dep,bs)
+        dep_rand = torch.Tensor(dep_rand).to(device)
+        d_obj = d_mean * dep_rand
+        d_obj = torch.max(d_obj, 1.2*1/3 * d_mean)
         
         # set cameras
-        rot_rand = np.random.normal(0,std,(bs,3))
+        rot_rand = np.random.normal(0,std_rot,(bs,3))
         rot_rand = torch.Tensor(rot_rand).to(device)
         Rmat = transforms.axis_angle_to_matrix(rot_rand)
-        Tmat = torch.Tensor([[0,0,d_obj]]).to(device).repeat(bs,1)
+        Tmat = torch.cat([torch.zeros(bs, 2).to(device), d_obj[:,None]],-1)
         K =    torch.Tensor([[focal,focal,0,0]]).to(device).repeat(bs,1)
         
         # add RTK: [R_3x3|T_3x1]
@@ -997,6 +1005,7 @@ class v2s_net(nn.Module):
         rendered = rendered[:,:embed_dim]
 
         # resize to bounding box
+        rendered_crop = []
         for i in range(bs):
             mask = rendered[i].max(0)[0]>0
             mask = mask.cpu().numpy()
@@ -1006,12 +1015,14 @@ class v2s_net(nn.Module):
                       int((yid.max()-yid.min())*1.//2  ))
             left,top,w,h = [center[0]-length[0], center[1]-length[1],
                     length[0]*2, length[1]*2]
-            rendered[i] = torchvision.transforms.functional.resized_crop(\
-                    rendered[i], top,left,h,w,(img_size,img_size))
-            #cv2.imwrite('%d.png'%i, rendered[i].std(0).cpu().numpy()*1000) 
-
-        rendered = F.normalize(rendered, 2,1)
-        return rendered, rtk
+            rendered_crop.append( torchvision.transforms.functional.resized_crop(\
+                    rendered[i], top,left,h,w,(50,50)) )
+            #cv2.imwrite('%d.png'%i, rendered_crop[i].std(0).cpu().numpy()*1000)
+        rendered_crop = torch.stack(rendered_crop,0)
+        rendered_crop = F.interpolate(rendered_crop, (crop_size, crop_size), 
+                mode='bilinear')
+        rendered_crop = F.normalize(rendered_crop, 2,1)
+        return rendered_crop, rtk
 
     @staticmethod
     def create_base_se3(near_far, bs, device):

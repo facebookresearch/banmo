@@ -142,6 +142,8 @@ flags.DEFINE_integer('ndepth', 128, 'num of depth samples per px at optimization
 flags.DEFINE_bool('vis_dpflow', False, 'whether to visualize densepose flow')
 flags.DEFINE_bool('env_code', True, 'whether to use environment code for each video')
 flags.DEFINE_integer('warmup_pose_ep', 0, 'epochs to pre-train cnn pose predictor')
+flags.DEFINE_string('nf_path', '', 'a array of near far planes, Nx2')
+flags.DEFINE_string('pose_cnn_path', '', 'path to pre-trained pose cnn')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -175,18 +177,21 @@ class v2s_net(nn.Module):
         self.latest_vars['mesh_rest'] = trimesh.Trimesh()
 
         # get near-far plane
-        try:
-            self.near_far = np.zeros((self.data_offset[-1],2)).astype(np.float32)
-            for nvid in range(self.num_vid):
-                self.near_far[self.data_offset[nvid]:self.data_offset[nvid+1]]=\
-        [float(i) for i in self.config.get('data_%d'%nvid, 'near_far').split(',')]
-            self.near_far = torch.Tensor(self.near_far).to(self.device)
-            self.obj_scale = float(near_far_to_bound(self.near_far)) / 0.3 # to 0.3
-            self.near_far = self.near_far / self.obj_scale
-            self.near_far = nn.Parameter(self.near_far)
-        except: 
-            self.near_far = None
-            self.obj_scale = 1
+        if opts.nf_path=='':
+            try:
+                self.near_far = self.near_far_from_config(self.config, 
+                                         self.data_offset, self.num_vid)
+            except:
+                # error
+                print('near_far plane not defined')
+                exit()
+                #self.near_far = None
+                #self.obj_scale = 1
+        else:exit()#TODO
+        self.near_far = torch.Tensor(self.near_far).to(self.device)
+        self.obj_scale = float(near_far_to_bound(self.near_far)) / 0.3 # to 0.3
+        self.near_far = self.near_far / self.obj_scale
+        self.near_far = nn.Parameter(self.near_far)
     
         # object bound
         self.latest_vars['obj_bound'] = near_far_to_bound(self.near_far)
@@ -373,6 +378,17 @@ class v2s_net(nn.Module):
         self.resnet_transform = torchvision.transforms.Normalize(
                 mean=[0.485, 0.456, 0.406],
                 std=[0.229, 0.224, 0.225])
+
+    @staticmethod
+    def near_far_from_config(config, data_offset, num_vid):
+        """
+        near_far: N, 2
+        """
+        near_far = np.zeros((data_offset[-1],2)).astype(np.float32)
+        for nvid in range(num_vid):
+            near_far[data_offset[nvid]:data_offset[nvid+1]]=\
+            [float(i) for i in config.get('data_%d'%nvid, 'near_far').split(',')]
+        return near_far
 
     def nerf_render(self, rtk, kaug, frameid, img_size, nsample=256, ndepth=128):
         opts=self.opts
@@ -733,7 +749,9 @@ class v2s_net(nn.Module):
         self.latest_vars['vis'][self.frameid.long()] = self.vis2d.cpu().numpy()
         
         if self.training and self.opts.anneal_freq:
-            alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
+            alpha = self.num_freqs * \
+                self.total_steps / (opts.warmup_init_steps+opts.warmup_steps)
+            #alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
             if alpha>self.alpha.data[0]:
                 self.alpha.data[0] = min(max(3, alpha),self.num_freqs) # alpha from 3 to 10
             self.embedding_xyz.alpha = self.alpha.data[0]

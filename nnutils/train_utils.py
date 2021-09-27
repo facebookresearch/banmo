@@ -78,13 +78,15 @@ class v2s_trainer(Trainer):
         self.device = torch.device('cuda:{}'.format(opts.local_rank))
         self.model = mesh_net.v2s_net(img_size, opts, data_info)
         self.model.forward = self.model.forward_default
-
-        if opts.model_path!='':
-            self.load_network(opts.model_path)
+        self.num_epochs = opts.num_epochs
 
         if no_ddp:
+            if opts.model_path!='':
+                self.load_network(opts.model_path, is_eval=True)
             self.model = self.model.to(self.device)
         else:
+            if opts.model_path!='':
+                self.load_network(opts.model_path, is_eval=False)
             # ddp
             self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
             self.model = self.model.to(self.device)
@@ -107,6 +109,14 @@ class v2s_trainer(Trainer):
         opts_dict['ngpu'] = opts.ngpu
         opts_dict['local_rank'] = opts.local_rank
         opts_dict['rtk_path'] = opts.rtk_path
+
+        #TODO automatically load cameras in the logdir
+        model_dir = opts.model_path.rsplit('/',1)[0]
+        cam_dir = '%s/init-cam/'%model_dir
+        if os.path.isdir(cam_dir):
+            # load camera
+            opts_dict['rtk_path'] = cam_dir #TODO let dataloader handle it
+
         self.dataloader = frameloader.data_loader(opts_dict)
         self.evalloader = frameloader.eval_loader(opts_dict)
 
@@ -117,7 +127,7 @@ class v2s_trainer(Trainer):
     def init_training(self):
         opts = self.opts
         # set as module attributes since they do not change across gpus
-        self.model.module.final_steps = opts.num_epochs * len(self.dataloader)
+        self.model.module.final_steps = self.num_epochs * len(self.dataloader)
 
         params_nerf_coarse=[]
         params_nerf_beta=[]
@@ -212,50 +222,51 @@ class v2s_trainer(Trainer):
                        0*opts.learning_rate, # params_dp_verts
             ],
             self.model.module.final_steps,
-            pct_start=2./opts.num_epochs, # use 2 epochs to warm up
+            pct_start=2./self.num_epochs, # use 2 epochs to warm up
             cycle_momentum=False, 
             anneal_strategy='linear',
             final_div_factor=1./5, div_factor = 25,
             )
     
-    def save_network(self, epoch_label):
+    def save_network(self, epoch_label, prefix=''):
         if self.opts.local_rank==0:
-            param_path = '%s/params_%s.pth'%(self.save_dir, epoch_label)
+            param_path = '%s/%sparams_%s.pth'%(self.save_dir,prefix,epoch_label)
             save_dict = self.model.state_dict()
             torch.save(save_dict, param_path)
 
-            var_path = '%s/vars_%s.npy'%(self.save_dir, epoch_label)
+            var_path = '%s/%svars_%s.npy'%(self.save_dir,prefix,epoch_label)
             np.save(var_path, self.model.latest_vars)
             return
     
     @staticmethod
-    def rm_module_prefix(states):
+    def rm_module_prefix(states, prefix='module'):
         new_dict = {}
         for i in states.keys():
             v = states[i]
-            if i[:6] == 'module':
-                i = i[7:]
+            if i[:len(prefix)] == prefix:
+                i = i[len(prefix)+1:]
             new_dict[i] = v
         return new_dict
 
-    def load_network(self,model_path=None):
+    def load_network(self,model_path=None, is_eval=True):
         states = torch.load(model_path,map_location='cpu')
-        states = self.rm_module_prefix(states)
+        if is_eval:
+            states = self.rm_module_prefix(states)
 
-        # TODO: modify states to be compatible with possibly more datasets
-        len_prev_fr = states['near_far'].shape[0]
-        self.model.near_far.data[:len_prev_fr] = states['near_far']
-        self.del_key( states, 'near_far') 
+            # TODO: modify states to be compatible with possibly more datasets
+            len_prev_fr = states['near_far'].shape[0]
+            self.model.near_far.data[:len_prev_fr] = states['near_far']
+            self.del_key( states, 'near_far') 
 
-        if self.opts.use_sim3:
-            len_prev_vid= states['sim3_j2c'].shape[0]
-            self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
-        self.del_key( states, 'sim3_j2c')
+            if self.opts.use_sim3:
+                len_prev_vid= states['sim3_j2c'].shape[0]
+                self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
+            self.del_key( states, 'sim3_j2c')
 
-        self.model.embedding_time.weight.data[:len_prev_fr] = \
-           states['embedding_time.weight']
-        self.del_key( states, 'embedding_time.weight')
-        self.del_key( states, 'nerf_bone_rts.0.weight')
+            self.model.embedding_time.weight.data[:len_prev_fr] = \
+               states['embedding_time.weight']
+            self.del_key( states, 'embedding_time.weight')
+            self.del_key( states, 'nerf_bone_rts.0.weight')
 
         self.model.load_state_dict(states, strict=False)
     
@@ -414,17 +425,21 @@ class v2s_trainer(Trainer):
             self.model.num_bone_used = 0
             del self.model.nerf_models['bones']
 
-        #TODO add CNN pose warmup
-        if opts.warmup_pose_ep>0:self.warmup_pose(log)
+        # CNN pose warmup or  load CNN
+        if opts.warmup_pose_ep>0 or opts.pose_cnn_path!='':
+            self.warmup_pose(log, pose_cnn_path=opts.pose_cnn_path)
 
         # start training
-        for epoch in range(0, opts.num_epochs):
+        for epoch in range(0, self.num_epochs):
             self.model.epoch = epoch
             self.model.ep_iters = len(self.dataloader)
-
-            # moidfy cropping factor on the fly TODO
-            #self.reset_dataset_crop_factor(float(epoch)/opts.num_epochs)
             
+            # moidfy cropping factor on the fly TODO
+            if self.model.total_steps > opts.warmup_init_steps:
+                self.reset_dataset_crop_factor(float(epoch)/opts.num_epochs)
+            else:
+                self.reset_dataset_crop_factor(1.)
+
             # evaluation
             rendered_seq, aux_seq = self.eval()                
             if epoch==0: self.save_network('0') # to save some cameras
@@ -471,8 +486,29 @@ class v2s_trainer(Trainer):
                 np.savetxt(save_path, rtk)
                 rtklist[idx+1] = save_path
                 evalset_dict[seqname].rtklist[idx+1] = save_path
+        
+    def extract_cams(self, full_loader):
+        # store cameras
+        idx_render = range(len(self.evalloader))
+        chunk = 50
+        for i in range(0, len(idx_render), chunk):
+            aux_seq = self.eval_cam(idx_render=idx_render[i:i+chunk])
+            self.save_cams(aux_seq, self.save_dir,
+                    full_loader.dataset.datasets,
+                self.evalloader.dataset.datasets,
+                self.model.obj_scale)
+        
+        #TODO save near-far plane
+        shape_verts = self.model.dp_verts_unit / 3 * self.model.near_far.mean()
+        shape_verts = shape_verts * 1.2
+        self.model.near_far.data = get_near_far(shape_verts.detach().cpu().numpy(),
+                                         self.model.near_far.data,
+                                         self.model.latest_vars)
+        save_path = '%s/init-nf.txt'%(self.save_dir)
+        save_nf = self.model.near_far.data.cpu().numpy() * self.model.obj_scale
+        np.savetxt(save_path, save_nf)
 
-    def warmup_pose(self, log):
+    def warmup_pose(self, log, pose_cnn_path):
         opts = self.opts
 
         # force using warmup forward, dataloader, cnn root
@@ -484,28 +520,30 @@ class v2s_trainer(Trainer):
         original_rp = self.model.module.nerf_root_rts
         self.model.module.nerf_root_rts = self.model.module.dp_root_rts
         del self.model.module.dp_root_rts
+        self.num_epochs = opts.warmup_pose_ep
 
-        # training
-        self.init_training()
-        for epoch in range(0, opts.warmup_pose_ep):
-            self.model.epoch = epoch
-            self.model.ep_iters = len(self.dataloader)
-            self.train_one_epoch(epoch, log, warmup=True)
+        if pose_cnn_path=='':
+            # training
+            self.init_training()
+            for epoch in range(0, opts.warmup_pose_ep):
+                self.model.epoch = epoch
+                self.model.ep_iters = len(self.dataloader)
+                self.train_one_epoch(epoch, log, warmup=True)
+                self.save_network(str(epoch+1), 'cnn-') 
 
-            # eval
-            #_,_ = self.model.forward_warmup(None)
-            # rendered_seq = self.model.warmup_rendered 
-            # if opts.local_rank==0: self.add_image_grid(rendered_seq, log, epoch)
+                # eval
+                #_,_ = self.model.forward_warmup(None)
+                # rendered_seq = self.model.warmup_rendered 
+                # if opts.local_rank==0: self.add_image_grid(rendered_seq, log, epoch)
+        else: 
+            pose_states = torch.load(opts.pose_cnn_path, map_location='cpu')
+            pose_states = self.rm_module_prefix(pose_states, 
+                    prefix='module.nerf_root_rts')
+            self.model.module.nerf_root_rts.load_state_dict(pose_states, 
+                                                        strict=False)
 
-        # store cameras
-        idx_render = range(len(self.evalloader))
-        chunk = 50
-        for i in range(0, len(idx_render), chunk):
-            aux_seq = self.eval_cam(idx_render=idx_render[i:i+chunk])
-            self.save_cams(aux_seq, self.save_dir,
-                    full_loader.dataset.datasets,
-                self.evalloader.dataset.datasets,
-                self.model.obj_scale)
+        # extract camera and near far planes
+        self.extract_cams(full_loader)
 
         # restore dataloader, rts, forward function
         self.model.module.root_basis=opts.root_basis
@@ -514,6 +552,7 @@ class v2s_trainer(Trainer):
         self.dataloader = full_loader
         del self.model.module.nerf_root_rts
         self.model.module.nerf_root_rts = original_rp
+        self.num_epochs = opts.num_epochs
 
         # start from low learning rate again
         self.init_training()
@@ -595,17 +634,18 @@ class v2s_trainer(Trainer):
         mesh_rest = self.model.latest_vars['mesh_rest']
 
         # reset object bound, only for visualization
-        if epoch>int(opts.num_epochs/2):
+        if epoch>int(self.num_epochs/2):
             self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
         
         # reinit bones based on extracted surface
-        if opts.lbs and (epoch==opts.lbs_all_epochs or\
+        #if opts.lbs and (epoch==opts.lbs_all_epochs or\
+        if opts.lbs and (epoch==self.num_epochs//2 or\
                          epoch==opts.lbs_reinit_epochs):
             reinit_bones(self.model, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
 
         # change near-far plane after half epochs
-        if epoch==int(opts.num_epochs/2):
+        if epoch==int(self.num_epochs/2):
             self.model.near_far.data = get_near_far(mesh_rest.vertices,
                                          self.model.near_far.data,
                                          self.model.latest_vars)
@@ -879,8 +919,10 @@ class v2s_trainer(Trainer):
         percent: percentage of training epochs
         """
         #TODO schedule: 0(maxc) to 0.5 (minc)
-        maxc = 10
+        #TODO: cycle from 0.5 to 1
+        maxc = 5
         minc = 1.2
+        #percent = (-1e-3+percent) % 0.5
         for i in range(len(self.dataloader.dataset.datasets)):
             crop_factor = min(max(maxc-percent*(maxc-minc)*2, minc), maxc)
             self.dataloader.dataset.datasets[i].crop_factor = crop_factor

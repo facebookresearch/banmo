@@ -12,21 +12,14 @@ import soft_renderer as sr
 import argparse
 import trimesh
 import configparser
-from utils.io import config_to_dataloader, draw_cams
+from utils.io import config_to_dataloader, draw_cams, load_root
 
        
 cam_dir=sys.argv[1]
 cap_frame=int(sys.argv[2])
 def main():
     # read all the data
-    camlist = []
-    all_path = sorted(glob.glob('%s0*.txt'%(cam_dir)))
-    if cap_frame>0:
-        all_path = all_path[:cap_frame]
-    for idx,path in enumerate(all_path):
-        rtk = np.loadtxt(path)
-        camlist.append(rtk)
-    
+    camlist = load_root(cam_dir, cap_frame)
     # construct camera mesh
     mesh = draw_cams(camlist)
     mesh.export('0.obj')

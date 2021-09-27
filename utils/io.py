@@ -1,3 +1,4 @@
+import os
 from typing import Any, Dict, List, Tuple, Union
 import cv2
 import pdb
@@ -14,6 +15,22 @@ import sys
 sys.path.insert(0,'third_party')
 import dataloader.vidbase as base_data
 from ext_utils.flowlib import flow_to_image
+
+def load_root(root_dir, cap_frame):
+    """
+    load all the root se(3)
+    input is ...-(00000.txt)
+    """
+    camlist = []
+    cam_path = '%s0*.txt'%(root_dir)
+    all_path = sorted(glob.glob(cam_path))
+    if cap_frame>0:
+        all_path = all_path[:cap_frame]
+    for idx,path in enumerate(all_path):
+        rtk = np.loadtxt(path)
+        camlist.append(rtk)
+    camlist = np.asarray(camlist)
+    return camlist
 
 def draw_cams(all_cam):
     """
@@ -116,11 +133,15 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
     init_frame=attrs['init_frame']
     end_frame= attrs['end_frame']
     rtk_path=opts['rtk_path']
-    if rtk_path =='':
-        rtk_path= attrs['rtk_path']
     numvid =  len(config.sections())-1
     if numvid==1 and not config.has_option(name, 'datapath'): 
         datapath='%s/%s'%(datapath, opts['seqname'])
+    
+    if rtk_path =='':
+        rtk_path= attrs['rtk_path']
+    elif not os.path.isfile('%s-00000.txt'%rtk_path):
+        print('loading cameras from init-cam')
+        rtk_path = '%s/%s'%(rtk_path, datapath.strip('/').split('/')[-1])
     
     imglist = sorted(glob.glob('%s/*'%datapath))
     try: flip=int(config.get(name, 'flip'))
@@ -211,9 +232,12 @@ def str_to_frame(test_frames, data_info):
             idx_render += range(data_info['offset'][vid_idx]-vid_idx, 
                                 data_info['offset'][vid_idx+1]-vid_idx-1)
     else:
+        test_frames = int(test_frames)
+        if test_frames==0: 
+            test_frames = data_info['len_evalloader']-1
         # render specific number of frames
         idx_render = np.linspace(0,data_info['len_evalloader']-1,
-                               int(test_frames), dtype=int)
+                               test_frames, dtype=int)
     return idx_render
 
 def extract_data_info(loader):

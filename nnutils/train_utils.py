@@ -61,8 +61,9 @@ class DataParallelPassthrough(torch.nn.parallel.DistributedDataParallel):
             return delattr(self.module, name)
     
 class v2s_trainer(Trainer):
-    def __init__(self, opts):
+    def __init__(self, opts, is_eval=False):
         self.opts = opts
+        self.is_eval=is_eval
         self.local_rank = opts.local_rank
         self.save_dir = os.path.join(opts.checkpoint_dir, opts.logname)
         # write logs
@@ -72,7 +73,7 @@ class v2s_trainer(Trainer):
             with open(log_file, 'w') as f:
                 for k in dir(opts): f.write('{}: {}\n'.format(k, opts.__getattr__(k)))
 
-    def define_model(self, data_info, no_ddp=False):
+    def define_model(self, data_info):
         opts = self.opts
         img_size = (opts.img_size, opts.img_size)
         self.device = torch.device('cuda:{}'.format(opts.local_rank))
@@ -80,13 +81,13 @@ class v2s_trainer(Trainer):
         self.model.forward = self.model.forward_default
         self.num_epochs = opts.num_epochs
 
-        if no_ddp:
-            if opts.model_path!='':
-                self.load_network(opts.model_path, is_eval=True)
+        # load model
+        if opts.model_path!='':
+            self.load_network(opts.model_path, is_eval=self.is_eval)
+
+        if self.is_eval:
             self.model = self.model.to(self.device)
         else:
-            if opts.model_path!='':
-                self.load_network(opts.model_path, is_eval=False)
             # ddp
             self.model = torch.nn.SyncBatchNorm.convert_sync_batchnorm(self.model)
             self.model = self.model.to(self.device)
@@ -110,12 +111,12 @@ class v2s_trainer(Trainer):
         opts_dict['local_rank'] = opts.local_rank
         opts_dict['rtk_path'] = opts.rtk_path
 
-        #TODO automatically load cameras in the logdir
-        model_dir = opts.model_path.rsplit('/',1)[0]
-        cam_dir = '%s/init-cam/'%model_dir
-        if os.path.isdir(cam_dir):
-            # load camera
-            opts_dict['rtk_path'] = cam_dir #TODO let dataloader handle it
+        if self.is_eval and opts.rtk_path=='':
+            # automatically load cameras in the logdir
+            model_dir = opts.model_path.rsplit('/',1)[0]
+            cam_dir = '%s/init-cam/'%model_dir
+            if os.path.isdir(cam_dir):
+                opts_dict['rtk_path'] = cam_dir
 
         self.dataloader = frameloader.data_loader(opts_dict)
         self.evalloader = frameloader.eval_loader(opts_dict)
@@ -200,8 +201,7 @@ class v2s_trainer(Trainer):
         if self.model.root_basis=='exp':
             lr_nerf_root_rts = 10
         elif self.model.root_basis=='cnn':
-            lr_nerf_root_rts = 1
-            #lr_nerf_root_rts = 0.2
+            lr_nerf_root_rts = 0.2
         elif self.model.root_basis=='mlp':
             lr_nerf_root_rts = 1
         else: print('error'); exit()
@@ -251,29 +251,36 @@ class v2s_trainer(Trainer):
 
     def load_network(self,model_path=None, is_eval=True):
         states = torch.load(model_path,map_location='cpu')
+        states = self.rm_module_prefix(states)
+        
         if is_eval:
-            states = self.rm_module_prefix(states)
-
             # TODO: modify states to be compatible with possibly more datasets
             len_prev_fr = states['near_far'].shape[0]
             self.model.near_far.data[:len_prev_fr] = states['near_far']
-            self.del_key( states, 'near_far') 
 
             if self.opts.use_sim3:
                 len_prev_vid= states['sim3_j2c'].shape[0]
                 self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
-            self.del_key( states, 'sim3_j2c')
+                self.del_key( states, 'sim3_j2c')
 
             self.model.embedding_time.weight.data[:len_prev_fr] = \
                states['embedding_time.weight']
-            self.del_key( states, 'embedding_time.weight')
-            self.del_key( states, 'nerf_bone_rts.0.weight')
 
+            self.model.env_code.weight.data = \
+                states['env_code.weight']
+        
+            # load variables
+            var_path = model_path.replace('params', 'vars').replace('.pth', '.npy')
+            self.model.latest_vars = np.load(var_path,allow_pickle=True)[()]
+
+        # delete size-mismatched variables
+        self.del_key( states, 'near_far') 
+        self.del_key( states, 'embedding_time.weight')
+        self.del_key( states, 'nerf_bone_rts.0.weight')
+        self.del_key( states, 'nerf_root_rts.0.weight')
+        self.del_key( states, 'env_code.weight')
         self.model.load_state_dict(states, strict=False)
     
-        # load variables
-        var_path = model_path.replace('params', 'vars').replace('.pth', '.npy')
-        self.model.latest_vars = np.load(var_path,allow_pickle=True)[()]
         return
     
     def eval_cam(self, idx_render=None): 
@@ -569,6 +576,7 @@ class v2s_trainer(Trainer):
             self.model.iters=i
             if not warmup:
                 self.update_pose_indicator(i)
+                self.update_shape_indicator(i)
 
             if opts.debug:
                 if 'start_time' in locals().keys():
@@ -609,6 +617,20 @@ class v2s_trainer(Trainer):
                     print('total step time:%.2f'%(time.time()-start_time))
                 torch.cuda.synchronize()
                 start_time = time.time()
+    
+    def update_shape_indicator(self, i):
+        """
+        whether to update shape
+        0: update all
+        1: freeze shape
+        """
+        opts = self.opts
+        # incremental optimization
+        if opts.model_path!='' and \
+                self.model.module.total_steps < opts.warmup_init_steps:
+            self.model.module.shape_update = 1
+        else:
+            self.model.module.shape_update = 0
 
     def update_pose_indicator(self, i):
         """
@@ -733,6 +755,9 @@ class v2s_trainer(Trainer):
             self.zero_grad_list(grad_embed)
             self.zero_grad_list(grad_nerf_root_rts)
             self.zero_grad_list(grad_nerf_bone_rts)
+        if self.model.module.shape_update == 1:
+            self.zero_grad_list(grad_nerf_coarse)
+            self.zero_grad_list(grad_nerf_beta)
 
         aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,  .1)
         aux_out['nerf_beta_g']   = clip_grad_norm_(grad_nerf_beta,  .1)

@@ -30,7 +30,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 canonical2ndc, obj_to_cam, vec_to_sim3, \
                                 near_far_to_bound, compute_flow_geodist, \
                                 compute_flow_cse, fb_flow_check, pinhole_cam, \
-                                render_color
+                                render_color, mask_aug
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss
 
@@ -144,6 +144,7 @@ flags.DEFINE_bool('env_code', True, 'whether to use environment code for each vi
 flags.DEFINE_integer('warmup_pose_ep', 0, 'epochs to pre-train cnn pose predictor')
 flags.DEFINE_string('nf_path', '', 'a array of near far planes, Nx2')
 flags.DEFINE_string('pose_cnn_path', '', 'path to pre-trained pose cnn')
+flags.DEFINE_string('cnn_feature', 'embed', 'input to pose cnn')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -285,14 +286,20 @@ class v2s_net(nn.Module):
                 use_quat=True
                 out_channels=7
             # train a cnn pose predictor for warmup
+            if opts.cnn_feature=='embed':
+                cnn_in_channels = 16
+            elif opts.cnn_feature=='pts':
+                cnn_in_channels = 3
             self.dp_root_rts = nn.Sequential(
-                            Encoder((112,112), out_channels=128),
+                            Encoder((112,112), in_channels=cnn_in_channels,
+                                out_channels=128),
                             RTHead(use_quat=True, D=1,
                             in_channels_xyz=t_embed_dim,in_channels_dir=0,
                             out_channels=7, raw_feat=True))
             if self.root_basis == 'cnn':
                 self.nerf_root_rts = nn.Sequential(
-                                Encoder((112,112), out_channels=128),
+                                Encoder((112,112), in_channels=cnn_in_channels,
+                                out_channels=128),
                                 RTHead(use_quat=use_quat, D=1,
                                 in_channels_xyz=t_embed_dim,in_channels_dir=0,
                                 out_channels=out_channels, raw_feat=True))
@@ -714,7 +721,14 @@ class v2s_net(nn.Module):
         if self.opts.root_opt:
             frameid = self.frameid.long().to(device)
             if self.root_basis == 'cnn':
-                frame_code = self.dp_feats
+                if opts.cnn_feature=='embed':
+                    frame_code = self.dp_feats
+                elif opts.cnn_feature=='pts':
+                    # bs, h, w, 3
+                    frame_code = self.dp_verts_unit[self.dps.long()]
+                    frame_code = frame_code * self.masks[...,None]
+                    frame_code = frame_code.permute(0,3,1,2)
+                    frame_code = F.interpolate(frame_code, (112,112), mode='bilinear')
                 root_rts = self.nerf_root_rts(frame_code)
             elif self.root_basis == 'mlp' or self.root_basis == 'exp':
                 root_rts = self.nerf_root_rts(frameid)
@@ -926,8 +940,12 @@ class v2s_net(nn.Module):
         # render ground-truth data
         bs_rd = 16
         with torch.no_grad():
+            if self.opts.cnn_feature=='pts':
+                vertex_color = self.dp_verts_unit
+            elif self.opts.cnn_feature=='embed':
+                vertex_color = self.dp_embed
             dp_feats_rd, rtk_raw = self.render_dp(self.dp_verts_unit, 
-                    self.dp_faces, self.dp_embed, self.near_far, self.device, 
+                    self.dp_faces, vertex_color, self.near_far, self.device, 
                     self.mesh_renderer, bs_rd)
 
         # predict delta se3
@@ -1023,7 +1041,7 @@ class v2s_net(nn.Module):
         rendered = rendered[:,:embed_dim]
 
         # resize to bounding box
-        rendered_crop = []
+        rendered_crops = []
         for i in range(bs):
             mask = rendered[i].max(0)[0]>0
             mask = mask.cpu().numpy()
@@ -1033,14 +1051,19 @@ class v2s_net(nn.Module):
                       int((yid.max()-yid.min())*1.//2  ))
             left,top,w,h = [center[0]-length[0], center[1]-length[1],
                     length[0]*2, length[1]*2]
-            rendered_crop.append( torchvision.transforms.functional.resized_crop(\
-                    rendered[i], top,left,h,w,(50,50)) )
-            #cv2.imwrite('%d.png'%i, rendered_crop[i].std(0).cpu().numpy()*1000)
-        rendered_crop = torch.stack(rendered_crop,0)
-        rendered_crop = F.interpolate(rendered_crop, (crop_size, crop_size), 
+            rendered_crop = torchvision.transforms.functional.resized_crop(\
+                    rendered[i], top,left,h,w,(50,50))
+            # mask augmentation
+            rendered_crop = mask_aug(rendered_crop)
+
+            rendered_crops.append( rendered_crop)
+            #cv2.imwrite('%d.png'%i, rendered_crop.std(0).cpu().numpy()*1000)
+
+        rendered_crops = torch.stack(rendered_crops,0)
+        rendered_crops = F.interpolate(rendered_crops, (crop_size, crop_size), 
                 mode='bilinear')
-        rendered_crop = F.normalize(rendered_crop, 2,1)
-        return rendered_crop, rtk
+        rendered_crops = F.normalize(rendered_crops, 2,1)
+        return rendered_crops, rtk
 
     @staticmethod
     def create_base_se3(near_far, bs, device):
@@ -1055,3 +1078,4 @@ class v2s_net(nn.Module):
         else:
             rt[:,2,3] = near_far.mean() # TODO need to deal with multi-videl
         return rt
+

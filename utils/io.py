@@ -9,7 +9,6 @@ import imageio
 import trimesh
 import glob
 import matplotlib.cm
-cmap = matplotlib.cm.get_cmap('cool')
 
 import sys
 sys.path.insert(0,'third_party')
@@ -32,27 +31,43 @@ def load_root(root_dir, cap_frame):
     camlist = np.asarray(camlist)
     return camlist
 
-def draw_cams(all_cam):
+def draw_cams(all_cam, color='cool', axis=True):
     """
     all_cam: a list of 4x4 cameras
     """
     # scale: the scene bound
+    cmap = matplotlib.cm.get_cmap(color)
     all_cam = np.asarray(all_cam)
     trans_norm = np.linalg.norm(all_cam[:,:3,3],2,-1)
     valid_cams = trans_norm>0
     trans_max = np.median(trans_norm[valid_cams])
     scale=trans_max
     traj_len = len(all_cam)
-    elips_list = [] 
+    cam_list = [] 
     for j in range(traj_len):
         cam_rot  = all_cam[j][:3,:3].T
         cam_tran = -cam_rot.dot(all_cam[j][:3,3:])[:,0]
     
-        elips = trimesh.creation.uv_sphere(radius=0.02*scale,count=[8, 8])
-        elips.vertices = elips.vertices + cam_tran
-        elips.visual.vertex_colors = cmap(float(j)/traj_len)
-        elips_list.append(elips)
-    mesh_cam = trimesh.util.concatenate(elips_list)
+        radius = 0.02*scale
+        cam = trimesh.creation.uv_sphere(radius=radius,count=[8, 8])
+
+        if axis:
+            #TODO draw axis
+            extents = np.asarray([radius*20, radius*10, radius*0.1])
+            axis = trimesh.creation.axis(origin_size = radius, 
+                                        origin_color = cmap(float(j)/traj_len),
+                                        axis_radius = radius* 0.1,
+                                        axis_length = radius*5)
+            #extents=extents)
+            #axis.vertices[:,2] += radius * 5
+            #cam = trimesh.util.concatenate([elips, axis])
+            cam = axis
+
+        #cam.vertices = cam.vertices + cam_tran
+        cam.vertices = cam.vertices.dot(cam_rot.T) + cam_tran
+        #cam.visual.vertex_colors = cmap(float(j)/traj_len)
+        cam_list.append(cam)
+    mesh_cam = trimesh.util.concatenate(cam_list)
     return mesh_cam
 
 
@@ -75,7 +90,7 @@ def save_vid(outpath, frames, suffix='.gif',upsample_frame=150., fps=30,
         frame = frame.astype(np.uint8)
         if suffix=='.gif':
             h,w=frame.shape[:2]
-            fxy = np.sqrt(1e5/(h*w))
+            fxy = np.sqrt(4e5/(h*w))
             frame = cv2.resize(frame,None,fx=fxy, fy=fxy)
         frame_150.append(frame)
     imageio.mimsave('%s%s'%(outpath,suffix), frame_150, fps=fps)

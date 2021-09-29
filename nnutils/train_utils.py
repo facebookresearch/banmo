@@ -200,7 +200,8 @@ class v2s_trainer(Trainer):
         if self.model.root_basis=='exp':
             lr_nerf_root_rts = 10
         elif self.model.root_basis=='cnn':
-            lr_nerf_root_rts = 0.2
+            lr_nerf_root_rts = 1
+            #lr_nerf_root_rts = 0.2
         elif self.model.root_basis=='mlp':
             lr_nerf_root_rts = 1
         else: print('error'); exit()

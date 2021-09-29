@@ -33,7 +33,7 @@ parser.add_argument('--testdir', default='',
                     help='path to test dir')
 args = parser.parse_args()
         
-img_size = 512
+img_size = 1024
 
 def main():
     # read all the data

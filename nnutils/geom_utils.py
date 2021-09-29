@@ -846,3 +846,17 @@ def fb_flow_check(flo_refr, flo_targ, img_refr, img_targ, dp_thrd,
         imgflo_cnf = np.concatenate([imgflo, imgcnf],0)
         cv2.imwrite(save_path, imgflo_cnf)
     return fberr_fw, fberr_bw
+
+
+def mask_aug(rendered):
+    lb = 0.1
+    ub = 0.5
+    _,h,w=rendered.shape
+    if np.random.binomial(1,0.5):
+        sx = int(np.random.uniform(lb*w,ub*w))
+        sy = int(np.random.uniform(lb*w,ub*h))
+        cx = int(np.random.uniform(sx,w-sx))
+        cy = int(np.random.uniform(sy,h-sy))
+        feat_mean = rendered.mean(-1).mean(-1)[:,None,None]
+        rendered[:,cx-sx:cx+sx,cy-sy:cy+sy] = feat_mean
+    return rendered

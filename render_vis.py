@@ -159,7 +159,7 @@ def main():
     
         # change color according to time 
         if args.vis_cam:
-            mesh_cam = draw_cams(all_cam)
+            mesh_cam = draw_cams(all_cam, axis=False)
             mesh_cam.export('%s/mesh_cam-%s.obj'%(args.testdir,seqname))
 
     # read images
@@ -338,7 +338,7 @@ def main():
             scene.add_node( Node(mesh=m)) 
             
         if args.vis_cam:
-            mesh_cam_transformed=Mesh.from_trimesh(mesh_cam_transformed,smooth=smooth)
+            mesh_cam_transformed=Mesh.from_trimesh(mesh_cam_transformed)
             mesh_cam_transformed._primitives[0].material.RoughnessFactor=1.
             scene.add_node( Node(mesh=mesh_cam_transformed))
 

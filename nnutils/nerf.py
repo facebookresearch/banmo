@@ -290,10 +290,11 @@ class RTExplicit(nn.Module):
         return rts
 
 class ResNetConv(nn.Module):
-    def __init__(self):
+    def __init__(self, in_channels):
         super(ResNetConv, self).__init__()
         self.resnet = torchvision.models.resnet18(pretrained=True)
-        self.resnet.conv1 = nn.Conv2d(16, 64, kernel_size=(7, 7), 
+        if in_channels!=3:
+            self.resnet.conv1 = nn.Conv2d(in_channels, 64, kernel_size=(7, 7), 
                                     stride=(2, 2), padding=(3, 3), bias=False)
         self.resnet.fc=None
 
@@ -316,9 +317,9 @@ class Encoder(nn.Module):
     This is sent to 2 fc layers with final output nz_feat.
     """
 
-    def __init__(self, input_shape, out_channels=128, batch_norm=True):
+    def __init__(self, input_shape, in_channels=3,out_channels=128, batch_norm=True):
         super(Encoder, self).__init__()
-        self.resnet_conv = ResNetConv()
+        self.resnet_conv = ResNetConv(in_channels=in_channels)
         self.conv1 = conv2d(batch_norm, 512, 128, stride=1, kernel_size=3)
         net_init(self.conv1)
 

@@ -17,12 +17,13 @@ from utils.io import config_to_dataloader, draw_cams, load_root
        
 cam_dir=sys.argv[1]
 cap_frame=int(sys.argv[2])
+save_dir,seqname=cam_dir.rsplit('/',1)
 def main():
     # read all the data
     camlist = load_root(cam_dir, cap_frame)
     # construct camera mesh
     mesh = draw_cams(camlist)
-    mesh.export('0.obj')
+    mesh.export('%s/mesh-%s.obj'%(save_dir, seqname))
     
 # python ... path to camera folder
 # will draw a trajectory of camera locations

@@ -36,13 +36,13 @@ from matplotlib.pyplot import cm
 
 from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
                                obj_to_cam, get_near_far, near_far_to_bound, \
-                               compute_point_visibility
+                               compute_point_visibility, process_so3_seq
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from ext_utils.io import mkdir_p
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
-from utils.io import save_vid, draw_cams, extract_data_info
+from utils.io import save_vid, draw_cams, extract_data_info, merge_dict
 
 class DataParallelPassthrough(torch.nn.parallel.DistributedDataParallel):
     """
@@ -296,7 +296,13 @@ class v2s_trainer(Trainer):
                 batch.append( self.evalloader.dataset[i] )
             batch = self.evalloader.collate_fn(batch)
             #TODO can be first accelerated
-            self.model.set_input(batch)
+            self.model.convert_batch_input(batch)
+            if opts.cnn_type=='cls' and opts.cnn_feature=='embed':
+                rtk = self.model.convert_root_pose_mhp()
+            else:
+                self.model.convert_root_pose()
+                rtk = self.model.rtk
+            self.model.save_latest_vars()
                 
             # extract mesh sequences
             aux_seq = {
@@ -306,7 +312,7 @@ class v2s_trainer(Trainer):
             for idx,frameid in enumerate(idx_render):
                 print('extracting frame %d'%(frameid))
                 # save cams
-                aux_seq['rtk'].append(self.model.rtk[idx].cpu().numpy())
+                aux_seq['rtk'].append(rtk[idx].cpu().numpy())
                 
                 # save image list
                 impath = self.model.impath[self.model.frameid[idx].long()]
@@ -499,9 +505,18 @@ class v2s_trainer(Trainer):
         # store cameras
         idx_render = range(len(self.evalloader))
         chunk = 50
+        aux_seq = []
         for i in range(0, len(idx_render), chunk):
-            aux_seq = self.eval_cam(idx_render=idx_render[i:i+chunk])
-            self.save_cams(aux_seq, self.save_dir,
+            aux_seq.append(self.eval_cam(idx_render=idx_render[i:i+chunk]))
+        aux_seq = merge_dict(aux_seq)
+
+        if self.opts.cnn_type=='cls':
+            #TODO post-process camera trajectories
+            aux_seq['rtk'] = np.asarray(aux_seq['rtk'])
+            np.save('%s/init-mhp.npy'%(self.save_dir), aux_seq['rtk'])
+            aux_seq['rtk'] = process_so3_seq(aux_seq['rtk'])
+
+        self.save_cams(aux_seq, self.save_dir,
                     full_loader.dataset.datasets,
                 self.evalloader.dataset.datasets,
                 self.model.obj_scale)
@@ -626,8 +641,9 @@ class v2s_trainer(Trainer):
         """
         opts = self.opts
         # incremental optimization
-        if opts.model_path!='' and \
-                self.model.module.total_steps < opts.warmup_init_steps:
+   #     if opts.model_path!='' and \
+   # self.model.module.total_steps < opts.warmup_init_steps + opts.warmup_steps:
+        if opts.model_path!='':
             self.model.module.shape_update = 1
         else:
             self.model.module.shape_update = 0

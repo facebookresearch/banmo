@@ -15,6 +15,16 @@ sys.path.insert(0,'third_party')
 import dataloader.vidbase as base_data
 from ext_utils.flowlib import flow_to_image
 
+def merge_dict(dict_list):
+    out_dict = {}
+    for k in dict_list[0].keys():
+        out_dict[k] = []
+
+    for i in range(len(dict_list)):
+        for k in out_dict.keys():
+            out_dict[k] += dict_list[i][k]
+    return out_dict
+
 def load_root(root_dir, cap_frame):
     """
     load all the root se(3)
@@ -31,7 +41,8 @@ def load_root(root_dir, cap_frame):
     camlist = np.asarray(camlist)
     return camlist
 
-def draw_cams(all_cam, color='cool', axis=True):
+def draw_cams(all_cam, color='cool', axis=True,
+        color_list = None):
     """
     all_cam: a list of 4x4 cameras
     """
@@ -44,18 +55,20 @@ def draw_cams(all_cam, color='cool', axis=True):
     scale=trans_max
     traj_len = len(all_cam)
     cam_list = [] 
+    if color_list is None:
+        color_list = np.asarray(range(traj_len))/float(traj_len)
     for j in range(traj_len):
         cam_rot  = all_cam[j][:3,:3].T
         cam_tran = -cam_rot.dot(all_cam[j][:3,3:])[:,0]
     
         radius = 0.02*scale
-        cam = trimesh.creation.uv_sphere(radius=radius,count=[8, 8])
+        cam = trimesh.creation.uv_sphere(radius=radius,count=[2, 2])
 
         if axis:
             #TODO draw axis
             extents = np.asarray([radius*20, radius*10, radius*0.1])
             axis = trimesh.creation.axis(origin_size = radius, 
-                                        origin_color = cmap(float(j)/traj_len),
+                                        origin_color = cmap(color_list[j]),
                                         axis_radius = radius* 0.1,
                                         axis_length = radius*5)
             #extents=extents)

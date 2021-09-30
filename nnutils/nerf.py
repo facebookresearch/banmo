@@ -5,10 +5,12 @@ from torch import nn
 import torch.nn.functional as F
 import torchvision
 from pytorch3d import transforms
+import trimesh
 
 import sys
 sys.path.insert(0, 'third_party')
 from ext_nnutils.net_blocks import conv2d, net_init, fc_stack
+from ext_nnutils.geom_utils import R_2vect
 
 class Embedding(nn.Module):
     def __init__(self, in_channels, N_freqs, logscale=True, alpha=None):
@@ -289,6 +291,36 @@ class RTExplicit(nn.Module):
         rts = rts.view(bs,1,-1)
         return rts
 
+class ScoreHead(NeRF):
+    """
+    modify the output to be rigid transforms
+    """
+    def __init__(self, recursion_level, **kwargs):
+        super(ScoreHead, self).__init__(**kwargs)
+        grid= generate_healpix_grid(recursion_level=recursion_level)
+        self.register_buffer('grid', grid)
+        self.num_scores = self.grid.shape[0]
+
+    def forward(self, x):
+        # output: NxBx(9 rotation + 3 translation)
+        x = super(ScoreHead, self).forward(x)
+        bs = x.shape[0]
+        x = x.view(-1,self.num_scores+3)  # bs B,x
+
+        #TODO do not use tmat since it is not trained
+        tmat = x[:,0:3]*0.
+        scores=x[:,3:]
+        if self.training:
+            return scores, self.grid
+        else:
+            scores = scores.view(bs,-1,1)
+            rmat = self.grid[None].repeat(bs,1,1,1)
+            tmat = tmat[:,None].repeat(1,self.num_scores,1)
+            rmat = rmat.view(bs,-1,9)
+            rts = torch.cat([scores,rmat, tmat],-1)
+            rts = rts.view(bs,self.num_scores,-1)
+            return rts
+
 class ResNetConv(nn.Module):
     def __init__(self, in_channels):
         super(ResNetConv, self).__init__()
@@ -356,3 +388,44 @@ def evaluate_mlp(model, xyz_embedded, embed_xyz=None, dir_embedded=None,
 
     out = torch.cat(out_chunks, 0)
     return out
+
+def generate_healpix_grid(recursion_level=None, size=None):
+    """Generates an equivolumetric grid on SO(3) following Yershova et al. (2010).
+    Uses a Healpix grid on the 2-sphere as a starting point and then tiles it
+    along the 'tilt' direction 6*2**recursion_level times over 2pi.
+    Args:
+      recursion_level: An integer which determines the level of resolution of the
+        grid.  The final number of points will be 72*8**recursion_level.  A
+        recursion_level of 2 (4k points) was used for training and 5 (2.4M points)
+        for evaluation.
+      size: A number of rotations to be included in the grid.  The nearest grid
+        size in log space is returned.
+    Returns:
+      (N, 3, 3) array of rotation matrices, where N=72*8**recursion_level.
+      taken from implicit pdf https://implicit-pdf.github.io/
+    """
+    import healpy as hp  # pylint: disable=g-import-not-at-top
+
+    assert not(recursion_level is None and size is None)
+    if size:
+        recursion_level = max(int(np.round(np.log(size/72.)/np.log(8.))), 0)
+    number_per_side = 2**recursion_level
+    number_pix = hp.nside2npix(number_per_side)
+    s2_points = hp.pix2vec(number_per_side, np.arange(number_pix))
+    s2_points = np.stack([*s2_points], 1)
+
+    # Take these points on the sphere and
+    unit_vec = np.asarray([0,0,1])
+    rot_mat = torch.Tensor([ R_2vect(unit_vec, i) for i in s2_points])
+
+    rot_mats = []
+    tilts = np.linspace(0, 2*np.pi, 6*2**recursion_level, endpoint=False)
+    tilts = torch.Tensor(tilts)
+    for tilt in tilts:
+        zrot_mat = transforms.axis_angle_to_matrix(torch.Tensor([[0., 0., tilt]]))
+        rot_mats.append(rot_mat.matmul(zrot_mat))
+  
+    rot_mats = torch.cat(rot_mats, 0)
+    #vecs = rot_mats.matmul(torch.Tensor([0,0,1])[None,:,None])[...,0]
+    #trimesh.Trimesh(vecs).export('0.obj')
+    return rot_mats

@@ -99,3 +99,45 @@ def rtk_loss(rtk, rtk_raw, aux_out):
     aux_out['rot_loss'] = rot_loss
     aux_out['trn_loss'] = trn_loss
     return total_loss
+
+def rtk_cls_loss(scores, grid, rtk_raw, aux_out):
+    """
+    scores, bs, N
+    grid,   bs, N, 3,3
+    rtk_raw bs, 4,4
+    """
+    ##TODO self correlation
+    #pdb.set_trace()
+    #drot = grid[None].matmul(grid[:,None].permute(0,1,3,2))
+    #drot = rot_angle(drot)
+
+    bs,num_score = scores.shape
+    rot_gt = rtk_raw[:,None,:3,:3].repeat(1,num_score,1,1)
+    grid = grid[None].repeat(bs,1,1,1)
+    drot = rot_gt.matmul(grid.permute(0,1,3,2)) # bs, N, 3,3
+
+    ## softmax ce loss
+    #drot = rot_angle(drot)
+    #target = drot.argmin(1)
+    #sce_loss = 0.01*F.cross_entropy(scores, target)
+    #
+    #total_loss = sce_loss 
+    #aux_out['sce_loss'] = sce_loss
+
+    # bce loss
+    # positive examples
+    w_pos = (-2*rot_angle(drot).pow(2)).exp()
+    bce_loss_pos = -(F.logsigmoid(scores) * w_pos).mean()
+    
+    # negative examples
+    w_neg = (1-w_pos)
+    w_neg = w_neg/w_neg.mean() * w_pos.mean()
+    bce_loss_neg = -(F.logsigmoid(-scores) * w_neg).mean()
+
+    bce_loss = bce_loss_pos + bce_loss_neg
+    total_loss = bce_loss 
+    aux_out['bce_loss'] = bce_loss
+
+    softmax = torch.softmax(scores, 1)
+    aux_out['cls_entropy'] = (-softmax*softmax.log()).sum(1).mean(0)
+    return total_loss

@@ -9,6 +9,7 @@ import torch.nn.functional as F
 import soft_renderer as sr
 
 from nnutils.nerf import evaluate_mlp
+from utils.io import draw_cams
 
 import sys
 sys.path.insert(0, 'third_party')
@@ -859,3 +860,84 @@ def mask_aug(rendered):
         feat_mean = rendered.mean(-1).mean(-1)[:,None,None]
         rendered[:,cx-sx:cx+sx,cy-sy:cy+sy] = feat_mean
     return rendered
+
+def process_so3_seq(rtk_seq):
+    """
+    rtk_seq, bs, N, 13 including
+    {scoresx1, rotationsx9, translationsx3}
+    """
+    vis = False
+    scores =rtk_seq[...,0]
+    bs,N = scores.shape
+    rmat =  rtk_seq[...,1:10]
+    tmat = rtk_seq[:,0,10:13]
+    rtk_raw = rtk_seq[:,0,13:29].reshape((-1,4,4))
+   
+    distribution = torch.Tensor(scores).softmax(1)
+    entropy = (-distribution.log() * distribution).sum(1)
+
+    if vis:
+        # TODO draw distribution
+        obj_scale = 3
+        cam_space = obj_scale * 0.2
+        tmat_raw = np.tile(rtk_raw[:,None,:3,3], (1,N,1))
+        scale_factor = obj_scale/tmat_raw[...,-1].mean()
+        tmat_raw *= scale_factor
+        tmat_raw = tmat_raw.reshape((bs,12,-1,3))
+        tmat_raw[...,-1] += np.linspace(-cam_space, cam_space,12)[None,:,None]
+        tmat_raw = tmat_raw.reshape((bs,-1,3))
+        # bs, tiltxae
+        all_rts = np.concatenate([rmat, tmat_raw],-1)
+        all_rts = np.transpose(all_rts.reshape(bs,N,4,3), [0,1,3,2])
+    
+        for i in range(bs):
+            top_idx = scores[i].argsort()[-30:]
+            top_rt = all_rts[i][top_idx]
+            top_score = scores[i][top_idx]
+            top_score = (top_score - top_score.min())/(top_score.max()-top_score.min())
+            mesh = draw_cams(top_rt, color_list = top_score)
+            mesh.export('tmp/%d.obj'%(i))
+    
+    #TODO graph cut scores, bsxN
+    import pydensecrf.densecrf as dcrf
+    from pydensecrf.utils import unary_from_softmax
+    graph = dcrf.DenseCRF2D(bs, 1, N)  # width, height, nlabels
+    unary = unary_from_softmax(distribution.numpy().T.copy())
+    graph.setUnaryEnergy(unary)
+    grid = rmat[0].reshape((N,3,3))
+    drot = np.matmul(grid[None], np.transpose(grid[:,None], (0,1,3,2)))
+    drot = rot_angle(torch.Tensor(drot))
+    compat = (-2*(drot).pow(2)).exp()*10
+    compat = compat.numpy()
+    graph.addPairwiseGaussian(sxy=10, compat=compat)
+
+    Q = graph.inference(100)
+    scores = np.asarray(Q).T
+
+    # argmax
+    idx_max = scores.argmax(-1)
+    rmat = rmat[0][idx_max]
+
+    rmat = rmat.reshape((-1,9))
+    rts = np.concatenate([rmat, tmat],-1)
+    rts = rts.reshape((bs,1,-1))
+
+    # post-process se3
+    root_rmat = rts[:,0,:9].reshape((-1,3,3))
+    root_tmat = rts[:,0,9:12]
+    
+    rmat = rtk_raw[:,:3,:3]
+    tmat = rtk_raw[:,:3,3]
+    tmat = tmat + np.matmul(rmat, root_tmat[...,None])[...,0]
+    rmat = np.matmul(rmat, root_rmat)
+    rtk_raw[:,:3,:3] = rmat
+    rtk_raw[:,:3,3] = tmat
+   
+    if vis:
+        #TODO draw again
+        pdb.set_trace()
+        rtk_vis = rtk_raw.copy()
+        rtk_vis[:,:3,3] *= scale_factor
+        mesh = draw_cams(rtk_vis)
+        mesh.export('tmp/final.obj')
+    return rtk_raw

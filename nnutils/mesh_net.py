@@ -23,7 +23,7 @@ import configparser
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, RTExplicit, Encoder,\
-                    evaluate_mlp
+                    ScoreHead, evaluate_mlp
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
@@ -32,7 +32,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 compute_flow_cse, fb_flow_check, pinhole_cam, \
                                 render_color, mask_aug
 from nnutils.rendering import render_rays
-from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss
+from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -145,6 +145,7 @@ flags.DEFINE_integer('warmup_pose_ep', 0, 'epochs to pre-train cnn pose predicto
 flags.DEFINE_string('nf_path', '', 'a array of near far planes, Nx2')
 flags.DEFINE_string('pose_cnn_path', '', 'path to pre-trained pose cnn')
 flags.DEFINE_string('cnn_feature', 'embed', 'input to pose cnn')
+flags.DEFINE_string('cnn_type', 'reg', 'output of pose cnn')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -161,6 +162,7 @@ class v2s_net(nn.Module):
         self.alpha=torch.Tensor([opts.alpha])
         self.alpha=nn.Parameter(self.alpha)
         self.pose_update = 2 # by default, update all, use all losses
+        self.shape_update = 0 # by default, update all
         self.root_basis = opts.root_basis
         self.use_cam = opts.use_cam
         
@@ -198,7 +200,7 @@ class v2s_net(nn.Module):
         self.latest_vars['obj_bound'] = near_far_to_bound(self.near_far)
 
         self.vis_min=np.asarray([[0,0,0]])
-        self.vis_max=np.asarray([[1,1,1]])*self.latest_vars['obj_bound']
+        self.vis_max=np.asarray([[1,1,1]])*self.latest_vars['obj_bound']/2
         
         if opts.use_sim3:
             # video specific sim3: from video to joint canonical space
@@ -290,12 +292,19 @@ class v2s_net(nn.Module):
                 cnn_in_channels = 16
             elif opts.cnn_feature=='pts':
                 cnn_in_channels = 3
+
+            if opts.cnn_type == 'reg':
+                cnn_head = RTHead(use_quat=True, D=1,
+                            in_channels_xyz=t_embed_dim,in_channels_dir=0,
+                            out_channels=7, raw_feat=True)
+            elif opts.cnn_type == 'cls':
+                recursion_level = 1
+                cnn_head = ScoreHead(recursion_level=recursion_level, D=1,
+                            in_channels_xyz=t_embed_dim,in_channels_dir=0,
+                        out_channels=3+72*8**recursion_level, raw_feat=True)
             self.dp_root_rts = nn.Sequential(
                             Encoder((112,112), in_channels=cnn_in_channels,
-                                out_channels=128),
-                            RTHead(use_quat=True, D=1,
-                            in_channels_xyz=t_embed_dim,in_channels_dir=0,
-                            out_channels=7, raw_feat=True))
+                                out_channels=128), cnn_head)
             if self.root_basis == 'cnn':
                 self.nerf_root_rts = nn.Sequential(
                                 Encoder((112,112), in_channels=cnn_in_channels,
@@ -574,18 +583,100 @@ class v2s_net(nn.Module):
         
         return results, rand_inds
 
-    def set_input(self, batch):
+    def compute_dp_flow(self, bs):
+        """
+        assuming the following variable exists in self.
+        {frameid, dps , dp_feats, dp_bbox, kaug}
+        will generate the following to self.
+        {rand_dentrg, dp_flow, dp_conf}
+        bs, batch of pairs
+        """
         device = self.device
         opts = self.opts
+        h = opts.img_size
+        w = opts.img_size
+        # choose a forward-backward consistent pair
+        is_degenerate_pair = len(set((self.frameid.numpy())))==2
+        if is_degenerate_pair:
+            rand_dentrg = np.asarray(range(bs))
+            rand_dentrg = rand_dentrg.reshape((2,-1)).flip(0).flatten()
+        else:
+            rand_dentrg = -1 * np.ones(bs)
+            for idx in range(bs):
+                if rand_dentrg[idx] > -1: continue # already assigned
+                while True:
+                    tidx = np.random.randint(0,bs)
+                    if idx!=tidx and rand_dentrg[tidx]==-1: break
+                rand_dentrg[idx]  = tidx
+                rand_dentrg[tidx] = idx
+        self.rand_dentrg = rand_dentrg.astype(int)
+
+        # densepose to correspondence
+        geodesic=True
+        #geodesic=False
+        if geodesic: 
+            # densepose geodesic
+            # downsample
+            h_rszd,w_rszd=h//4,w//4
+            dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), 
+                                    mode='nearest')[:,0]
+            dps = dps.long()
+        else:
+            h_rszd,w_rszd = 112,112
+            # densepose-cropped to dataloader cropped transformation
+            cropa2im = torch.cat([(self.dp_bbox[:,2:] - self.dp_bbox[:,:2]) / 112., 
+                                  self.dp_bbox[:,:2]],-1)
+            cropa2im = K2mat(cropa2im)
+            im2cropb = K2inv(self.kaug) 
+            cropa2b = im2cropb.matmul(cropa2im)
+        
+        hw_rszd = h_rszd*w_rszd
+        self.dp_flow   = torch.zeros(bs,2,h_rszd,w_rszd).to(device)
+        self.dp_conf = torch.zeros(bs,h_rszd,w_rszd).to(device)
+
         if opts.debug:
             torch.cuda.synchronize()
             start_time = time.time()
-        if len(batch['img'].shape)==5:
-            bs,_,_,h,w = batch['img'].shape
-        else:
-            bs=1
-            _,_,h,w = batch['img'].shape
 
+        for idx in range(bs):
+            jdx = self.rand_dentrg[idx]
+            if self.dp_flow[idx].abs().sum()!=0: continue # already computed 
+            if geodesic:
+                flo_refr = compute_flow_geodist(dps[idx], dps[jdx], 
+                                                self.geodists)
+                flo_targ = compute_flow_geodist(dps[jdx], dps[idx], 
+                                                self.geodists)
+            else:
+                flo_refr, flo_targ = compute_flow_cse(self.dp_feats[idx],
+                                            self.dp_feats[jdx],
+                                            cropa2b[idx], cropa2b[jdx], 
+                                            opts.img_size)
+            self.dp_flow[idx] = flo_refr
+            self.dp_flow[jdx] = flo_targ
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('compute dp flow:%.2f'%(time.time()-start_time))
+
+        for idx in range(bs):
+            jdx = self.rand_dentrg[idx]
+            img_refr = self.imgs[idx:idx+1]
+            img_targ = self.imgs[jdx:jdx+1]
+            flo_refr = self.dp_flow[idx]
+            flo_targ = self.dp_flow[jdx]
+            if opts.vis_dpflow:
+                save_path = 'tmp/img-%05d-%05d.jpg'%(idx,jdx)
+            else: save_path = None
+            fberr_fw, fberr_bw = fb_flow_check(flo_refr, flo_targ,
+                                               img_refr, img_targ, 
+                                                self.dp_thrd,
+                                                save_path = save_path)
+
+            self.dp_conf[idx] = torch.Tensor(fberr_fw)
+        self.dp_conf[self.dp_conf>self.dp_thrd] = self.dp_thrd
+
+    def convert_batch_input(self, batch):
+        device = self.device
+        bs,_,_,h,w = batch['img'].shape
         # convert to float
         for k,v in batch.items():
             batch[k] = batch[k].float()
@@ -595,10 +686,6 @@ class v2s_net(nn.Module):
         for b in range(input_img_tensor.size(0)):
             input_img_tensor[b] = self.resnet_transform(input_img_tensor[b])
         
-        if opts.debug:
-            torch.cuda.synchronize()
-            print('before transer vars to cuda:%.2f'%(time.time()-start_time))
-
         self.input_imgs   = input_img_tensor.to(device)
         self.imgs         = img_tensor.to(device)
         self.flow         = batch['flow']        .view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(device)
@@ -617,106 +704,53 @@ class v2s_net(nn.Module):
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1).cpu()
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1).cpu()
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1).cpu()
-        
-        if opts.debug:
-            torch.cuda.synchronize()
-            print('after transer vars to cuda:%.2f'%(time.time()-start_time))
-
-        if self.opts.flow_dp:
-            # choose a forward-backward consistent pair
-            is_degenerate_pair = len(set((self.frameid.numpy())))==2
-            if is_degenerate_pair:
-                rand_dentrg = np.asarray(range(2*bs))
-                rand_dentrg = rand_dentrg.reshape((2,-1)).flip(0).flatten()
-            else:
-                rand_dentrg = -1 * np.ones(2*bs)
-                for idx in range(2*bs):
-                    if rand_dentrg[idx] > -1: continue # already assigned
-                    while True:
-                        tidx = np.random.randint(0,2*bs)
-                        if idx!=tidx and rand_dentrg[tidx]==-1: break
-                    rand_dentrg[idx]  = tidx
-                    rand_dentrg[tidx] = idx
-            self.rand_dentrg = rand_dentrg.astype(int)
-
-            # densepose to correspondence
-            geodesic=True
-            #geodesic=False
-            if geodesic: 
-                # densepose geodesic
-                # downsample
-                h_rszd,w_rszd=h//4,w//4
-                dps = F.interpolate(self.dps[:,None], (h_rszd,w_rszd), 
-                                        mode='nearest')[:,0]
-                dps = dps.long()
-            else:
-                h_rszd,w_rszd = 112,112
-                # densepose-cropped to dataloader cropped transformation
-                cropa2im = torch.cat([(self.dp_bbox[:,2:] - self.dp_bbox[:,:2]) / 112., 
-                                      self.dp_bbox[:,:2]],-1)
-                cropa2im = K2mat(cropa2im)
-                im2cropb = K2inv(self.kaug) 
-                cropa2b = im2cropb.matmul(cropa2im)
-            
-            hw_rszd = h_rszd*w_rszd
-            self.dp_flow   = torch.zeros(2*bs,2,h_rszd,w_rszd).to(device)
-            self.dp_conf = torch.zeros(2*bs,h_rszd,w_rszd).to(device)
-
-            if opts.debug:
-                torch.cuda.synchronize()
-                start_time = time.time()
-
-            for idx in range(2*bs):
-                jdx = self.rand_dentrg[idx]
-                if self.dp_flow[idx].abs().sum()!=0: continue # already computed 
-                if geodesic:
-                    flo_refr = compute_flow_geodist(dps[idx], dps[jdx], 
-                                                    self.geodists)
-                    flo_targ = compute_flow_geodist(dps[jdx], dps[idx], 
-                                                    self.geodists)
-                else:
-                    flo_refr, flo_targ = compute_flow_cse(self.dp_feats[idx],
-                                                self.dp_feats[jdx],
-                                                cropa2b[idx], cropa2b[jdx], 
-                                                opts.img_size)
-                self.dp_flow[idx] = flo_refr
-                self.dp_flow[jdx] = flo_targ
-            if opts.debug:
-                torch.cuda.synchronize()
-                print('compute dp flow:%.2f'%(time.time()-start_time))
-
-            for idx in range(2*bs):
-                jdx = self.rand_dentrg[idx]
-                img_refr = self.imgs[idx:idx+1]
-                img_targ = self.imgs[jdx:jdx+1]
-                flo_refr = self.dp_flow[idx]
-                flo_targ = self.dp_flow[jdx]
-                if opts.vis_dpflow:
-                    save_path = 'tmp/img-%05d-%05d.jpg'%(idx,jdx)
-                else: save_path = None
-                fberr_fw, fberr_bw = fb_flow_check(flo_refr, flo_targ,
-                                                   img_refr, img_targ, 
-                                                    self.dp_thrd,
-                                                    save_path = save_path)
-
-                self.dp_conf[idx] = torch.Tensor(fberr_fw)
-            self.dp_conf[self.dp_conf>self.dp_thrd] = self.dp_thrd
- 
-        ## TODO
+       
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]
+
+        # process silhouette
         self.sils = self.masks.clone()
         if self.opts.bg: self.masks[:] = 1
         self.masks = (self.masks*self.vis2d)>0
         self.masks = self.masks.float()
         self.sils = (self.sils*self.vis2d)>0
         self.sils =  self.sils.float()
+    
+    def convert_root_pose_mhp(self):
+        """
+        assumes has self.
+        {rtk, frameid, dp_feats, dps, masks, kaug }
+        produces self.
+        {rtk_raw}
+        """
+        opts = self.opts
+        bs = self.rtk.shape[0]
+        device = self.device
+        
+        self.rtk[:,:3] = self.create_base_se3(self.near_far, bs, device)
+        frame_code = self.dp_feats
+        rts_mhp = self.nerf_root_rts(frame_code) # bs, N, 13
 
-        bs = self.imgs.shape[0]
+        num_scores = rts_mhp.shape[1]
+        rtk_raw = self.rtk[:,None].repeat(1,num_scores, 1,1)
+        rtk_raw = rtk_raw.view(bs, num_scores,-1)
+        rts_mhp = torch.cat([rts_mhp, rtk_raw],-1)
+        return rts_mhp
+        
+    def convert_root_pose(self):
+        """
+        assumes has self.
+        {rtk, frameid, dp_feats, dps, masks, kaug }
+        produces self.
+        {rtk_raw}
+        """
+        opts = self.opts
+        bs = self.rtk.shape[0]
+        device = self.device
         #TODO change scale of input cameras
         self.rtk[:,:3,3] = self.rtk[:,:3,3] / self.obj_scale
         self.rtk_raw = self.rtk.clone()
         if not self.use_cam:
-            self.rtk[:,:3] = self.create_base_se3(self.near_far, bs, self.device)
+            self.rtk[:,:3] = self.create_base_se3(self.near_far, bs, device)
 
         if self.opts.root_opt:
             frameid = self.frameid.long().to(device)
@@ -745,22 +779,39 @@ class v2s_net(nn.Module):
 
         if self.opts.ks_opt:
             self.rtk[:,3,:] = self.ks_param #TODO kmat
-        
-        if opts.debug:
-            torch.cuda.synchronize()
-            print('before saving vars to cuda:%.2f'%(time.time()-start_time))
-
-        # save latest variables
+       
+    def save_latest_vars(self):
+        """
+        in: self.
+        {rtk, kaug, frameid, vis2d}
+        out: self.
+        {latest_vars}
+        """
         rtk = self.rtk.clone().detach()
         Kmat = K2mat(rtk[:,3])
         Kaug = K2inv(self.kaug) # p = Kaug Kmat P
         rtk[:,3] = mat2K(Kaug.matmul(Kmat))
+
         self.latest_vars['rtk'][self.frameid.long()] = rtk.cpu().numpy()
         if self.opts.use_sim3:
             self.latest_vars['j2c'][self.frameid.long()] = \
                     self.sim3_j2c.detach().cpu().numpy()[self.dataid.long()]
         self.latest_vars['idk'][self.frameid.long()] = 1
         self.latest_vars['vis'][self.frameid.long()] = self.vis2d.cpu().numpy()
+
+    def set_input(self, batch):
+        device = self.device
+        opts = self.opts
+
+        self.convert_batch_input(batch)
+        bs = self.imgs.shape[0]
+        
+        if self.opts.flow_dp:
+            self.compute_dp_flow(bs)
+ 
+        self.convert_root_pose()
+       
+        self.save_latest_vars()
         
         if self.training and self.opts.anneal_freq:
             alpha = self.num_freqs * \
@@ -938,6 +989,7 @@ class v2s_net(nn.Module):
         batch variable is not never being used here
         """
         # render ground-truth data
+        opts = self.opts
         bs_rd = 16
         with torch.no_grad():
             if self.opts.cnn_feature=='pts':
@@ -948,26 +1000,32 @@ class v2s_net(nn.Module):
                     self.dp_faces, vertex_color, self.near_far, self.device, 
                     self.mesh_renderer, bs_rd)
 
-        # predict delta se3
-        root_rts = self.nerf_root_rts(dp_feats_rd)
-        root_rmat = root_rts[:,0,:9].view(-1,3,3)
-        root_tmat = root_rts[:,0,9:12]    
-
-        # construct base se3
-        rtk = torch.zeros(bs_rd, 4,4).to(self.device)
-        rtk[:,:3] = self.create_base_se3(self.near_far, bs_rd, self.device)
-
-        # compose se3
-        rmat = rtk[:,:3,:3]
-        tmat = rtk[:,:3,3]
-        tmat = tmat + rmat.matmul(root_tmat[...,None])[...,0]
-        rmat = rmat.matmul(root_rmat)
-        rtk[:,:3,:3] = rmat
-        rtk[:,:3,3] = tmat.detach() # do not train translation
-        
-        # loss
         aux_out={}
-        total_loss = rtk_loss(rtk, rtk_raw, aux_out)
+        if opts.cnn_type=='reg':
+            # predict delta se3
+            root_rts = self.nerf_root_rts(dp_feats_rd)
+            root_rmat = root_rts[:,0,:9].view(-1,3,3)
+            root_tmat = root_rts[:,0,9:12]    
+
+            # construct base se3
+            rtk = torch.zeros(bs_rd, 4,4).to(self.device)
+            rtk[:,:3] = self.create_base_se3(self.near_far, bs_rd, self.device)
+
+            # compose se3
+            rmat = rtk[:,:3,:3]
+            tmat = rtk[:,:3,3]
+            tmat = tmat + rmat.matmul(root_tmat[...,None])[...,0]
+            rmat = rmat.matmul(root_rmat)
+            rtk[:,:3,:3] = rmat
+            rtk[:,:3,3] = tmat.detach() # do not train translation
+        
+            # loss
+            total_loss = rtk_loss(rtk, rtk_raw, aux_out)
+
+        elif opts.cnn_type=='cls':
+            scores, grid = self.nerf_root_rts(dp_feats_rd)
+            total_loss = rtk_cls_loss(scores, grid, rtk_raw, aux_out)
+        
         aux_out['total_loss'] = total_loss
 
         return total_loss, aux_out

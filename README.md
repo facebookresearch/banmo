@@ -13,6 +13,7 @@ python -m pip install detectron2 -f \
 # marching cubes
 pip install --upgrade PyMCubes
 # clone detectron2 repo to ../
+# install healpy
 ```
 
 ## Preprocess

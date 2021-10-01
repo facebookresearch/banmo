@@ -37,13 +37,14 @@ from matplotlib.pyplot import cm
 from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
                                obj_to_cam, get_near_far, near_far_to_bound, \
                                compute_point_visibility, process_so3_seq, \
-                               fb_check_cse
+                               ood_check_cse
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from ext_utils.io import mkdir_p
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
-from utils.io import save_vid, draw_cams, extract_data_info, merge_dict
+from utils.io import save_vid, draw_cams, extract_data_info, merge_dict,\
+        render_root_txt
 
 class DataParallelPassthrough(torch.nn.parallel.DistributedDataParallel):
     """
@@ -301,7 +302,7 @@ class v2s_trainer(Trainer):
             self.model.convert_batch_input(batch)
 
             #TODO process densepoe feature
-            fb_err = fb_check_cse(self.model.dp_feats, 
+            valid_list = ood_check_cse(self.model.dp_feats, 
                                   self.model.dp_embed, 
                                   self.model.dps.long())
 
@@ -328,12 +329,7 @@ class v2s_trainer(Trainer):
                 # save image list
                 impath = self.model.impath[self.model.frameid[idx].long()]
                 aux_seq['impath'].append(impath)
-
-                mean_error = fb_err[idx][fb_err[idx]!=-1].mean()
-                #aux_seq['is_valid'].append(mean_error<100) # not using it
-                aux_seq['is_valid'].append(mean_error<12)
-                #print(i); print(mean_error)
-                #cv2.imwrite('tmp/%05d.png'%i, fb_err[i].cpu().numpy()*10)
+                aux_seq['is_valid'].append(valid_list[idx])
         return aux_seq
   
     def eval(self, idx_render=None, dynamic_mesh=False): 
@@ -487,11 +483,10 @@ class v2s_trainer(Trainer):
                 self.save_network(str(epoch+1))
 
     @staticmethod
-    def save_cams(aux_seq, save_dir, datasets, evalsets, obj_scale):
+    def save_cams(aux_seq, save_prefix, datasets, evalsets, obj_scale):
         """
         save cameras to dir and modify dataset 
         """
-        save_prefix = '%s/init-cam'%(save_dir)
         mkdir_p(save_prefix)
         dataset_dict={dataset.imglist[0].split('/')[-2]:dataset for dataset in datasets}
         evalset_dict={dataset.imglist[0].split('/')[-2]:dataset for dataset in evalsets}
@@ -522,6 +517,11 @@ class v2s_trainer(Trainer):
                 rtklist[idx+1] = save_path
                 evalset_dict[seqname].rtklist[idx+1] = save_path
         
+        #draw camera trajectory
+        for seqname in dataset_dict.keys():
+            render_root_txt('%s/%s-'%(save_prefix,seqname), 0)
+        
+        
     def extract_cams(self, full_loader):
         # store cameras
         idx_render = range(len(self.evalloader))
@@ -537,11 +537,12 @@ class v2s_trainer(Trainer):
             np.save('%s/init-mhp.npy'%(self.save_dir), aux_seq['rtk'])
             aux_seq['rtk'] = process_so3_seq(aux_seq['rtk'])
 
-        self.save_cams(aux_seq, self.save_dir,
+        save_prefix = '%s/init-cam'%(self.save_dir)
+        self.save_cams(aux_seq, save_prefix,
                     full_loader.dataset.datasets,
                 self.evalloader.dataset.datasets,
                 self.model.obj_scale)
-        
+
         #TODO save near-far plane
         shape_verts = self.model.dp_verts_unit / 3 * self.model.near_far.mean()
         shape_verts = shape_verts * 1.2

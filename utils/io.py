@@ -25,6 +25,14 @@ def merge_dict(dict_list):
             out_dict[k] += dict_list[i][k]
     return out_dict
 
+def render_root_txt(cam_dir, cap_frame):
+    # read all the data
+    camlist = load_root(cam_dir, cap_frame)
+    # construct camera mesh
+    mesh = draw_cams(camlist)
+    save_dir,seqname=cam_dir.rsplit('/',1)
+    mesh.export('%s/mesh-%s.obj'%(save_dir, seqname))
+
 def load_root(root_dir, cap_frame):
     """
     load all the root se(3)

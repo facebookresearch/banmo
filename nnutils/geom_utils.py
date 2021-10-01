@@ -942,20 +942,29 @@ def process_so3_seq(rtk_seq, vis=False, smooth=True):
         mesh.export('tmp/final.obj')
     return rtk_raw
 
-def fb_check_cse(dp_feats, dp_embed, dp_idx):
+def ood_check_cse(dp_feats, dp_embed, dp_idx):
     """
     dp_feats: bs,16,h,w
     dp_idx:   bs, h,w
     dp_embed: N,16
-    fb_err: bs, h,w
+    valid_list bs
     """
     bs,_,h,w = dp_feats.shape
     N,_ = dp_embed.shape
     device = dp_feats.device
-    # TODO match surface to pixel, bs, N, 16, h,w
     dp_idx = F.interpolate(dp_idx.float()[None], (h,w), mode='nearest').long()[0]
+    
+    ## dot product 
+    #pdb.set_trace()
+    #err_list = []
+    #err_threshold = 0.05
+    #for i in range(bs):
+    #    err = 1- (dp_embed[dp_idx[i]]*dp_feats[i].permute(1,2,0)).sum(-1)
+    #    err_list.append(err)
 
-    fb_err = []
+    # fb check
+    err_list = []
+    err_threshold = 12
     for i in range(bs):
         costmap = (dp_embed.view(N,16,1)*\
                 dp_feats[i].view(1,16,h*w)).sum(-2)
@@ -964,7 +973,18 @@ def fb_check_cse(dp_feats, dp_embed, dp_idx):
         rpj_idx = max_idx[dp_idx[i]]
         rpj_coord = torch.stack([rpj_idx % w, rpj_idx//w],-1)
         ref_coord = sample_xy(w, 1, 0, device, return_all=True)[0].view(h,w,2)
-        fb_err.append( (rpj_coord - ref_coord).norm(2,-1) )
-    fb_err = torch.stack(fb_err,0)
-    fb_err[dp_idx==0] = -1
-    return fb_err
+        err = (rpj_coord - ref_coord).norm(2,-1) 
+        err_list.append(err)
+
+    valid_list = []
+    for i in range(bs):
+        err = err_list[i]
+        mean_error = err[dp_idx[i]!=0].mean()
+        is_valid = mean_error < err_threshold
+        valid_list.append( is_valid )
+        #cv2.imwrite('tmp/%05d.png'%i, (err/mean_error).cpu().numpy()*100)
+        #print(i); print(mean_error)
+    valid_list = torch.stack(valid_list,0)[:bs//2]
+    
+
+    return valid_list

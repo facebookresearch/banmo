@@ -98,6 +98,13 @@ def main():
 
     for name in imglist:
         rgb_img = cv2.imread(name)
+        # replace with densepose
+        name1, name2 = name.rsplit('/',1)
+        dppath = '%s/vis-%s'%(name1.replace('JPEGImages', 'Densepose'), name2)
+        if os.path.exists(dppath):
+            rgb_img = cv2.resize(cv2.imread(dppath), rgb_img.shape[:2][::-1])
+
+
         try: sil_img = cv2.imread(name.replace('JPEGImages', 'Annotations').replace('.jpg', '.png'),0)[:,:,None]
         except: sil_img = np.zeros(rgb_img.shape)[:,:,0]
         all_anno.append([rgb_img,sil_img,0,0,name])
@@ -174,10 +181,10 @@ def main():
                 frames.append(cv2.resize(all_anno[0][0],output_size[::-1])[:,:,::-1])
         else:
             for i in range(len(all_anno)):
-                silframe=cv2.resize((all_anno[i][1]>0).astype(float),output_size[::-1])*255
+                #silframe=cv2.resize((all_anno[i][1]>0).astype(float),output_size[::-1])*255
                 imgframe=cv2.resize(all_anno[i][0],output_size[::-1])[:,:,::-1]
-                redframe=(np.asarray([1,0,0])[None,None] * silframe[:,:,None]).astype(np.uint8)
-                imgframe = cv2.addWeighted(imgframe, 1, redframe, 0.5, 0)
+                #redframe=(np.asarray([1,0,0])[None,None] * silframe[:,:,None]).astype(np.uint8)
+                #imgframe = cv2.addWeighted(imgframe, 1, redframe, 0.5, 0)
                 frames.append(imgframe)
                 #frames.append(cv2.resize(all_anno[i][1],output_size[::-1])*255) # silhouette
                 #frames.append(cv2.resize(all_anno[i][0],output_size[::-1])[:,:,::-1]) # frame

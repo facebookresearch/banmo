@@ -21,7 +21,7 @@ save_dir,seqname=file_path.rsplit('/',1)
 def main():
     # read all the data
     rtk_seq = np.load(file_path, allow_pickle=True)
-    process_so3_seq(rtk_seq)
+    process_so3_seq(rtk_seq, smooth=False, vis=True)
     
 # python ... path to camera folder
 # will draw a trajectory of camera locations

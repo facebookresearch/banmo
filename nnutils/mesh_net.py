@@ -30,7 +30,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 canonical2ndc, obj_to_cam, vec_to_sim3, \
                                 near_far_to_bound, compute_flow_geodist, \
                                 compute_flow_cse, fb_flow_check, pinhole_cam, \
-                                render_color, mask_aug
+                                render_color, mask_aug 
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss
 
@@ -359,6 +359,15 @@ class v2s_net(nn.Module):
             self.dp_vis = self.dp_vis - self.dp_vmin
             self.dp_vmax = self.dp_vis.max(0)[0][None]
             self.dp_vis = self.dp_vis / self.dp_vmax
+            
+            # load surface embedding
+            from utils.cselib import create_cse
+            detbase='../detectron2/'
+            config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k.yaml'%(detbase)
+            weight_path = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k/253498611/model_final_6d69b7.pkl'
+            _, _, mesh_vertex_embeddings = create_cse(config_path,
+                                                            weight_path)
+            self.dp_embed = mesh_vertex_embeddings['sheep_5004']
 
         if opts.use_dp:
             self.dp_verts = nn.Parameter(self.dp_verts)
@@ -378,13 +387,6 @@ class v2s_net(nn.Module):
 
         # load densepose surface features
         if opts.warmup_pose_ep>0:
-            from utils.cselib import create_cse
-            detbase='../detectron2/'
-            config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k.yaml'%(detbase)
-            weight_path = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k/253498611/model_final_6d69b7.pkl'
-            predictor_dp, embedder, mesh_vertex_embeddings = create_cse(config_path,
-                                                            weight_path)
-            self.dp_embed = mesh_vertex_embeddings['sheep_5004']
             # soft renderer
             self.mesh_renderer = sr.SoftRenderer(image_size=256, sigma_val=1e-12, 
                            camera_mode='look_at',perspective=False, aggr_func_rgb='hard',

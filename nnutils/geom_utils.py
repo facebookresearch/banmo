@@ -861,12 +861,11 @@ def mask_aug(rendered):
         rendered[:,cx-sx:cx+sx,cy-sy:cy+sy] = feat_mean
     return rendered
 
-def process_so3_seq(rtk_seq):
+def process_so3_seq(rtk_seq, vis=False, smooth=True):
     """
     rtk_seq, bs, N, 13 including
     {scoresx1, rotationsx9, translationsx3}
     """
-    vis = False
     scores =rtk_seq[...,0]
     bs,N = scores.shape
     rmat =  rtk_seq[...,1:10]
@@ -897,22 +896,23 @@ def process_so3_seq(rtk_seq):
             top_score = (top_score - top_score.min())/(top_score.max()-top_score.min())
             mesh = draw_cams(top_rt, color_list = top_score)
             mesh.export('tmp/%d.obj'%(i))
-    
-    #TODO graph cut scores, bsxN
-    import pydensecrf.densecrf as dcrf
-    from pydensecrf.utils import unary_from_softmax
-    graph = dcrf.DenseCRF2D(bs, 1, N)  # width, height, nlabels
-    unary = unary_from_softmax(distribution.numpy().T.copy())
-    graph.setUnaryEnergy(unary)
-    grid = rmat[0].reshape((N,3,3))
-    drot = np.matmul(grid[None], np.transpose(grid[:,None], (0,1,3,2)))
-    drot = rot_angle(torch.Tensor(drot))
-    compat = (-2*(drot).pow(2)).exp()*10
-    compat = compat.numpy()
-    graph.addPairwiseGaussian(sxy=10, compat=compat)
+   
+    if smooth:
+        #TODO graph cut scores, bsxN
+        import pydensecrf.densecrf as dcrf
+        from pydensecrf.utils import unary_from_softmax
+        graph = dcrf.DenseCRF2D(bs, 1, N)  # width, height, nlabels
+        unary = unary_from_softmax(distribution.numpy().T.copy())
+        graph.setUnaryEnergy(unary)
+        grid = rmat[0].reshape((N,3,3))
+        drot = np.matmul(grid[None], np.transpose(grid[:,None], (0,1,3,2)))
+        drot = rot_angle(torch.Tensor(drot))
+        compat = (-2*(drot).pow(2)).exp()*10
+        compat = compat.numpy()
+        graph.addPairwiseGaussian(sxy=10, compat=compat)
 
-    Q = graph.inference(100)
-    scores = np.asarray(Q).T
+        Q = graph.inference(100)
+        scores = np.asarray(Q).T
 
     # argmax
     idx_max = scores.argmax(-1)
@@ -941,3 +941,30 @@ def process_so3_seq(rtk_seq):
         mesh = draw_cams(rtk_vis)
         mesh.export('tmp/final.obj')
     return rtk_raw
+
+def fb_check_cse(dp_feats, dp_embed, dp_idx):
+    """
+    dp_feats: bs,16,h,w
+    dp_idx:   bs, h,w
+    dp_embed: N,16
+    fb_err: bs, h,w
+    """
+    bs,_,h,w = dp_feats.shape
+    N,_ = dp_embed.shape
+    device = dp_feats.device
+    # TODO match surface to pixel, bs, N, 16, h,w
+    dp_idx = F.interpolate(dp_idx.float()[None], (h,w), mode='nearest').long()[0]
+
+    fb_err = []
+    for i in range(bs):
+        costmap = (dp_embed.view(N,16,1)*\
+                dp_feats[i].view(1,16,h*w)).sum(-2)
+        max_idx = costmap.argmax(-1)  #  N
+    
+        rpj_idx = max_idx[dp_idx[i]]
+        rpj_coord = torch.stack([rpj_idx % w, rpj_idx//w],-1)
+        ref_coord = sample_xy(w, 1, 0, device, return_all=True)[0].view(h,w,2)
+        fb_err.append( (rpj_coord - ref_coord).norm(2,-1) )
+    fb_err = torch.stack(fb_err,0)
+    fb_err[dp_idx==0] = -1
+    return fb_err

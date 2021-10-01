@@ -89,8 +89,8 @@ def align_se3(rootlist_a, rootlist_b):
                         rootlist_a[:,:3,:3])
     dso3 = R.from_matrix(dso3).mean().as_matrix()
     rootlist_b[:,:3,:3] = np.matmul(rootlist_b[:,:3,:3], dso3[None])
-    dscale = np.linalg.norm(rootlist_a[0,:3,3],2,-1) /\
-             np.linalg.norm(rootlist_b[0,:3,3],2,-1)
+    dscale = np.linalg.norm(rootlist_a[:,:3,3],2,-1).mean() /\
+            np.linalg.norm(rootlist_b[:,:3,3],2,-1).mean()
     rootlist_b[:,:3,3] = rootlist_b[:,:3,3] * dscale
 
     so3_err = np.matmul(rootlist_a[:,:3,:3], 

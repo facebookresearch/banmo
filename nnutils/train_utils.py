@@ -36,7 +36,8 @@ from matplotlib.pyplot import cm
 
 from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
                                obj_to_cam, get_near_far, near_far_to_bound, \
-                               compute_point_visibility, process_so3_seq
+                               compute_point_visibility, process_so3_seq, \
+                               fb_check_cse
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from ext_utils.io import mkdir_p
@@ -295,17 +296,27 @@ class v2s_trainer(Trainer):
             for i in idx_render:
                 batch.append( self.evalloader.dataset[i] )
             batch = self.evalloader.collate_fn(batch)
+
             #TODO can be first accelerated
             self.model.convert_batch_input(batch)
+
+            #TODO process densepoe feature
+            fb_err = fb_check_cse(self.model.dp_feats, 
+                                  self.model.dp_embed, 
+                                  self.model.dps.long())
+
             if opts.cnn_type=='cls' and opts.cnn_feature=='embed':
                 rtk = self.model.convert_root_pose_mhp()
             else:
                 self.model.convert_root_pose()
                 rtk = self.model.rtk
+
+            #TODO may need to recompute after removing the invalid predictions
             self.model.save_latest_vars()
                 
             # extract mesh sequences
             aux_seq = {
+                       'is_valid':[],
                        'rtk':[],
                        'impath':[],
                        }
@@ -317,6 +328,12 @@ class v2s_trainer(Trainer):
                 # save image list
                 impath = self.model.impath[self.model.frameid[idx].long()]
                 aux_seq['impath'].append(impath)
+
+                mean_error = fb_err[idx][fb_err[idx]!=-1].mean()
+                #aux_seq['is_valid'].append(mean_error<100) # not using it
+                aux_seq['is_valid'].append(mean_error<12)
+                #print(i); print(mean_error)
+                #cv2.imwrite('tmp/%05d.png'%i, fb_err[i].cpu().numpy()*10)
         return aux_seq
   
     def eval(self, idx_render=None, dynamic_mesh=False): 
@@ -480,8 +497,12 @@ class v2s_trainer(Trainer):
         evalset_dict={dataset.imglist[0].split('/')[-2]:dataset for dataset in evalsets}
 
         length = len(aux_seq['impath'])
+        valid_ids = torch.stack(aux_seq['is_valid']).nonzero()
         for i in range(length):
+            closest_valid_idx = valid_ids[(i-valid_ids).abs().argmin()]
             rtk = aux_seq['rtk'][i]
+            if not aux_seq['is_valid'][i]:
+                rtk[:3,:3] = aux_seq['rtk'][closest_valid_idx][:3,:3]
             # rescale translation according to input near-far plane
             rtk[:3,3] = rtk[:3,3]*obj_scale
             impath = aux_seq['impath'][i]

@@ -127,9 +127,9 @@ flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
 flags.DEFINE_bool('use_sim3', False, 'whether to use sim3 transformation')
 flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 12, 'maximum number of bones')
-flags.DEFINE_integer('warmup_init_steps', 1000, 'steps before using sil loss')
-flags.DEFINE_integer('warmup_steps', 1000, 'steps used to increase sil loss')
-flags.DEFINE_integer('lbs_reinit_epochs', 0, 'epochs to initialize bones')
+flags.DEFINE_float('warmup_init_steps', 0.2, 'steps before using sil loss')
+flags.DEFINE_float('warmup_steps', 0.2, 'steps used to increase sil loss')
+flags.DEFINE_integer('lbs_reinit_epochs', -1, 'epochs to initialize bones')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
@@ -817,8 +817,7 @@ class v2s_net(nn.Module):
         
         if self.training and self.opts.anneal_freq:
             alpha = self.num_freqs * \
-                self.total_steps / (opts.warmup_init_steps+opts.warmup_steps)
-            #alpha = self.num_freqs * self.total_steps / (self.final_steps/2)
+                self.progress / (opts.warmup_init_steps+opts.warmup_steps)
             if alpha>self.alpha.data[0]:
                 self.alpha.data[0] = min(max(3, alpha),self.num_freqs) # alpha from 3 to 10
             self.embedding_xyz.alpha = self.alpha.data[0]

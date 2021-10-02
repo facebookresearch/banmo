@@ -444,6 +444,7 @@ class v2s_trainer(Trainer):
             log = SummaryWriter('%s/%s'%(opts.checkpoint_dir,opts.logname), comment=opts.logname)
         else: log=None
         self.model.module.total_steps = 0
+        self.model.module.progress = 0
         torch.manual_seed(8)  # do it again
         torch.cuda.manual_seed(1)
 
@@ -459,10 +460,9 @@ class v2s_trainer(Trainer):
         # start training
         for epoch in range(0, self.num_epochs):
             self.model.epoch = epoch
-            self.model.ep_iters = len(self.dataloader)
             
             # moidfy cropping factor on the fly TODO
-            if self.model.total_steps > opts.warmup_init_steps:
+            if self.model.module.progress > opts.warmup_init_steps:
                 self.reset_dataset_crop_factor(float(epoch)/opts.num_epochs)
             else:
                 self.reset_dataset_crop_factor(1.)
@@ -575,7 +575,6 @@ class v2s_trainer(Trainer):
             self.init_training()
             for epoch in range(0, opts.warmup_pose_ep):
                 self.model.epoch = epoch
-                self.model.ep_iters = len(self.dataloader)
                 self.train_one_epoch(epoch, log, warmup=True)
                 self.save_network(str(epoch+1), 'cnn-') 
 
@@ -605,6 +604,7 @@ class v2s_trainer(Trainer):
         # start from low learning rate again
         self.init_training()
         self.model.module.total_steps = 0
+        self.model.module.progress = 0.
             
     def train_one_epoch(self, epoch, log, warmup=False):
         """
@@ -613,7 +613,8 @@ class v2s_trainer(Trainer):
         opts = self.opts
         self.model.train()
         for i, batch in enumerate(self.dataloader):
-            self.model.iters=i
+            self.model.module.progress = float(self.model.total_steps) /\
+                                               self.model.final_steps
             if not warmup:
                 self.update_pose_indicator(i)
                 self.update_shape_indicator(i)
@@ -682,9 +683,9 @@ class v2s_trainer(Trainer):
         """
         opts = self.opts
         if not opts.root_opt or \
-        self.model.module.total_steps > (opts.warmup_init_steps + opts.warmup_steps):
+            self.model.module.progress > (opts.warmup_init_steps + opts.warmup_steps):
             self.model.module.pose_update = 2
-        elif self.model.module.total_steps < opts.warmup_init_steps or \
+        elif self.model.module.progress < opts.warmup_init_steps or \
                 i%2 == 0:
             self.model.module.pose_update = 0
         else:
@@ -904,6 +905,11 @@ class v2s_trainer(Trainer):
 
             # mesh post-processing 
             if len(mesh.vertices)>0:
+                # keep the largest mesh
+                mesh = [i for i in mesh.split(only_watertight=False)]
+                mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
+                mesh = mesh[-1]
+
                 # assign color based on canonical location
                 vis = mesh.vertices
                 model.vis_min = vis.min(0)[None]

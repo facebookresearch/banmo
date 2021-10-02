@@ -1,6 +1,6 @@
 rootdir=$1
 tmpdir=tmp/
-prefix=cat_9
+prefix=$2
 filedir=$rootdir/$prefix
 outdir=$rootdir/output
 suffix=.MOV
@@ -30,12 +30,14 @@ for infile in $filedir/*$suffix; do
   cp $outdir/* $todir/images
   python scripts/densepose.py $seqname
 
-#  # flow
-#  . activate viser
-#  cd /private/home/gengshany/code/viser/data_gen
-#  bash compute_flow.sh $seqname
-#  cd -
-#
+  python scripts/compute_dp.py $seqname
+
+  # flow
+  . activate viser
+  cd /private/home/gengshany/code/viser/data_gen
+  bash compute_flow.sh $seqname
+  cd -
+
   # save to zips
   cd database/DAVIS/
   rm  $rootdir/$seqname.zip

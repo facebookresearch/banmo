@@ -517,10 +517,6 @@ class v2s_trainer(Trainer):
                 rtklist[idx+1] = save_path
                 evalset_dict[seqname].rtklist[idx+1] = save_path
         
-        #draw camera trajectory
-        for seqname in dataset_dict.keys():
-            render_root_txt('%s/%s-'%(save_prefix,seqname), 0)
-        
         
     def extract_cams(self, full_loader):
         # store cameras
@@ -542,8 +538,15 @@ class v2s_trainer(Trainer):
                     full_loader.dataset.datasets,
                 self.evalloader.dataset.datasets,
                 self.model.obj_scale)
+        
+        dist.barrier() # wait untail all have finished
+        if self.opts.local_rank==0:
+            # draw camera trajectory
+            for dataset in full_loader.dataset.datasets:
+                seqname = dataset.imglist[0].split('/')[-2]
+                render_root_txt('%s/%s-'%(save_prefix,seqname), 0)
 
-        #TODO save near-far plane
+        # save near-far plane
         shape_verts = self.model.dp_verts_unit / 3 * self.model.near_far.mean()
         shape_verts = shape_verts * 1.2
         self.model.near_far.data = get_near_far(shape_verts.detach().cpu().numpy(),
@@ -719,14 +722,15 @@ class v2s_trainer(Trainer):
         broadcast variables to other models
         """
         dist.barrier()
-        dist.broadcast_object_list(
-                [self.model.num_bones, 
-                self.model.num_bone_used,],
-                0)
-        dist.broadcast(self.model.bones,0)
-        self.model.nerf_models['bones'] = self.model.bones
-        dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].weight, 0)
-        dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].bias, 0)
+        if self.opts.lbs:
+            dist.broadcast_object_list(
+                    [self.model.num_bones, 
+                    self.model.num_bone_used,],
+                    0)
+            dist.broadcast(self.model.bones,0)
+            self.model.nerf_models['bones'] = self.model.bones
+            dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].weight, 0)
+            dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].bias, 0)
 
         dist.broadcast(self.model.near_far,0)
    

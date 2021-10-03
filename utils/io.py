@@ -172,8 +172,9 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
     numvid =  len(config.sections())-1
     if numvid==1 and not config.has_option(name, 'datapath'): 
         datapath='%s/%s'%(datapath, opts['seqname'])
-    
+    # opts rtk_path  
     if rtk_path =='':
+        # rtk path from config
         rtk_path= attrs['rtk_path']
     elif not os.path.isfile('%s-00000.txt'%rtk_path):
         print('loading cameras from init-cam')
@@ -192,6 +193,10 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
                           dframe=df, init_frame=init_frame, 
                           dataid=dataid, numvid=numvid, flip=flip, is_eval=is_eval,
                           rtk_path=rtk_path)
+        if rtk_path is None:
+            dataset.has_prior_cam = False
+        else:
+            dataset.has_prior_cam = True
         datasets.append(dataset)
     return datasets
     

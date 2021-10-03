@@ -13,8 +13,7 @@ import argparse
 import trimesh
 import configparser
 from utils.io import config_to_dataloader, draw_cams, load_root
-from nnutils.geom_utils import rot_angle
-from scipy.spatial.transform import Rotation as R
+from nnutils.geom_utils import rot_angle, align_sim3
        
 root_a_dir=sys.argv[1]
 root_b_dir=sys.argv[2]
@@ -70,47 +69,13 @@ def umeyama_alignment(x, y, with_scale=False):
 
     return r, t, c
 
-def align_se3(rootlist_a, rootlist_b):
-#    ta = np.matmul(-np.transpose(rootlist_a[:,:3,:3],[0,2,1]), 
-#                                 rootlist_a[:,:3,3:4])
-#    ta = ta[...,0].T
-#    tb = np.matmul(-np.transpose(rootlist_b[:,:3,:3],[0,2,1]), 
-#                                 rootlist_b[:,:3,3:4])
-#    tb = tb[...,0].T
-#    dso3,dtrn,dscale=umeyama_alignment(tb, ta,with_scale=False)
-#    
-#    dscale = np.linalg.norm(rootlist_a[0,:3,3],2,-1) /\
-#             np.linalg.norm(rootlist_b[0,:3,3],2,-1)
-#    rootlist_b[:,:3,:3] = np.matmul(rootlist_b[:,:3,:3], dso3.T[None])
-#    rootlist_b[:,:3,3:4] = rootlist_b[:,:3,3:4] - \
-#            np.matmul(rootlist_b[:,:3,:3], dtrn[None,:,None]) 
-
-    dso3 = np.matmul(np.transpose(rootlist_b[:,:3,:3],(0,2,1)),
-                        rootlist_a[:,:3,:3])
-    dso3 = R.from_matrix(dso3).mean().as_matrix()
-    rootlist_b[:,:3,:3] = np.matmul(rootlist_b[:,:3,:3], dso3[None])
-    dscale = np.linalg.norm(rootlist_a[:,:3,3],2,-1).mean() /\
-            np.linalg.norm(rootlist_b[:,:3,3],2,-1).mean()
-    rootlist_b[:,:3,3] = rootlist_b[:,:3,3] * dscale
-
-    so3_err = np.matmul(rootlist_a[:,:3,:3], 
-            np.transpose(rootlist_b[:,:3,:3],[0,2,1]))
-    so3_err = rot_angle(torch.Tensor(so3_err))
-    so3_err = so3_err / np.pi*180
-    so3_err_max = so3_err.max()
-    so3_err_mean = so3_err.mean()
-    print(so3_err)
-    print('max  so3 error (deg): %.1f'%(so3_err_max))
-    print('mean so3 error (deg): %.1f'%(so3_err_mean))
-
-    return rootlist_b
 
 def main():
     rootlist_a = load_root(root_a_dir, cap_frame)
     rootlist_b = load_root(root_b_dir, cap_frame)
 
     # align
-    rootlist_b = align_se3(rootlist_a, rootlist_b)
+    rootlist_b = align_sim3(rootlist_a, rootlist_b)
 
     # construct camera mesh
     mesh_a = draw_cams(rootlist_a, color='gray')

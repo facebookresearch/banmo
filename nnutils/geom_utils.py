@@ -7,9 +7,10 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as F
 import soft_renderer as sr
+from scipy.spatial.transform import Rotation as R
 
 from nnutils.nerf import evaluate_mlp
-from utils.io import draw_cams
+from utils.io import draw_cams, load_root
 
 import sys
 sys.path.insert(0, 'third_party')
@@ -941,6 +942,77 @@ def process_so3_seq(rtk_seq, vis=False, smooth=True):
         mesh = draw_cams(rtk_vis)
         mesh.export('tmp/final.obj')
     return rtk_raw
+
+def align_sim3(rootlist_a, rootlist_b, is_inlier=None):
+    """
+    nx4x4 matrices
+    is_inlier: n
+    """
+#    ta = np.matmul(-np.transpose(rootlist_a[:,:3,:3],[0,2,1]), 
+#                                 rootlist_a[:,:3,3:4])
+#    ta = ta[...,0].T
+#    tb = np.matmul(-np.transpose(rootlist_b[:,:3,:3],[0,2,1]), 
+#                                 rootlist_b[:,:3,3:4])
+#    tb = tb[...,0].T
+#    dso3,dtrn,dscale=umeyama_alignment(tb, ta,with_scale=False)
+#    
+#    dscale = np.linalg.norm(rootlist_a[0,:3,3],2,-1) /\
+#             np.linalg.norm(rootlist_b[0,:3,3],2,-1)
+#    rootlist_b[:,:3,:3] = np.matmul(rootlist_b[:,:3,:3], dso3.T[None])
+#    rootlist_b[:,:3,3:4] = rootlist_b[:,:3,3:4] - \
+#            np.matmul(rootlist_b[:,:3,:3], dtrn[None,:,None]) 
+
+    dso3 = np.matmul(np.transpose(rootlist_b[:,:3,:3],(0,2,1)),
+                        rootlist_a[:,:3,:3])
+    dscale = np.linalg.norm(rootlist_a[:,:3,3],2,-1)/\
+            np.linalg.norm(rootlist_b[:,:3,3],2,-1)
+
+    # select inliers to fit 
+    if is_inlier is not None:
+        dso3 = dso3[is_inlier]
+        dscale = dscale[is_inlier]
+
+    dso3 = R.from_matrix(dso3).mean().as_matrix()
+    rootlist_b[:,:3,:3] = np.matmul(rootlist_b[:,:3,:3], dso3[None])
+
+    dscale = dscale.mean()
+    rootlist_b[:,:3,3] = rootlist_b[:,:3,3] * dscale
+
+    so3_err = np.matmul(rootlist_a[:,:3,:3], 
+            np.transpose(rootlist_b[:,:3,:3],[0,2,1]))
+    so3_err = rot_angle(torch.Tensor(so3_err))
+    so3_err = so3_err / np.pi*180
+    so3_err_max = so3_err.max()
+    so3_err_mean = so3_err.mean()
+    print(so3_err)
+    print('max  so3 error (deg): %.1f'%(so3_err_max))
+    print('mean so3 error (deg): %.1f'%(so3_err_mean))
+
+    return rootlist_b
+
+def align_sfm_sim3(aux_seq, datasets):
+    for dataset in datasets:
+        seqname = dataset.imglist[0].split('/')[-2]
+        root_dir = dataset.rtklist[0][:-9]
+        root_sfm = load_root(root_dir, 0)[:-1] # excluding the last
+
+        # only process dataset with rtk_path input
+        if dataset.has_prior_cam:
+            # split predicted root into multiple sequences
+            seq_idx = [seqname == i.split('/')[-2] for i in aux_seq['impath']]
+            root_pred = aux_seq['rtk'][seq_idx]
+            is_inlier = aux_seq['is_valid'][seq_idx]
+            # TODO only use certain ones to match
+            #pdb.set_trace()
+            #mesh = draw_cams(root_sfm, color='gray')
+            #mesh.export('0.obj')
+            root_sfm = align_sim3(root_pred, root_sfm, is_inlier=is_inlier)
+            
+            aux_seq['rtk'][seq_idx] = root_sfm
+            aux_seq['is_valid'][seq_idx] = True
+        else:
+            print('not aligning %s, no rtk path in config file'%seqname)
+
 
 def ood_check_cse(dp_feats, dp_embed, dp_idx):
     """

@@ -146,6 +146,8 @@ flags.DEFINE_string('nf_path', '', 'a array of near far planes, Nx2')
 flags.DEFINE_string('pose_cnn_path', '', 'path to pre-trained pose cnn')
 flags.DEFINE_string('cnn_feature', 'embed', 'input to pose cnn')
 flags.DEFINE_string('cnn_type', 'reg', 'output of pose cnn')
+flags.DEFINE_bool('sfm_init', True, 'whether to maintain sfm relative trajectory')
+flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value (0-6)')
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
@@ -180,17 +182,20 @@ class v2s_net(nn.Module):
         self.latest_vars['mesh_rest'] = trimesh.Trimesh()
 
         # get near-far plane
-        if opts.nf_path=='':
+        if opts.unit_nf:
+            self.near_far = np.zeros((self.data_offset[-1],2))
+            self.near_far[...,1] = 6.
+            self.near_far = self.near_far.astype(np.float32)
+        elif opts.nf_path=='':
             try:
                 self.near_far = self.near_far_from_config(self.config, 
                                          self.data_offset, self.num_vid)
             except:
-                # error
                 print('near_far plane not defined')
                 exit()
-                #self.near_far = None
-                #self.obj_scale = 1
-        else:exit()#TODO
+        else:
+            print('near_far plane not defined')
+            exit()
         self.near_far = torch.Tensor(self.near_far).to(self.device)
         self.obj_scale = float(near_far_to_bound(self.near_far)) / 0.3 # to 0.3
         self.near_far = self.near_far / self.obj_scale

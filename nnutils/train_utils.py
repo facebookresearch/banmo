@@ -37,7 +37,7 @@ from matplotlib.pyplot import cm
 from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
                                obj_to_cam, get_near_far, near_far_to_bound, \
                                compute_point_visibility, process_so3_seq, \
-                               ood_check_cse
+                               ood_check_cse, align_sfm_sim3
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from ext_utils.io import mkdir_p
@@ -305,6 +305,7 @@ class v2s_trainer(Trainer):
             valid_list = ood_check_cse(self.model.dp_feats, 
                                   self.model.dp_embed, 
                                   self.model.dps.long())
+            valid_list = valid_list.cpu().numpy()
 
             if opts.cnn_type=='cls' and opts.cnn_feature=='embed':
                 rtk = self.model.convert_root_pose_mhp()
@@ -492,16 +493,24 @@ class v2s_trainer(Trainer):
         evalset_dict={dataset.imglist[0].split('/')[-2]:dataset for dataset in evalsets}
 
         length = len(aux_seq['impath'])
-        valid_ids = torch.stack(aux_seq['is_valid']).nonzero()
+        valid_ids = aux_seq['is_valid']
         for i in range(length):
-            closest_valid_idx = valid_ids[(i-valid_ids).abs().argmin()]
+            impath = aux_seq['impath'][i]
+            seqname = impath.split('/')[-2]
+            
+            # in the same sequance
+            seq_idx = np.asarray([seqname == i.split('/')[-2] \
+                    for i in aux_seq['impath']])
+            valid_ids_seq = np.where(valid_ids * seq_idx)[0]
+
+            # find the closest valid frame
+            closest_valid_idx = valid_ids_seq[np.abs(i-valid_ids_seq).argmin()]
             rtk = aux_seq['rtk'][i]
             if not aux_seq['is_valid'][i]:
                 rtk[:3,:3] = aux_seq['rtk'][closest_valid_idx][:3,:3]
+
             # rescale translation according to input near-far plane
             rtk[:3,3] = rtk[:3,3]*obj_scale
-            impath = aux_seq['impath'][i]
-            seqname = impath.split('/')[-2]
             rtklist = dataset_dict[seqname].rtklist
             idx = int(impath.split('/')[-1].split('.')[-2])
             save_path = '%s/%s-%05d.txt'%(save_prefix, seqname, idx)
@@ -520,18 +529,23 @@ class v2s_trainer(Trainer):
         
     def extract_cams(self, full_loader):
         # store cameras
+        opts = self.opts
         idx_render = range(len(self.evalloader))
         chunk = 50
         aux_seq = []
         for i in range(0, len(idx_render), chunk):
             aux_seq.append(self.eval_cam(idx_render=idx_render[i:i+chunk]))
         aux_seq = merge_dict(aux_seq)
+        aux_seq['rtk'] = np.asarray(aux_seq['rtk'])
+        aux_seq['is_valid'] = np.asarray(aux_seq['is_valid'])
 
-        if self.opts.cnn_type=='cls':
+        if opts.cnn_type=='cls':
             #TODO post-process camera trajectories
-            aux_seq['rtk'] = np.asarray(aux_seq['rtk'])
             np.save('%s/init-mhp.npy'%(self.save_dir), aux_seq['rtk'])
             aux_seq['rtk'] = process_so3_seq(aux_seq['rtk'])
+
+        if opts.sfm_init:
+            align_sfm_sim3(aux_seq, full_loader.dataset.datasets)
 
         save_prefix = '%s/init-cam'%(self.save_dir)
         self.save_cams(aux_seq, save_prefix,
@@ -540,7 +554,7 @@ class v2s_trainer(Trainer):
                 self.model.obj_scale)
         
         dist.barrier() # wait untail all have finished
-        if self.opts.local_rank==0:
+        if opts.local_rank==0:
             # draw camera trajectory
             for dataset in full_loader.dataset.datasets:
                 seqname = dataset.imglist[0].split('/')[-2]
@@ -703,9 +717,8 @@ class v2s_trainer(Trainer):
             self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
         
         # reinit bones based on extracted surface
-        #if opts.lbs and (epoch==opts.lbs_all_epochs or\
         if opts.lbs and (epoch==self.num_epochs//2 or\
-                         epoch==opts.lbs_reinit_epochs):
+                         epoch==int(3.*self.num_epochs/4)):
             reinit_bones(self.model, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
 
@@ -993,12 +1006,15 @@ class v2s_trainer(Trainer):
         percent: percentage of training epochs
         """
         #TODO schedule: 0(maxc) to 0.5 (minc)
-        #TODO: cycle from 0.5 to 1
-        maxc = 5
+        #TODO: two cycles from 0.2 to 0.5, from 0.5 to 0.8
+        maxc = 3
         minc = 1.2
-        #percent = (-1e-3+percent) % 0.5
         for i in range(len(self.dataloader.dataset.datasets)):
-            crop_factor = min(max(maxc-percent*(maxc-minc)*2, minc), maxc)
+            if percent<0.2:   factor = 1.
+            elif percent<0.5: factor = (percent-0.2)/0.3
+            elif percent<0.8: factor = (percent-0.5)/0.3
+            else:             factor = 1.
+            crop_factor = min(max(maxc-factor*(maxc-minc), minc), maxc)
             self.dataloader.dataset.datasets[i].crop_factor = crop_factor
             self.evalloader.dataset.datasets[i].crop_factor = crop_factor
 

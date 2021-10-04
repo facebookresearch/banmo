@@ -92,28 +92,19 @@ class BaseDataset(Dataset):
                             [0,0,1]]).T
         else:
             A = np.eye(3)
-        Ap = A
 
         A = A.dot(self.rot_augment(x0))
-        Ap=Ap.dot(self.rot_augment(x0))
-
-        return A,Ap
+        return A
 
     def __len__(self):
         return self.num_imgs
-
-    def read_raw(self, index):
-        im0idx = self.baselist[index]
-        im1idx = im0idx + self.dframe if self.directlist[index]==1 else im0idx-self.dframe
+    
+    def read_raw(self, im0idx, flowfw):
         img_path = self.imglist[im0idx]
         img = cv2.imread(img_path)[:,:,::-1] / 255.0
-
-        img_path = self.imglist[im1idx]
-        imgn = cv2.imread(img_path)[:,:,::-1] / 255.0
         shape = img.shape
         if len(shape) == 2:
             img = np.repeat(np.expand_dims(img, 2), 3, axis=2)
-            imgn = np.repeat(np.expand_dims(imgn, 2), 3, axis=2)
 
         mask = cv2.imread(self.masklist[im0idx],0)
         mask = mask/np.sort(np.unique(mask))[1]
@@ -124,62 +115,37 @@ class BaseDataset(Dataset):
             mask = binary_erosion(mask,iterations=2)
         mask = np.expand_dims(mask, 2)
 
-        maskn = cv2.imread(self.masklist[im1idx],0)
-        maskn = maskn/np.sort(np.unique(maskn))[1]
-        occludern = maskn==255
-        maskn[occludern] = 0
-        if maskn.shape[0]!=imgn.shape[0] or maskn.shape[1]!=imgn.shape[1]:
-            maskn = cv2.resize(maskn, imgn.shape[:2][::-1],interpolation=cv2.INTER_NEAREST)
-            maskn = binary_erosion(maskn,iterations=1)
-        maskn = np.expand_dims(maskn, 2)
-
         # flow
-        if self.directlist[index]==1:
+        if flowfw:
             flowpath = self.flowfwlist[im0idx]
-            flowpathn =self.flowbwlist[im0idx+self.dframe]
         else:
             flowpath = self.flowbwlist[im0idx]
-            flowpathn =self.flowfwlist[im0idx-self.dframe]
         try:
             flow = readPFM(flowpath)[0]
-            flown =readPFM(flowpathn)[0]
             occ = readPFM(flowpath.replace('flo-', 'occ-'))[0]
-            occn =readPFM(flowpathn.replace('flo-', 'occ-'))[0]
         except:
-            print('warning: loading empty flow')
+            print('warning: loading empty flow from %s'%(flowpath))
             flow = np.zeros_like(img)
-            flown = np.zeros_like(img)
             occ = np.zeros_like(mask)
-            occn = np.zeros_like(mask)
         occ[occluder] = 0
-        occn[occludern] = 0
 
         try:
             dp = readPFM(self.dplist[im0idx])[0]
-            dpn= readPFM(self.dplist[im1idx])[0]
         except:
             print('error loading densepose surface')
             dp = np.zeros_like(occ)
-            dpn = np.zeros_like(occ)
         try:
             dp_feat = readPFM(self.featlist[im0idx])[0]
-            dp_featn= readPFM(self.featlist[im1idx])[0]
             dp_bbox =  np.loadtxt(self.bboxlist[im0idx])
-            dp_bboxn = np.loadtxt(self.bboxlist[im1idx])
         except:
             print('error loading densepose feature')
             dp_feat =  np.zeros((16*112,112))
-            dp_featn = np.zeros((16*112,112))
             dp_bbox =  np.zeros((4))
-            dp_bboxn = np.zeros((4))
         dp= (dp *50).astype(np.int32)
-        dpn=(dpn*50).astype(np.int32)
         dp_feat = dp_feat.reshape((16,112,112))
-        dp_featn=dp_featn.reshape((16,112,112))
 
         # create mask for visible vs unkonwn
         vis2d = np.ones_like(mask)
-        vis2dn= np.ones_like(mask)
 
         rt_dict = {}
         rt_dict['img']   = img     
@@ -190,108 +156,38 @@ class BaseDataset(Dataset):
         rt_dict['vis2d'] = vis2d 
         rt_dict['dp_feat'] = dp_feat
         rt_dict['dp_bbox'] = dp_bbox
-                                 
-        rt_dict['imgn']  = imgn  
-        rt_dict['maskn'] = maskn 
-        rt_dict['flown'] = flown 
-        rt_dict['occn']  = occn  
-        rt_dict['dpn']   = dpn   
-        rt_dict['vis2dn']= vis2dn
-        rt_dict['dp_featn'] = dp_featn
-        rt_dict['dp_bboxn'] = dp_bboxn
-
         return rt_dict
-
-    def compute_crop_params(self, mask, maskn):
+    
+    def compute_crop_params(self, mask):
         indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
-        indicesn = np.where(maskn>0); xidn = indicesn[1]; yidn = indicesn[0]
         center = ( (xid.max()+xid.min())//2, (yid.max()+yid.min())//2)
-        centern = ( (xidn.max()+xidn.min())//2, (yidn.max()+yidn.min())//2)
         length = ( (xid.max()-xid.min())//2, (yid.max()-yid.min())//2)
-        lengthn = ( (xidn.max()-xidn.min())//2, (yidn.max()-yidn.min())//2)
-        
         length = (int(self.crop_factor*length[0]), int(self.crop_factor*length[1]))
-        lengthn= (int(self.crop_factor*lengthn[0]),int(self.crop_factor*lengthn[1]))
 
         maxw=self.img_size;maxh=self.img_size
         orisize = (2*length[0], 2*length[1])
-        orisizen= (2*lengthn[0], 2*lengthn[1])
         alp =  [orisize[0]/maxw  ,orisize[1]/maxw]
-        alpn = [orisizen[0]/maxw ,orisizen[1]/maxw]
         
         # intrinsics induced by augmentation: augmented to to original img
         # correct cx,cy at clip space (not tx, ty)
         if self.flip==0:
             pps  = np.asarray([float( center[0] - length[0] ), float( center[1] - length[1]  )])
-            ppsn = np.asarray([float( centern[0]- lengthn[0]), float(centern[1] - lengthn[1] )])
         else:
             pps  = np.asarray([-float( center[0] - length[0] ), float( center[1] - length[1]  )])
-            ppsn = np.asarray([-float( centern[0]- lengthn[0]), float(centern[1] - lengthn[1] )])
         kaug = np.asarray([alp[0], alp[1], pps[0], pps[1]])
-        kaugn= np.asarray([alpn[0],alpn[1],ppsn[0],ppsn[1]])
 
         # geometric augmentation for img, mask, flow, occ
         x0,y0  =np.meshgrid(range(maxw),range(maxh))
-        A,Ap = self.geo_augment(x0)
+        A = self.geo_augment(x0)
         B = np.asarray([[alp[0],0,(center[0]-length[0])],
                         [0,alp[1],(center[1]-length[1])],
                         [0,0,1]]).T
-        Bp= np.asarray([[alpn[0],0,(centern[0]-lengthn[0])],
-                        [0,alpn[1],(centern[1]-lengthn[1])],
-                        [0,0,1]]).T
-        
         hp0 = np.stack([x0,y0,np.ones_like(x0)],-1)  # screen coord
-        hp1 = np.stack([x0,y0,np.ones_like(x0)],-1)  # screen coord
         hp0 = np.dot(hp0,A).dot(B)                   # image coord
-        hp1 = np.dot(hp1,Ap).dot(Bp)                  # image coord
-        return kaug, kaugn, hp0, hp1, A,B,Ap,Bp
+        return kaug, hp0, A,B
 
-    def __getitem__(self, index):
-        #pdb.set_trace()
-        #ss = time.time()
+    def flow_process(self,flow, flown, occ, occn, hp0, hp1, A,B,Ap,Bp):
         maxw=self.img_size;maxh=self.img_size
-        im0idx = self.baselist[index]
-        im1idx = im0idx + self.dframe if self.directlist[index]==1 else im0idx-self.dframe
-        rt_dict = self.read_raw(index)
-        img   = rt_dict['img']  
-        mask  = rt_dict['mask']
-        flow  = rt_dict['flow']
-        occ   = rt_dict['occ']
-        dp    = rt_dict['dp']
-        vis2d = rt_dict['vis2d']
-        dp_feat = rt_dict['dp_feat']
-        dp_bbox = rt_dict['dp_bbox'] 
-
-        imgn  = rt_dict['imgn']
-        maskn = rt_dict['maskn']
-        flown = rt_dict['flown']
-        occn  = rt_dict['occn']
-        dpn   = rt_dict['dpn'] 
-        vis2dn= rt_dict['vis2dn']
-        dp_featn = rt_dict['dp_featn']
-        dp_bboxn = rt_dict['dp_bboxn'] 
-
-        kaug, kaugn, hp0, hp1, A,B,Ap,Bp= self.compute_crop_params(mask, maskn)
-        
-        ## warp images
-        x0 = hp0[:,:,0].astype(np.float32)
-        y0 = hp0[:,:,1].astype(np.float32)
-        x0n = hp1[:,:,0].astype(np.float32)
-        y0n = hp1[:,:,1].astype(np.float32)
-        img = cv2.remap(img,x0,y0,interpolation=cv2.INTER_LINEAR)
-        mask = cv2.remap(mask.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
-        flow = cv2.remap(flow,x0,y0,interpolation=cv2.INTER_LINEAR)
-        occ = cv2.remap(occ,x0,y0,interpolation=cv2.INTER_LINEAR)
-        dp   =cv2.remap(dp,   x0,y0,interpolation=cv2.INTER_NEAREST)
-        vis2d=cv2.remap(vis2d.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
-
-        imgn = cv2.remap(imgn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
-        maskn = cv2.remap(maskn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
-        flown = cv2.remap(flown,x0n,y0n,interpolation=cv2.INTER_LINEAR)
-        occn = cv2.remap(occn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
-        dpn    =cv2.remap(dpn,    x0n,y0n,interpolation=cv2.INTER_NEAREST)
-        vis2dn=cv2.remap(vis2dn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
-
         # augmenta flow
         hp1c = np.concatenate([flow[:,:,:2] + hp0[:,:,:2], np.ones_like(hp0[:,:,:1])],-1) # image coord
         hp1c = hp1c.dot(np.linalg.inv(Ap.dot(Bp)))   # screen coord
@@ -321,13 +217,67 @@ class BaseDataset(Dataset):
         flown[:,:,1] = 2 * (flown[:,:,1]/maxh)
         flown[:,:,2] = np.logical_and(flown[:,:,2]!=0, occn<10)  # as the valid pixels
 
-        # Finally transpose the image to 3xHxW
-        img = np.transpose(img, (2, 0, 1))
-        imgn = np.transpose(imgn, (2, 0, 1))
-        mask = (mask>0).astype(float)
-        maskn = (maskn>0).astype(float)
         flow = np.transpose(flow, (2, 0, 1))
         flown = np.transpose(flown, (2, 0, 1))
+        return flow, flown, occ, occn
+
+    def __getitem__(self, index):
+        #pdb.set_trace()
+        #ss = time.time()
+        im0idx = self.baselist[index]
+        if self.directlist[index]==1:
+            # forward flow
+            im1idx = im0idx + self.dframe 
+            flowfw = True
+        else:
+            im1idx = im0idx - self.dframe
+            flowfw = False
+
+        rt_dict = self.read_raw(im0idx, flowfw=flowfw)
+        img   = rt_dict['img']  
+        mask  = rt_dict['mask']
+        flow  = rt_dict['flow']
+        occ   = rt_dict['occ']
+        dp    = rt_dict['dp']
+        vis2d = rt_dict['vis2d']
+        dp_feat = rt_dict['dp_feat']
+        dp_bbox = rt_dict['dp_bbox'] 
+        kaug, hp0, A, B= self.compute_crop_params(mask)
+        x0 = hp0[:,:,0].astype(np.float32)
+        y0 = hp0[:,:,1].astype(np.float32)
+        img = cv2.remap(img,x0,y0,interpolation=cv2.INTER_LINEAR)
+        mask = cv2.remap(mask.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
+        flow = cv2.remap(flow,x0,y0,interpolation=cv2.INTER_LINEAR)
+        occ = cv2.remap(occ,x0,y0,interpolation=cv2.INTER_LINEAR)
+        dp   =cv2.remap(dp,   x0,y0,interpolation=cv2.INTER_NEAREST)
+        vis2d=cv2.remap(vis2d.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
+        # Finally transpose the image to 3xHxW
+        img = np.transpose(img, (2, 0, 1))
+        mask = (mask>0).astype(float)
+
+        rt_dict = self.read_raw(im1idx, flowfw=(not flowfw))
+        imgn  = rt_dict['img']
+        maskn = rt_dict['mask']
+        flown = rt_dict['flow']
+        occn  = rt_dict['occ']
+        dpn   = rt_dict['dp'] 
+        vis2dn= rt_dict['vis2d']
+        dp_featn = rt_dict['dp_feat']
+        dp_bboxn = rt_dict['dp_bbox'] 
+        kaugn,hp1,Ap,Bp= self.compute_crop_params(maskn)
+        x0n = hp1[:,:,0].astype(np.float32)
+        y0n = hp1[:,:,1].astype(np.float32)
+        imgn = cv2.remap(imgn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
+        maskn = cv2.remap(maskn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
+        flown = cv2.remap(flown,x0n,y0n,interpolation=cv2.INTER_LINEAR)
+        occn = cv2.remap(occn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
+        dpn    =cv2.remap(dpn,    x0n,y0n,interpolation=cv2.INTER_NEAREST)
+        vis2dn=cv2.remap(vis2dn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
+        imgn = np.transpose(imgn, (2, 0, 1))
+        maskn = (maskn>0).astype(float)
+       
+        flow, flown, occ, occn = self.flow_process(flow, flown, occ, occn,
+                                    hp0, hp1, A,B,Ap,Bp)
 
         try:dataid = self.dataid
         except: dataid=0

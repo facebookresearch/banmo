@@ -312,6 +312,7 @@ class v2s_trainer(Trainer):
             else:
                 self.model.convert_root_pose()
                 rtk = self.model.rtk
+            kaug = self.model.kaug
 
             #TODO may need to recompute after removing the invalid predictions
             self.model.save_latest_vars()
@@ -320,17 +321,19 @@ class v2s_trainer(Trainer):
             aux_seq = {
                        'is_valid':[],
                        'rtk':[],
+                       'kaug':[],
                        'impath':[],
+                       'masks':[],
                        }
             for idx,frameid in enumerate(idx_render):
                 print('extracting frame %d'%(frameid))
-                # save cams
                 aux_seq['rtk'].append(rtk[idx].cpu().numpy())
+                aux_seq['kaug'].append(kaug[idx].cpu().numpy())
+                aux_seq['masks'].append(self.model.masks[idx].cpu().numpy())
+                aux_seq['is_valid'].append(valid_list[idx])
                 
-                # save image list
                 impath = self.model.impath[self.model.frameid[idx].long()]
                 aux_seq['impath'].append(impath)
-                aux_seq['is_valid'].append(valid_list[idx])
         return aux_seq
   
     def eval(self, idx_render=None, dynamic_mesh=False): 
@@ -452,7 +455,7 @@ class v2s_trainer(Trainer):
         # disable bones before warmup epochs are finished
         if opts.lbs: 
             self.model.num_bone_used = 0
-            del self.model.nerf_models['bones']
+            del self.model.module.nerf_models['bones']
 
         # CNN pose warmup or  load CNN
         if opts.warmup_pose_ep>0 or opts.pose_cnn_path!='':
@@ -503,10 +506,10 @@ class v2s_trainer(Trainer):
                     for i in aux_seq['impath']])
             valid_ids_seq = np.where(valid_ids * seq_idx)[0]
 
-            # find the closest valid frame
-            closest_valid_idx = valid_ids_seq[np.abs(i-valid_ids_seq).argmin()]
+            # find the closest valid frame and replace it
             rtk = aux_seq['rtk'][i]
-            if not aux_seq['is_valid'][i]:
+            if len(valid_ids_seq)>0 and not aux_seq['is_valid'][i]:
+                closest_valid_idx = valid_ids_seq[np.abs(i-valid_ids_seq).argmin()]
                 rtk[:3,:3] = aux_seq['rtk'][closest_valid_idx][:3,:3]
 
             # rescale translation according to input near-far plane
@@ -537,6 +540,8 @@ class v2s_trainer(Trainer):
             aux_seq.append(self.eval_cam(idx_render=idx_render[i:i+chunk]))
         aux_seq = merge_dict(aux_seq)
         aux_seq['rtk'] = np.asarray(aux_seq['rtk'])
+        aux_seq['kaug'] = np.asarray(aux_seq['kaug'])
+        aux_seq['masks'] = np.asarray(aux_seq['masks'])
         aux_seq['is_valid'] = np.asarray(aux_seq['is_valid'])
 
         if opts.cnn_type=='cls':
@@ -720,6 +725,7 @@ class v2s_trainer(Trainer):
         if opts.lbs and (epoch==self.num_epochs//2 or\
                          epoch==int(3.*self.num_epochs/4)):
             reinit_bones(self.model, mesh_rest, opts.num_bones)
+            self.model.nerf_models['bones'] = self.model.bones
             self.init_training() # add new params to optimizer
 
         # change near-far plane after half epochs
@@ -742,7 +748,6 @@ class v2s_trainer(Trainer):
                     self.model.num_bone_used,],
                     0)
             dist.broadcast(self.model.bones,0)
-            self.model.nerf_models['bones'] = self.model.bones
             dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].weight, 0)
             dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].bias, 0)
 

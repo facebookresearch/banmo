@@ -993,11 +993,12 @@ def align_sim3(rootlist_a, rootlist_b, is_inlier=None):
 def align_sfm_sim3(aux_seq, datasets):
     for dataset in datasets:
         seqname = dataset.imglist[0].split('/')[-2]
-        root_dir = dataset.rtklist[0][:-9]
-        root_sfm = load_root(root_dir, 0)[:-1] # excluding the last
 
         # only process dataset with rtk_path input
         if dataset.has_prior_cam:
+            root_dir = dataset.rtklist[0][:-9]
+            root_sfm = load_root(root_dir, 0)[:-1] # excluding the last
+
             # split predicted root into multiple sequences
             seq_idx = [seqname == i.split('/')[-2] for i in aux_seq['impath']]
             root_pred = aux_seq['rtk'][seq_idx]
@@ -1006,13 +1007,74 @@ def align_sfm_sim3(aux_seq, datasets):
             #pdb.set_trace()
             #mesh = draw_cams(root_sfm, color='gray')
             #mesh.export('0.obj')
-            root_sfm = align_sim3(root_pred, root_sfm, is_inlier=is_inlier)
             
-            aux_seq['rtk'][seq_idx] = root_sfm
+            # pre-align the center according to cat mask
+            root_sfm = visual_hull_align(root_sfm, 
+                    aux_seq['kaug'][seq_idx],
+                    aux_seq['masks'][seq_idx])
+
+            root_sfm = align_sim3(root_pred, root_sfm, is_inlier=is_inlier)
+            # only modify rotation
+            #root_pred[:,:3,:3] = root_sfm[:,:3,:3]
+            root_pred = root_sfm
+            
+            aux_seq['rtk'][seq_idx] = root_pred
             aux_seq['is_valid'][seq_idx] = True
         else:
             print('not aligning %s, no rtk path in config file'%seqname)
 
+def visual_hull_align(rtk, kaug, masks):
+    """
+    input: array
+    output: array
+    """
+    rtk = torch.Tensor(rtk)
+    kaug = torch.Tensor(kaug)
+    masks = torch.Tensor(masks)
+    num_view,h,w = masks.shape
+    grid_size = 64
+    rmat = rtk[:,:3,:3]
+    tmat = rtk[:,:3,3:]
+        
+    Kmat = K2mat(rtk[:,3])
+    Kaug = K2inv(kaug) # p = Kaug Kmat P
+    kmat = mat2K(Kaug.matmul(Kmat))
+
+    rmatc = rmat.permute((0,2,1))
+    tmatc = -rmatc.matmul(tmat)
+
+    bound = tmatc.norm(2,-1).mean()
+    pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
+    query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)
+    query_yxz = torch.Tensor(query_yxz).view(-1, 3)
+    query_xyz = torch.cat([query_yxz[:,1:2], query_yxz[:,0:1], query_yxz[:,2:3]],-1)
+
+    score_xyz = []
+    chunk = 1000
+    for i in range(0,len(query_xyz),chunk):
+        query_xyz_chunk = query_xyz[None, i:i+chunk].repeat(num_view, 1,1)
+        query_xyz_chunk = obj_to_cam(query_xyz_chunk, rmat, tmat)
+        query_xyz_chunk = pinhole_cam(query_xyz_chunk, kmat)
+
+        query_xy = query_xyz_chunk[...,:2]
+        query_xy[...,0] = query_xy[...,0]/w*2-1
+        query_xy[...,1] = query_xy[...,1]/h*2-1
+
+        # sum over time
+        score = F.grid_sample(masks[:,None], query_xy[:,None])[:,0,0]
+        score = score.sum(0)
+        score_xyz.append(score)
+
+    # align the center
+    score_xyz = torch.cat(score_xyz)
+    center = query_xyz[score_xyz>0.8*num_view]
+    print('%d points used to align center'% (len(center)) )
+    center = center.mean(0)
+    tmatc = tmatc - center[None,:,None]
+    tmat = np.matmul(-rmat, tmatc)
+    rtk[:,:3,3:] = tmat
+
+    return rtk
 
 def ood_check_cse(dp_feats, dp_embed, dp_idx):
     """

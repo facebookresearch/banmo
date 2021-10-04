@@ -59,6 +59,7 @@ class BaseDataset(Dataset):
         self.filter_key = filter_key
         self.flip=0
         self.crop_factor = 1.2
+        self.load_pair = True
     
     def mirror_image(self, img, mask):
         if np.random.rand(1) > 0.5:
@@ -142,10 +143,38 @@ class BaseDataset(Dataset):
             dp_feat =  np.zeros((16*112,112))
             dp_bbox =  np.zeros((4))
         dp= (dp *50).astype(np.int32)
-        dp_feat = dp_feat.reshape((16,112,112))
+        dp_feat = dp_feat.reshape((16,112,112)).copy()
+
+        # add RTK: [R_3x3|T_3x1]
+        #          [fx,fy,px,py], to the ndc space
+        try:
+            rtk_path = self.rtklist[im0idx]
+            rtk = np.loadtxt(rtk_path)
+        except:
+            print('warning: loading empty camera')
+            print(rtk_path)
+            rtk = np.zeros((4,4))
+            rtk[:3,:3] = np.eye(3)
+            rtk[:3, 3] = np.asarray([0,0,10])
+            rtk[3, :]  = np.asarray([512,512,256,256]) 
 
         # create mask for visible vs unkonwn
         vis2d = np.ones_like(mask)
+        
+        # crop the image according to mask
+        kaug, hp0, A, B= self.compute_crop_params(mask)
+        x0 = hp0[:,:,0].astype(np.float32)
+        y0 = hp0[:,:,1].astype(np.float32)
+        img = cv2.remap(img,x0,y0,interpolation=cv2.INTER_LINEAR)
+        mask = cv2.remap(mask.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
+        flow = cv2.remap(flow,x0,y0,interpolation=cv2.INTER_LINEAR)
+        occ = cv2.remap(occ,x0,y0,interpolation=cv2.INTER_LINEAR)
+        dp   =cv2.remap(dp,   x0,y0,interpolation=cv2.INTER_NEAREST)
+        vis2d=cv2.remap(vis2d.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
+
+        # Finally transpose the image to 3xHxW
+        img = np.transpose(img, (2, 0, 1))
+        mask = (mask>0).astype(float)
 
         rt_dict = {}
         rt_dict['img']   = img     
@@ -156,7 +185,8 @@ class BaseDataset(Dataset):
         rt_dict['vis2d'] = vis2d 
         rt_dict['dp_feat'] = dp_feat
         rt_dict['dp_bbox'] = dp_bbox
-        return rt_dict
+        rt_dict['rtk'] = rtk
+        return rt_dict, kaug, hp0, A,B
     
     def compute_crop_params(self, mask):
         indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
@@ -224,6 +254,9 @@ class BaseDataset(Dataset):
     def __getitem__(self, index):
         #pdb.set_trace()
         #ss = time.time()
+        try:dataid = self.dataid
+        except: dataid=0
+
         im0idx = self.baselist[index]
         if self.directlist[index]==1:
             # forward flow
@@ -233,87 +266,62 @@ class BaseDataset(Dataset):
             im1idx = im0idx - self.dframe
             flowfw = False
 
-        rt_dict = self.read_raw(im0idx, flowfw=flowfw)
-        img   = rt_dict['img']  
-        mask  = rt_dict['mask']
-        flow  = rt_dict['flow']
-        occ   = rt_dict['occ']
-        dp    = rt_dict['dp']
-        vis2d = rt_dict['vis2d']
+        rt_dict, kaug, hp0, A,B = self.read_raw(im0idx, flowfw=flowfw)
+        img     = rt_dict['img']  
+        mask    = rt_dict['mask']
+        flow    = rt_dict['flow']
+        occ     = rt_dict['occ']
+        dp      = rt_dict['dp']
+        vis2d   = rt_dict['vis2d']
         dp_feat = rt_dict['dp_feat']
         dp_bbox = rt_dict['dp_bbox'] 
-        kaug, hp0, A, B= self.compute_crop_params(mask)
-        x0 = hp0[:,:,0].astype(np.float32)
-        y0 = hp0[:,:,1].astype(np.float32)
-        img = cv2.remap(img,x0,y0,interpolation=cv2.INTER_LINEAR)
-        mask = cv2.remap(mask.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
-        flow = cv2.remap(flow,x0,y0,interpolation=cv2.INTER_LINEAR)
-        occ = cv2.remap(occ,x0,y0,interpolation=cv2.INTER_LINEAR)
-        dp   =cv2.remap(dp,   x0,y0,interpolation=cv2.INTER_NEAREST)
-        vis2d=cv2.remap(vis2d.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
-        # Finally transpose the image to 3xHxW
-        img = np.transpose(img, (2, 0, 1))
-        mask = (mask>0).astype(float)
+        rtk     = rt_dict['rtk'] 
+        frameid = im0idx
+        is_canonical = self.can_frame == im0idx
 
-        rt_dict = self.read_raw(im1idx, flowfw=(not flowfw))
-        imgn  = rt_dict['img']
-        maskn = rt_dict['mask']
-        flown = rt_dict['flow']
-        occn  = rt_dict['occ']
-        dpn   = rt_dict['dp'] 
-        vis2dn= rt_dict['vis2d']
-        dp_featn = rt_dict['dp_feat']
-        dp_bboxn = rt_dict['dp_bbox'] 
-        kaugn,hp1,Ap,Bp= self.compute_crop_params(maskn)
-        x0n = hp1[:,:,0].astype(np.float32)
-        y0n = hp1[:,:,1].astype(np.float32)
-        imgn = cv2.remap(imgn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
-        maskn = cv2.remap(maskn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
-        flown = cv2.remap(flown,x0n,y0n,interpolation=cv2.INTER_LINEAR)
-        occn = cv2.remap(occn,x0n,y0n,interpolation=cv2.INTER_LINEAR)
-        dpn    =cv2.remap(dpn,    x0n,y0n,interpolation=cv2.INTER_NEAREST)
-        vis2dn=cv2.remap(vis2dn.astype(int),x0n,y0n,interpolation=cv2.INTER_NEAREST)
-        imgn = np.transpose(imgn, (2, 0, 1))
-        maskn = (maskn>0).astype(float)
+        if self.load_pair:
+            rt_dictn,kaugn,hp1,Ap,Bp = self.read_raw(im1idx, flowfw=(not flowfw))
+            imgn  =    rt_dictn['img']
+            maskn =    rt_dictn['mask']
+            flown =    rt_dictn['flow']
+            occn  =    rt_dictn['occ']
+            dpn   =    rt_dictn['dp'] 
+            vis2dn=    rt_dictn['vis2d']
+            dp_featn = rt_dictn['dp_feat']
+            dp_bboxn = rt_dictn['dp_bbox'] 
+            rtkn     = rt_dictn['rtk'] 
+            is_canonicaln = self.can_frame == im1idx
        
-        flow, flown, occ, occn = self.flow_process(flow, flown, occ, occn,
-                                    hp0, hp1, A,B,Ap,Bp)
+            flow, flown, occ, occn = self.flow_process(flow, flown, occ, occn,
+                                        hp0, hp1, A,B,Ap,Bp)
+            
+            # stack data
+            img = np.stack([img, imgn])
+            mask= np.stack([mask,maskn])
+            flow= np.stack([flow, flown])
+            occ = np.stack([occ, occn])
+            dp  = np.stack([dp, dpn])
+            vis2d= np.stack([vis2d, vis2dn])
+            dp_feat= np.stack([dp_feat, dp_featn])
+            dp_bbox = np.stack([dp_bbox, dp_bboxn])
+            rtk= np.stack([rtk, rtkn])         
+            kaug= np.stack([kaug,kaugn])
+            dataid= np.stack([dataid, dataid])
+            frameid= np.stack([im0idx, im1idx])
+            is_canonical= np.stack([is_canonical, is_canonicaln])
 
-        try:dataid = self.dataid
-        except: dataid=0
-
-        # add RTK: [R_3x3|T_3x1]
-        #          [fx,fy,px,py], to the ndc space
-        try:
-            rtk_path = self.rtklist[im0idx]
-            rtkn_path =self.rtklist[im1idx]
-            rtk = np.loadtxt(rtk_path)
-            rtkn = np.loadtxt(rtkn_path)
-        except:
-            print('warning: loading empty camera')
-            print(rtk_path)
-            rtk = np.zeros((4,4))
-            rtk[:3,:3] = np.eye(3)
-            rtk[:3, 3] = np.asarray([0,0,10])
-            rtk[3, :]  = np.asarray([512,512,256,256]) 
-            rtkn = rtk.copy()
-
-
-        # remove background
-        elem = {
-            'img':          np.stack([img, imgn]),
-            'mask':         np.stack([mask,maskn]),
-            'flow':         np.stack([flow, flown]),
-            'occ':          np.stack([occ, occn]),
-            'dp':           np.stack([dp, dpn]),
-            'dp_feat':      np.stack([dp_feat, dp_featn]),
-            'dp_bbox':      np.stack([dp_bbox, dp_bboxn]),
-            'vis2d':        np.stack([vis2d, vis2dn]),
-            'rtk':          np.stack([rtk, rtkn]),            
-            'kaug':         np.stack([kaug,kaugn]),            
-
-            'dataid':       np.stack([dataid, dataid]),
-            'frameid':      np.stack([im0idx, im1idx]),
-            'is_canonical': np.stack([self.can_frame == im0idx, self.can_frame == im1idx]),
-            }
+        elem = {}
+        elem['img']           =  img
+        elem['mask']          =  mask
+        elem['flow']          =  flow
+        elem['occ']           =  occ
+        elem['dp']            =  dp
+        elem['dp_feat']       =  dp_feat
+        elem['dp_bbox']       =  dp_bbox
+        elem['vis2d']         =  vis2d
+        elem['rtk']           =  rtk
+        elem['kaug']          =  kaug
+        elem['dataid']        =  dataid
+        elem['frameid']       =  frameid
+        elem['is_canonical']  =  is_canonical
         return elem

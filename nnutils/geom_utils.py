@@ -1118,7 +1118,7 @@ def ood_check_cse(dp_feats, dp_embed, dp_idx):
         valid_list.append( is_valid )
         #cv2.imwrite('tmp/%05d.png'%i, (err/mean_error).cpu().numpy()*100)
         #print(i); print(mean_error)
-    valid_list = torch.stack(valid_list,0)[:bs//2]
+    valid_list = torch.stack(valid_list,0)
     
 
     return valid_list

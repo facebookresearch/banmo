@@ -683,7 +683,10 @@ class v2s_net(nn.Module):
 
     def convert_batch_input(self, batch):
         device = self.device
-        bs,_,_,h,w = batch['img'].shape
+        if batch['img'].dim()==4:
+            bs,_,h,w = batch['img'].shape
+        else:
+            bs,_,_,h,w = batch['img'].shape
         # convert to float
         for k,v in batch.items():
             batch[k] = batch[k].float()
@@ -695,8 +698,6 @@ class v2s_net(nn.Module):
         
         self.input_imgs   = input_img_tensor.to(device)
         self.imgs         = img_tensor.to(device)
-        self.flow         = batch['flow']        .view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(device)
-        self.flow = self.flow[:,:2]
         self.masks        = batch['mask']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(device)
         self.vis2d        = batch['vis2d']        .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
         self.dps          = batch['dp']          .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)      .to(device)
@@ -705,7 +706,6 @@ class v2s_net(nn.Module):
         self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(device)
         self.dp_feats     = F.normalize(self.dp_feats, 2,1)
         self.dp_bbox      = batch['dp_bbox']     .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
-        self.occ          = batch['occ']         .view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
         self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
         self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1).cpu()
@@ -721,6 +721,10 @@ class v2s_net(nn.Module):
         self.masks = self.masks.float()
         self.sils = (self.sils*self.vis2d)>0
         self.sils =  self.sils.float()
+        
+        self.flow = batch['flow'].view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(device)
+        self.flow = self.flow[:,:2]
+        self.occ  = batch['occ'].view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
     
     def convert_root_pose_mhp(self):
         """

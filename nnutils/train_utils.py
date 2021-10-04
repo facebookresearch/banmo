@@ -292,11 +292,15 @@ class v2s_trainer(Trainer):
         opts = self.opts
         with torch.no_grad():
             self.model.eval()
-            # render
+            # load data
+            for dataset in self.evalloader.dataset.datasets:
+                dataset.load_pair = False
             batch = []
             for i in idx_render:
                 batch.append( self.evalloader.dataset[i] )
             batch = self.evalloader.collate_fn(batch)
+            for dataset in self.evalloader.dataset.datasets:
+                dataset.load_pair = True
 
             #TODO can be first accelerated
             self.model.convert_batch_input(batch)

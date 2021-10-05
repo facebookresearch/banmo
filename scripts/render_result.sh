@@ -16,7 +16,7 @@ python render_vis.py --testdir $testdir \
                      --seqname $seqname \
                      --test_frames $test_frames \
                      --freeze \
-                     --vis_cam
+#                     --vis_cam
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-bne \
                      --seqname $seqname \
@@ -48,31 +48,31 @@ python render_vis.py --testdir $testdir \
                      --test_frames $test_frames \
                      --append_img yes \
                      --append_render no
-#python render_vis.py --testdir $testdir \
-#                     --outpath $prefix-rst \
-#                     --seqname $seqname \
-#                     --rest
-#python render_vis.py --testdir $testdir \
-#                     --outpath $prefix-err0 \
-#                     --seqname $seqname \
-#                     --vp 0  \
-#                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
-#python render_vis.py --testdir $testdir \
-#                     --outpath $prefix-err1 \
-#                     --seqname $seqname \
-#                     --vp 1  \
-#                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
-#python render_vis.py --testdir $testdir \
-#                     --outpath $prefix-err2 \
-#                     --seqname $seqname \
-#                     --vp 2  \
-#                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
-#python render_vis.py --testdir $testdir \
-#                     --outpath $prefix-errs \
-#                     --seqname $seqname \
-#                     --vp -1 \
-#                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
-#
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-rst \
+                     --seqname $seqname \
+                     --rest
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-err0 \
+                     --seqname $seqname \
+                     --vp 0  \
+                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-err1 \
+                     --seqname $seqname \
+                     --vp 1  \
+                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-err2 \
+                     --seqname $seqname \
+                     --vp 2  \
+                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
+python render_vis.py --testdir $testdir \
+                     --outpath $prefix-errs \
+                     --seqname $seqname \
+                     --vp -1 \
+                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
+
 ffmpeg -y -i $prefix-vid.mp4 \
           -i $prefix-frz.mp4 \
           -i $prefix-bne.mp4 \

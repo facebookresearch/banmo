@@ -8,11 +8,11 @@ suffix=.MOV
 counter=0
 for infile in $filedir/*$suffix; do
   # filter videos
-  if [[ "$infile" == *"cat_5/IMG_8005.MOV"* ]]; then
-#  if [[ "$infile" != *"cat_5/IMG_8001.MOV"* ]]; then
-    counter=$((counter+1))
-    continue
-  fi
+#  if [[ "$infile" == *"cat_5/IMG_8005.MOV"* ]]; then
+##  if [[ "$infile" != *"cat_5/IMG_8001.MOV"* ]]; then
+#    counter=$((counter+1))
+#    continue
+#  fi
 
   echo $infile  
   seqname=$prefix$(printf "%02d" $counter)
@@ -33,15 +33,16 @@ for infile in $filedir/*$suffix; do
   python scripts/compute_dp.py $seqname
 
   # flow
-  . activate viser
-  cd /private/home/gengshany/code/viser/data_gen
+  cd third_party/vcnplus
   bash compute_flow.sh $seqname
   cd -
 
-  # save to zips
-  cd database/DAVIS/
-  rm  $rootdir/$seqname.zip
-  zip $rootdir/$seqname.zip -r  */Full-Resolution/$seqname/
-  cd -
+  bash scripts/colmap_to_data.sh $seqname
+
+  ## save to zips
+  #cd database/DAVIS/
+  #rm  $rootdir/$seqname.zip
+  #zip $rootdir/$seqname.zip -r  */Full-Resolution/$seqname/
+  #cd -
   counter=$((counter+1))
 done

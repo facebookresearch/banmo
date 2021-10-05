@@ -68,7 +68,6 @@ mkdir_p('./%s/JPEGImages' % (seqname))
 mkdir_p('./%s/FlowFW'     % (seqname))
 mkdir_p('./%s/FlowBW'     % (seqname))
 mkdir_p('./%s/Annotations'% (seqname))
-mkdir_p('./%s/Depth'% (seqname))
 
 test_left_img = sorted(glob.glob('%s/*'%(args.datapath)))
 silhouettes = sorted(glob.glob('%s/*'%(args.datapath.replace('JPEGImages', 'Annotations'))))
@@ -133,14 +132,12 @@ def flow_inference(imgL_o, imgR_o):
         rts = model(imgLR, disc_aux)
         torch.cuda.synchronize()
         ttime = (time.time() - start_time); print('time = %.2f' % (ttime*1000) )
-        flow, occ, logmid, logexp, fgmask,hm,pm,disp = rts
+        flow, occ, logmid, logexp = rts
 
     # upsampling
     occ = cv2.resize(occ.data.cpu().numpy(),  (input_size[1],input_size[0]),interpolation=cv2.INTER_LINEAR)
-    disp = cv2.resize(disp.data.cpu().numpy(),  (input_size[1],input_size[0]),interpolation=cv2.INTER_LINEAR)
     logexp = cv2.resize(logexp.cpu().numpy(), (input_size[1],input_size[0]),interpolation=cv2.INTER_LINEAR)
     logmid = cv2.resize(logmid.cpu().numpy(), (input_size[1],input_size[0]),interpolation=cv2.INTER_LINEAR)
-    fgmask = cv2.resize(fgmask.cpu().numpy(), (input_size[1],input_size[0]),interpolation=cv2.INTER_LINEAR)
     flow = torch.squeeze(flow).data.cpu().numpy()
     flow = np.concatenate( [cv2.resize(flow[0],(input_size[1],input_size[0]))[:,:,np.newaxis],
                             cv2.resize(flow[1],(input_size[1],input_size[0]))[:,:,np.newaxis]],-1)
@@ -162,7 +159,7 @@ def flow_inference(imgL_o, imgR_o):
     #cv2.imwrite('../tmp/2.png', imgR_o)
 
     flow = np.concatenate( (flow, np.ones([flow.shape[0],flow.shape[1],1])),-1)
-    return flow, occ, disp
+    return flow, occ
 
 def main():
     import configparser
@@ -196,14 +193,14 @@ def main():
         indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
         length = [ (xid.max()-xid.min())//2, (yid.max()-yid.min())//2]
 
-        flowfw, occfw, disp = flow_inference(imgL_o, imgR_o)
+        flowfw, occfw = flow_inference(imgL_o, imgR_o)
         flowfw_normed = np.concatenate( [flowfw[:,:,:1]/length[0], flowfw[:,:,1:2]/length[1]],-1 )
         medflow = np.median(np.linalg.norm(flowfw_normed[mask],2,-1))
         medocc = np.median(occfw[mask])
         print('%.3f, %.2f'%(medflow, medocc))
        
         if medflow > args.medflow:
-            flowbw, occbw,dispn = flow_inference(imgR_o, imgL_o)
+            flowbw, occbw = flow_inference(imgR_o, imgL_o)
         
             # this does not work if image sizes are different
             ## visualize fwbw flow    
@@ -221,18 +218,20 @@ def main():
             #cv2.imwrite('%s/FlowBW/err-%05d.jpg'% (seqname, ix+1),dis)
 
             # save predictions
+            # downsample first
+            flowfw_d = resize_to_target(flowfw,is_flow=True)
+            flowbw_d = resize_to_target(flowbw,is_flow=True)
+            occfw_d =  resize_to_target(occfw, is_flow=False)
+            occbw_d =  resize_to_target(occbw, is_flow=False)
             with open('%s/FlowFW/flo-%05d.pfm'% (seqname,ix),'w') as f:
-                save_pfm(f,flowfw[::-1].astype(np.float32))
+                save_pfm(f,flowfw_d[::-1].astype(np.float32))
             with open('%s/FlowFW/occ-%05d.pfm'% (seqname,ix),'w') as f:
-                save_pfm(f,occfw[::-1].astype(np.float32))
+                save_pfm(f,occfw_d[::-1].astype(np.float32))
             with open('%s/FlowBW/flo-%05d.pfm'% (seqname,ix+1),'w') as f:
-                save_pfm(f,flowbw[::-1].astype(np.float32))
+                save_pfm(f,flowbw_d[::-1].astype(np.float32))
             with open('%s/FlowBW/occ-%05d.pfm'% (seqname,ix+1),'w') as f:
-                save_pfm(f,occbw[::-1].astype(np.float32))
-            with open('%s/Depth/depth-%05d.pfm'% (seqname,ix),'w') as f:
-                save_pfm(f,disp[::-1].astype(np.float32))
-            with open('%s/Depth/depth-%05d.pfm'% (seqname,ix+1),'w') as f:
-                save_pfm(f,dispn[::-1].astype(np.float32))
+                save_pfm(f,occbw_d[::-1].astype(np.float32))
+
             imwarped = warp_flow(imgR_o, flowfw[:,:,:2])
             cv2.imwrite('%s/FlowFW/warp-%05d.jpg'% (seqname, ix),imwarped[:,:,::-1])
             imwarped = warp_flow(imgL_o, flowbw[:,:,:2])
@@ -256,6 +255,19 @@ def main():
         torch.cuda.empty_cache()
                 
             
+def resize_to_target(flowfw, is_flow=False):
+    h,w = flowfw.shape[:2]
+    factor = np.sqrt(250*1000 / (h*w) )
+    th,tw = int(h*factor), int(w*factor)
+    factor_h = th/h
+    factor_w = tw/w
+
+    flowfw_d = cv2.resize(flowfw, (tw,th))
+
+    if is_flow:
+        flowfw_d[...,0] *= factor_w
+        flowfw_d[...,1] *= factor_h
+    return flowfw_d
 
 if __name__ == '__main__':
     main()

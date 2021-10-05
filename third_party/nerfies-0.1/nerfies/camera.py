@@ -160,7 +160,7 @@ class Camera:
         'skew': self.skew,
         'pixel_aspect_ratio': self.pixel_aspect_ratio,
         'radial_distortion': self.radial_distortion.tolist(),
-        'tangential': self.tangential_distortion.tolist(),
+        'tangential_distortion': self.tangential_distortion.tolist(),
         'image_size': self.image_size.tolist(),
     }
 

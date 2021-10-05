@@ -1,5 +1,5 @@
 # @title Define imports and utility functions.
-
+import pdb
 from absl import logging
 from io import BytesIO
 import numpy as np
@@ -85,9 +85,9 @@ grid_size = 12
 threshold = 20
 
 if save_data:
-    cam_save_path = '../vid2shape/database/DAVIS/Cameras/Full-Resolution/%s'%seqname
-    rgb_save_path = '../vid2shape/database/DAVIS/JPEGImages/Full-Resolution/%s'%seqname
-    sil_save_path = '../vid2shape/database/DAVIS/Annotations/Full-Resolution/%s'%seqname
+    cam_save_path = '../vid2shape/database/DAVIS/Cameras/Full-Resolution/%s/'%seqname
+    rgb_save_path = '../vid2shape/database/DAVIS/JPEGImages/Full-Resolution/%s/'%seqname
+    sil_save_path = '../vid2shape/database/DAVIS/Annotations/Full-Resolution/%s/'%seqname
     try:
         shutil.rmtree(rgb_save_path)
         shutil.rmtree(sil_save_path)
@@ -109,7 +109,7 @@ for tidx in range(0,render_len):
     camtxt[3,2:] = test_cameras[tidxf].principal_point
     
     if save_data:
-        np.savetxt( '%s/%05d.txt'%(cam_save_path,tidx), camtxt)
+        np.savetxt( '%s/cam-%05d.txt'%(cam_save_path,tidx), camtxt)
         input_rgb = datasource.load_rgb(datasource.train_ids[tidxf])
         input_sil = 1-datasource.load_sil(datasource.train_ids[tidxf])
         cv2.imwrite('%s/%05d.jpg'%(rgb_save_path,tidx), 255*input_rgb[:,:,::-1])
@@ -128,9 +128,8 @@ config['data'] = {
 'can_frame': '-1'}
 
 config['data_0'] = {
-'near_far': '%f, %f'%(datasource.near, datasource.far),
-'ks': ' '.join( [str(i) for i in camtxt[-1]] )
-}
+'ks': ' '.join( [str(i) for i in camtxt[-1]] ),
+'rtk_path':  '%s/cam'%cam_save_path}
 
 with open('configs/%s.config'%(seqname), 'w') as configfile:
     config.write(configfile)

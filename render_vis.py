@@ -96,6 +96,7 @@ def main():
         imglist += dataset.imglist[:-1] # excluding the last frame
     imglist = [imglist[i] for i in idx_render]
 
+    seqname_list = []
     for name in imglist:
         rgb_img = cv2.imread(name)
         # replace with densepose
@@ -109,6 +110,7 @@ def main():
         except: sil_img = np.zeros(rgb_img.shape)[:,:,0]
         all_anno.append([rgb_img,sil_img,0,0,name])
         seqname = name.split('/')[-2]
+        seqname_list.append(seqname)
         fr = int(name.split('/')[-1].split('.')[-2])
         all_fr.append(fr)
         print('%s/%d'%(seqname, fr))
@@ -133,10 +135,9 @@ def main():
     # process bones, trajectories and cameras
     num_original_verts = []
     num_original_faces = []
-    num_trajs = 0
     pts_trajs = []
     col_trajs = []
-    traj_len = len(all_mesh)
+    traj_len = len(all_mesh) #TODO shuld be dependent on the seqname
     pts_num = len(all_mesh[0].vertices)
     traj_num = min(1000, pts_num)
     traj_idx = np.random.choice(pts_num, traj_num)
@@ -156,7 +157,7 @@ def main():
             pts_traj = np.zeros((traj_len, traj_num,2,3))
             col_traj = np.zeros((traj_len, traj_num,2,4))
             for j in range(traj_len):
-                if i-j-1<0: continue
+                if i-j-1<0 or seqname_list[j] != seqname_list[i]: continue
                 pts_traj[j,:,0] = all_mesh[i-j-1].vertices[traj_idx]
                 pts_traj[j,:,1] = all_mesh[i-j].vertices  [traj_idx]
                 col_traj[j,:,0] = cmap(float(i-j-1)/traj_len)
@@ -224,10 +225,11 @@ def main():
             rot_turntb = cv2.Rodrigues(np.asarray([0.,i*2*np.pi/size,0.]))[0]
             refcam[:3,:3] = rot_turntb.dot( refcam[:3,:3] ) 
             refcam[:2,3] = 0  # trans xy
-            refcam[2,3] = 10 # depth
+            if args.vis_cam:
+                refcam[2,3] = 10 # depth
+                refcam[3,:2] = 8*img_size/2 # fl
             refcam[3,2] = refimg.shape[1]/2 # px py
             refcam[3,3] = refimg.shape[0]/2 # px py
-            refcam[3,:2] = 8*img_size/2 # fl
         else:
             refimg, refsil, refkp, refvis, refname = all_anno[i]
             refscale = all_scale[i]
@@ -250,7 +252,9 @@ def main():
             vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
 #            vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0].dot(vp_rmat) # bev
             vp_tmat = all_cam[0][:3,3]
-            vp_kmat = all_cam[0][3]
+            vp_kmat = all_cam[0][3].copy()
+            vp_kmat[2] = vp_kmat[2]/all_anno[0][0].shape[1]*all_anno[i][0].shape[1]
+            vp_kmat[3] = vp_kmat[3]/all_anno[0][0].shape[0]*all_anno[i][0].shape[0]
         elif args.vp==1:
             vp_rmat = cv2.Rodrigues(np.asarray([0,np.pi/2,0]))[0]
         elif args.vp==2:

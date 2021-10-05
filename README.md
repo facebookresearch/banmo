@@ -22,7 +22,6 @@ Extract frames and masks
 bash scripts/preprocess.sh video-folder dir-name
 ```
 
-Run colmap scripts and save to a zip file. Then
 ```
 bash scripts/colmap_to_data.sh seqname
 ```

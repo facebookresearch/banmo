@@ -306,10 +306,11 @@ class v2s_trainer(Trainer):
             self.model.convert_batch_input(batch)
 
             #TODO process densepoe feature
-            valid_list = ood_check_cse(self.model.dp_feats, 
-                                  self.model.dp_embed, 
-                                  self.model.dps.long())
+            valid_list, error_list = ood_check_cse(self.model.dp_feats, 
+                                    self.model.dp_embed, 
+                                    self.model.dps.long())
             valid_list = valid_list.cpu().numpy()
+            error_list = error_list.cpu().numpy()
 
             if opts.cnn_type=='cls' and opts.cnn_feature=='embed':
                 rtk = self.model.convert_root_pose_mhp()
@@ -324,6 +325,7 @@ class v2s_trainer(Trainer):
             # extract mesh sequences
             aux_seq = {
                        'is_valid':[],
+                       'err_valid':[],
                        'rtk':[],
                        'kaug':[],
                        'impath':[],
@@ -335,6 +337,7 @@ class v2s_trainer(Trainer):
                 aux_seq['kaug'].append(kaug[idx].cpu().numpy())
                 aux_seq['masks'].append(self.model.masks[idx].cpu().numpy())
                 aux_seq['is_valid'].append(valid_list[idx])
+                aux_seq['err_valid'].append(error_list[idx])
                 
                 impath = self.model.impath[self.model.frameid[idx].long()]
                 aux_seq['impath'].append(impath)
@@ -547,6 +550,7 @@ class v2s_trainer(Trainer):
         aux_seq['kaug'] = np.asarray(aux_seq['kaug'])
         aux_seq['masks'] = np.asarray(aux_seq['masks'])
         aux_seq['is_valid'] = np.asarray(aux_seq['is_valid'])
+        aux_seq['err_valid'] = np.asarray(aux_seq['err_valid'])
 
         if opts.cnn_type=='cls':
             #TODO post-process camera trajectories

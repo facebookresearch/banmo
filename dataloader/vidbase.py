@@ -124,6 +124,14 @@ class BaseDataset(Dataset):
         try:
             flow = readPFM(flowpath)[0]
             occ = readPFM(flowpath.replace('flo-', 'occ-'))[0]
+            h,w,_ = mask.shape
+            oh,ow=flow.shape[:2]
+            factor_h = h/oh
+            factor_w = w/ow
+            flow = cv2.resize(flow, (w,h))
+            occ  = cv2.resize(occ, (w,h))
+            flow[...,0] *= factor_w
+            flow[...,1] *= factor_h
         except:
             print('warning: loading empty flow from %s'%(flowpath))
             flow = np.zeros_like(img)

@@ -943,7 +943,7 @@ def process_so3_seq(rtk_seq, vis=False, smooth=True):
         mesh.export('tmp/final.obj')
     return rtk_raw
 
-def align_sim3(rootlist_a, rootlist_b, is_inlier=None):
+def align_sim3(rootlist_a, rootlist_b, is_inlier=None, err_valid=None):
     """
     nx4x4 matrices
     is_inlier: n
@@ -966,6 +966,9 @@ def align_sim3(rootlist_a, rootlist_b, is_inlier=None):
                         rootlist_a[:,:3,:3])
     dscale = np.linalg.norm(rootlist_a[:,:3,3],2,-1)/\
             np.linalg.norm(rootlist_b[:,:3,3],2,-1)
+
+    if is_inlier.sum() == 0:
+        is_inlier[np.argmin(err_valid)] = True
 
     # select inliers to fit 
     if is_inlier is not None:
@@ -1003,6 +1006,7 @@ def align_sfm_sim3(aux_seq, datasets):
             seq_idx = [seqname == i.split('/')[-2] for i in aux_seq['impath']]
             root_pred = aux_seq['rtk'][seq_idx]
             is_inlier = aux_seq['is_valid'][seq_idx]
+            err_valid = aux_seq['err_valid'][seq_idx]
             # TODO only use certain ones to match
             #pdb.set_trace()
             #mesh = draw_cams(root_sfm, color='gray')
@@ -1013,7 +1017,8 @@ def align_sfm_sim3(aux_seq, datasets):
                     aux_seq['kaug'][seq_idx],
                     aux_seq['masks'][seq_idx])
 
-            root_sfm = align_sim3(root_pred, root_sfm, is_inlier=is_inlier)
+            root_sfm = align_sim3(root_pred, root_sfm, 
+                    is_inlier=is_inlier, err_valid=err_valid)
             # only modify rotation
             #root_pred[:,:3,:3] = root_sfm[:,:3,:3]
             root_pred = root_sfm
@@ -1111,14 +1116,16 @@ def ood_check_cse(dp_feats, dp_embed, dp_idx):
         err_list.append(err)
 
     valid_list = []
+    error_list = []
     for i in range(bs):
         err = err_list[i]
         mean_error = err[dp_idx[i]!=0].mean()
         is_valid = mean_error < err_threshold
-        valid_list.append( is_valid )
+        error_list.append( mean_error)
+        valid_list.append( is_valid  )
         #cv2.imwrite('tmp/%05d.png'%i, (err/mean_error).cpu().numpy()*100)
         #print(i); print(mean_error)
+    error_list = torch.stack(error_list,0)
     valid_list = torch.stack(valid_list,0)
-    
 
-    return valid_list
+    return valid_list, error_list

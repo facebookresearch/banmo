@@ -32,8 +32,8 @@ parser.add_argument('--maxdisp', type=int ,default=256,
                     help='maxium disparity. Only affect the coarsest cost volume size')
 parser.add_argument('--fac', type=float ,default=1,
                     help='controls the shape of search grid. Only affect the coarse cost volume size')
-parser.add_argument('--medflow', type=float ,default=0.05,
-                    help='flow magnitude threshold')
+parser.add_argument('--dframe', type=int ,default=1,
+                    help='how many frames to skip')
 args = parser.parse_args()
 
 
@@ -51,23 +51,17 @@ if args.loadmodel is not None:
     pretrained_dict = torch.load(args.loadmodel)
     mean_L=pretrained_dict['mean_L']
     mean_R=pretrained_dict['mean_R']
-    #pretrained_dict['state_dict'] =  {k:v for k,v in pretrained_dict['state_dict'].items() if 'dcnet' not in k}
     pretrained_dict['state_dict'] =  {k:v for k,v in pretrained_dict['state_dict'].items()}
     model.load_state_dict(pretrained_dict['state_dict'],strict=False)
-    ## flow 
-    #pretrained_dict = torch.load('../../expansion/weights/exp-kitti-train/exp-kitti-train.pth')
-    #pretrained_dict['state_dict'] =  {k:v for k,v in pretrained_dict['state_dict'].items()}
-    #model.load_state_dict(pretrained_dict['state_dict'],strict=False)
 else:
     print('dry run')
 print('Number of model parameters: {}'.format(sum([p.data.nelement() for p in model.parameters()])))
 
 seqname = args.datapath.strip().split('/')[-2]
+dframe = args.dframe
 
-mkdir_p('./%s/JPEGImages' % (seqname))
-mkdir_p('./%s/FlowFW'     % (seqname))
-mkdir_p('./%s/FlowBW'     % (seqname))
-mkdir_p('./%s/Annotations'% (seqname))
+mkdir_p('./%s/FlowFW_%d'     % (seqname,dframe))
+mkdir_p('./%s/FlowBW_%d'     % (seqname,dframe))
 
 test_left_img = sorted(glob.glob('%s/*'%(args.datapath)))
 silhouettes = sorted(glob.glob('%s/*'%(args.datapath.replace('JPEGImages', 'Annotations'))))
@@ -151,105 +145,64 @@ def flow_inference(imgL_o, imgR_o):
     hp1[:,:,0] = hp1[:,:,0]/float(imgL_o.shape[1])*float(imgR_o.shape[1]) 
     hp1[:,:,1] = hp1[:,:,1]/float(imgL_o.shape[0])*float(imgR_o.shape[0])
     flow = hp1 - hp0
-    #
-    #from utils.dydepth import warp_flow
-    #warped = warp_flow(imgR_o, flow[:,:,:2])
-    #cv2.imwrite('../tmp/0.png', imgL_o)
-    #cv2.imwrite('../tmp/1.png', warped)
-    #cv2.imwrite('../tmp/2.png', imgR_o)
 
     flow = np.concatenate( (flow, np.ones([flow.shape[0],flow.shape[1],1])),-1)
     return flow, occ
 
 def main():
-    import configparser
-    config = configparser.ConfigParser()
-    config['data'] = {
-    'datapath': 'database/DAVIS/JPEGImages/Full-Resolution/%s/'%seqname, 
-    'dframe': '1',
-    'init_frame': '0',
-    'end_frame': '-1',
-    'can_frame': '-1'}
-    config['data_0'] = config['data']
-    config['meta'] = {
-    'numvid': 1
-    }
-
-
     model.eval()
-    inx=0;jnx=1
-    ix =0
+    inx=0;jnx=dframe
     while True:
         print('%s/%s'%(test_left_img[inx],test_left_img[jnx]))
-        imgL_o = cv2.imread(test_left_img[inx])[:,:,::-1]
-        imgR_o = cv2.imread(test_left_img[jnx])[:,:,::-1]
-        mask  =cv2.imread(silhouettes[inx],0)
-        maskR =cv2.imread(silhouettes[jnx],0)
-        masko = mask.copy()
-        maskRo = maskR.copy()
-        mask  =np.logical_and(mask>0, mask!=255)
-        maskR =np.logical_and(maskR>0,maskR!=255)
-            
-        indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
-        length = [ (xid.max()-xid.min())//2, (yid.max()-yid.min())//2]
+        if inx%dframe==0:
+            imgL_o = cv2.imread(test_left_img[inx])[:,:,::-1]
+            imgR_o = cv2.imread(test_left_img[jnx])[:,:,::-1]
+            mask  =cv2.imread(silhouettes[inx],0)
+            maskR =cv2.imread(silhouettes[jnx],0)
+            masko = mask.copy()
+            maskRo = maskR.copy()
+            mask  =np.logical_and(mask>0, mask!=255)
+            maskR =np.logical_and(maskR>0,maskR!=255)
+                
+            indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
+            length = [ (xid.max()-xid.min())//2, (yid.max()-yid.min())//2]
 
-        flowfw, occfw = flow_inference(imgL_o, imgR_o)
-        flowfw_normed = np.concatenate( [flowfw[:,:,:1]/length[0], flowfw[:,:,1:2]/length[1]],-1 )
-        medflow = np.median(np.linalg.norm(flowfw_normed[mask],2,-1))
-        medocc = np.median(occfw[mask])
-        print('%.3f, %.2f'%(medflow, medocc))
+            flowfw, occfw = flow_inference(imgL_o, imgR_o)
+            flowfw_normed = np.concatenate( [flowfw[:,:,:1]/length[0], flowfw[:,:,1:2]/length[1]],-1 )
        
-        if medflow > args.medflow:
             flowbw, occbw = flow_inference(imgR_o, imgL_o)
-        
-            # this does not work if image sizes are different
-            ## visualize fwbw flow    
-            #x0,y0  =np.meshgrid(range(flowbw.shape[1]),range(flowbw.shape[0]))
-            #hp0 = np.stack([x0,y0,np.ones_like(x0)],-1)  # screen coord
-            #pdb.set_trace()
-            #dis = warp_flow(hp0+flowbw, flowfw[:,:,:2]) - hp0
-            #dis = np.linalg.norm(dis[:,:,:2],2,-1)
-            ##occfw[dis>20] = 0
-            #cv2.imwrite('%s/FlowFW/err-%05d.jpg'% (seqname, ix),dis)
-
-            #dis = warp_flow(hp0+flowfw, flowbw[:,:,:2]) - hp0
-            #dis = np.linalg.norm(dis[:,:,:2],2,-1)
-            ##occbw[dis>20] = 0
-            #cv2.imwrite('%s/FlowBW/err-%05d.jpg'% (seqname, ix+1),dis)
-
             # save predictions
             # downsample first
-            flowfw_d = resize_to_target(flowfw,is_flow=True)
-            flowbw_d = resize_to_target(flowbw,is_flow=True)
-            occfw_d =  resize_to_target(occfw, is_flow=False)
-            occbw_d =  resize_to_target(occbw, is_flow=False)
-            with open('%s/FlowFW/flo-%05d.pfm'% (seqname,ix),'w') as f:
-                save_pfm(f,flowfw_d[::-1].astype(np.float32))
-            with open('%s/FlowFW/occ-%05d.pfm'% (seqname,ix),'w') as f:
-                save_pfm(f,occfw_d[::-1].astype(np.float32))
-            with open('%s/FlowBW/flo-%05d.pfm'% (seqname,ix+1),'w') as f:
-                save_pfm(f,flowbw_d[::-1].astype(np.float32))
-            with open('%s/FlowBW/occ-%05d.pfm'% (seqname,ix+1),'w') as f:
-                save_pfm(f,occbw_d[::-1].astype(np.float32))
+            flowfw = resize_to_target(flowfw,is_flow=True)
+            flowbw = resize_to_target(flowbw,is_flow=True)
+            occfw =  resize_to_target(occfw, is_flow=False)
+            occbw =  resize_to_target(occbw, is_flow=False)
+            imgL_o =  resize_to_target(imgL_o, is_flow=False)
+            imgR_o =  resize_to_target(imgR_o, is_flow=False)
+            mask  =  resize_to_target(mask .astype(float),   is_flow=False).astype(bool)
+            maskR =  resize_to_target(maskR.astype(float),  is_flow=False) .astype(bool)
+            with open('%s/FlowFW_%d/flo-%05d.pfm'% (seqname,dframe,inx),'w') as f:
+                save_pfm(f,flowfw[::-1].astype(np.float32))
+            with open('%s/FlowFW_%d/occ-%05d.pfm'% (seqname,dframe,inx),'w') as f:
+                save_pfm(f,occfw[::-1].astype(np.float32))
+            with open('%s/FlowBW_%d/flo-%05d.pfm'% (seqname,dframe,jnx),'w') as f:
+                save_pfm(f,flowbw[::-1].astype(np.float32))
+            with open('%s/FlowBW_%d/occ-%05d.pfm'% (seqname,dframe,jnx),'w') as f:
+                save_pfm(f,occbw[::-1].astype(np.float32))
 
             imwarped = warp_flow(imgR_o, flowfw[:,:,:2])
-            cv2.imwrite('%s/FlowFW/warp-%05d.jpg'% (seqname, ix),imwarped[:,:,::-1])
+            cv2.imwrite('%s/FlowFW_%d/warp-%05d.jpg'% (seqname, dframe, inx),imwarped[:,:,::-1])
             imwarped = warp_flow(imgL_o, flowbw[:,:,:2])
-            cv2.imwrite('%s/FlowBW/warp-%05d.jpg'% (seqname, ix+1),imwarped[:,:,::-1])
+            cv2.imwrite('%s/FlowBW_%d/warp-%05d.jpg'% (seqname, dframe, jnx),imwarped[:,:,::-1])
 
             flowvis = flowfw.copy(); flowvis[~mask]=0
             flowvis = point_vec(imgL_o, flowvis)
-            cv2.imwrite('%s/FlowFW/visflo-%05d.jpg'% (seqname, ix),flowvis)
+            cv2.imwrite('%s/FlowFW_%d/visflo-%05d.jpg'% (seqname, dframe, inx),flowvis)
             flowvis = flowbw.copy(); flowvis[~maskR]=0
             flowvis = point_vec(imgR_o, flowvis)
-            cv2.imwrite('%s/FlowBW/visflo-%05d.jpg'% (seqname, ix+1),flowvis)
+            cv2.imwrite('%s/FlowBW_%d/visflo-%05d.jpg'% (seqname, dframe, jnx),flowvis)
 
-            cv2.imwrite('%s/JPEGImages/%05d.jpg'% (seqname,ix), imgL_o[:,:,::-1])
-            cv2.imwrite('%s/JPEGImages/%05d.jpg'% (seqname,ix+1), imgR_o[:,:,::-1])
-            cv2.imwrite('%s/Annotations/%05d.png'% (seqname,ix), masko.astype(np.uint8))
-            cv2.imwrite('%s/Annotations/%05d.png'% (seqname,ix+1), maskRo.astype(np.uint8))
-            inx=jnx 
-            ix+=1
+        inx+=1
         jnx+=1
 
         torch.cuda.empty_cache()

@@ -1,16 +1,20 @@
-indavisdir=../../database/DAVIS/
-outdavisdir=../../database/DAVIS/
+davisdir=../../database/DAVIS/
 res=Full-Resolution
 seqname=$1
 testres=1
 
 rm ./$seqname -rf
-rm $outdavisdir/FlowFW/$res/${seqname}* -rf
-rm $outdavisdir/FlowBW/$res/${seqname}* -rf
-CUDA_VISIBLE_DEVICES=1 python auto_gen.py --datapath $indavisdir/JPEGImages/$res/$seqname/ --loadmodel ../../lasr_vcn/vcn_rob.pth  --testres $testres --medflow 0
+rm $davisdir/FlowFW*/$res/${seqname}* -rf
+rm $davisdir/FlowBW*/$res/${seqname}* -rf
 
-mkdir $outdavisdir/FlowFW/$res/$seqname
-mkdir $outdavisdir/FlowBW/$res/$seqname
-cp $seqname/FlowFW/*           -rf $outdavisdir/FlowFW/$res/$seqname
-cp $seqname/FlowBW/*           -rf $outdavisdir/FlowBW/$res/$seqname
+array=(1 2 4 8 16 32)
+for i in "${array[@]}"
+do
+python auto_gen.py --datapath $davisdir/JPEGImages/$res/$seqname/ --loadmodel ../../lasr_vcn/vcn_rob.pth  --testres $testres --dframe $i
+mkdir -p $davisdir/FlowFW_$i/$res/$seqname
+mkdir -p $davisdir/FlowBW_$i/$res/$seqname
+cp $seqname/FlowFW_$i/* -rf $davisdir/FlowFW_$i/$res/$seqname
+cp $seqname/FlowBW_$i/* -rf $davisdir/FlowBW_$i/$res/$seqname
+done
+
 rm ./$seqname -rf

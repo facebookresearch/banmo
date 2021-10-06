@@ -100,7 +100,7 @@ class BaseDataset(Dataset):
     def __len__(self):
         return self.num_imgs
     
-    def read_raw(self, im0idx, flowfw):
+    def read_raw(self, im0idx, flowfw,dframe):
         img_path = self.imglist[im0idx]
         img = cv2.imread(img_path)[:,:,::-1] / 255.0
         shape = img.shape
@@ -121,6 +121,8 @@ class BaseDataset(Dataset):
             flowpath = self.flowfwlist[im0idx]
         else:
             flowpath = self.flowbwlist[im0idx]
+        flowpath = flowpath.replace('FlowBW', 'FlowBW_%d'%(dframe)).\
+                            replace('FlowFW', 'FlowFW_%d'%(dframe))
         try:
             flow = readPFM(flowpath)[0]
             occ = readPFM(flowpath.replace('flo-', 'occ-'))[0]
@@ -266,15 +268,22 @@ class BaseDataset(Dataset):
         except: dataid=0
 
         im0idx = self.baselist[index]
+        dir_fac = self.directlist[index]*2-1
+        dframe_list = [2,4,8,16,32]
+        max_id = max(self.baselist)
+        dframe_list = [1] + [i for i in dframe_list if (im0idx%i==0) and \
+                             int(im0idx+i*dir_fac) <= max_id]
+        dframe = np.random.choice(dframe_list)
         if self.directlist[index]==1:
             # forward flow
-            im1idx = im0idx + self.dframe 
+            im1idx = im0idx + dframe 
             flowfw = True
         else:
-            im1idx = im0idx - self.dframe
+            im1idx = im0idx - dframe
             flowfw = False
 
-        rt_dict, kaug, hp0, A,B = self.read_raw(im0idx, flowfw=flowfw)
+        rt_dict, kaug, hp0, A,B = self.read_raw(im0idx, flowfw=flowfw, 
+                dframe=dframe)
         img     = rt_dict['img']  
         mask    = rt_dict['mask']
         flow    = rt_dict['flow']
@@ -288,7 +297,8 @@ class BaseDataset(Dataset):
         is_canonical = self.can_frame == im0idx
 
         if self.load_pair:
-            rt_dictn,kaugn,hp1,Ap,Bp = self.read_raw(im1idx, flowfw=(not flowfw))
+            rt_dictn,kaugn,hp1,Ap,Bp = self.read_raw(im1idx, flowfw=(not flowfw),
+                    dframe=dframe)
             imgn  =    rt_dictn['img']
             maskn =    rt_dictn['mask']
             flown =    rt_dictn['flow']

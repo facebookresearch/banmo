@@ -5,6 +5,11 @@ filedir=$rootdir/$prefix
 outdir=$rootdir/output
 suffix=.MOV
 
+# rename to upper case
+cd $filedir
+for file in ./*; do mv -- "$file" "${file^^}"; done
+cd -
+
 counter=0
 for infile in $filedir/*$suffix; do
   # filter videos

@@ -50,6 +50,7 @@ bash scripts/template.sh syn-eagled-15h-lbs-corresp-root syn-eagled-15h 10045 --
 python submit.py scripts/template.sh ncat-509-correspdp-lbs-ropt-10f nerfies_cat_509 10170 --num_epochs 40 --use_corresp --lbs --flow_dp
 python submit.py scripts/template.sh redo-mcat-6-corresp-lbs-flowdp-rot1 mcat_6 10168 --num_epochs 40 --use_corresp --lbs --flow_dp --rot_angle 1
 python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 cat_601-lbs-correspd-root-cnn-8gpu cat_601 10041 --num_epochs 30 --use_corresp --lbs --root_opt --flow_dp --nouse_cam --cnn_root
+bash scripts/template-mgpu.sh 0 test-sfm cat_905 10010 --num_epochs 30 --use_corresp --root_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --lbs
 ```
 
 To draw root pose trajectory

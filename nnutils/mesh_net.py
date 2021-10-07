@@ -328,12 +328,15 @@ class v2s_net(nn.Module):
                                 out_channels=out_channels, raw_feat=True))
             else: print('error'); exit()
 
+        # TODO: change according to multiple video
+        ks_list = []
+        for i in range(self.num_vid):
+            fx,fy,px,py=[float(i) for i in \
+                    self.config.get('data_%d'%i, 'ks').split(' ')]
+            ks_list.append([fx,fy,px,py])
+        self.ks_param = torch.Tensor(ks_list).to(self.device)
         if opts.ks_opt:
-            # TODO: change according to multiple video
-            fx,fy,px,py=[int(float(i)) for i in \
-                        self.config.get('data_0', 'ks').split(',')]
-            self.ks = torch.Tensor([fx,fy,px,py]).to(self.device)
-            self.ks_param = nn.Parameter(self.ks)
+            self.ks_param = nn.Parameter(self.ks_param)
             
 
         # densepose
@@ -722,8 +725,9 @@ class v2s_net(nn.Module):
         self.sils = (self.sils*self.vis2d)>0
         self.sils =  self.sils.float()
         
-        self.flow = batch['flow'].view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(device)
-        self.flow = self.flow[:,:2]
+        self.flow = batch['flow'].view(bs,-1,2,h,w).permute(1,0,2,3,4).reshape(-1,2,h,w).to(device)
+#        self.flow = batch['flow'].view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(device)
+#        self.flow = self.flow[:,:2]
         self.occ  = batch['occ'].view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
     
     def convert_root_pose_mhp(self):
@@ -788,8 +792,7 @@ class v2s_net(nn.Module):
             self.rtk[:,:3,:3] = rmat
             self.rtk[:,:3,3] = tmat
 
-        if self.opts.ks_opt:
-            self.rtk[:,3,:] = self.ks_param #TODO kmat
+        self.rtk[:,3,:] = self.ks_param[self.dataid.long()] #TODO kmat
        
     def save_latest_vars(self):
         """
@@ -901,9 +904,16 @@ class v2s_net(nn.Module):
                     # & (rendered['flo_valid']==1)
 
             # confidence weighting: 30x normalized distance
-            cfd_at_samp = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
-            cfd_at_samp = (-cfd_at_samp).sigmoid()
+            # 0.1x pixel error
+            cfd_at_samp = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]] \
+                    for i in range(bs)],0) # bs,ns,1
+            #cfd_at_samp = (-cfd_at_samp).sigmoid()
+            # convert to unit space
+            #cfd_at_samp = cfd_at_samp*10 / opts.img_size*2
+            #cfd_at_samp = (-25*cfd_at_samp).exp()
+            sil_at_samp_flo[cfd_at_samp==0] = False 
             cfd_at_samp = cfd_at_samp / cfd_at_samp[sil_at_samp_flo].mean()
+            # hard-threshold cycle error
             flo_loss = flo_loss * cfd_at_samp[...,0]
             
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts

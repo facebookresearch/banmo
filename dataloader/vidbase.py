@@ -138,6 +138,7 @@ class BaseDataset(Dataset):
             print('warning: loading empty flow from %s'%(flowpath))
             flow = np.zeros_like(img)
             occ = np.zeros_like(mask)
+        flow = flow[...,:2]
         occ[occluder] = 0
 
         try:
@@ -239,23 +240,33 @@ class BaseDataset(Dataset):
 
         #fb check
         x0,y0  =np.meshgrid(range(maxw),range(maxh))
-        hp0 = np.stack([x0,y0,np.ones_like(x0)],-1)  # screen coord
+        hp0 = np.stack([x0,y0],-1)  # screen coord
+        #hp0 = np.stack([x0,y0,np.ones_like(x0)],-1)  # screen coord
 
         dis = warp_flow(hp0 + flown, flow[:,:,:2]) - hp0
-        dis = np.linalg.norm(dis[:,:,:2],2,-1) * 0.1
-        occ[occ!=0] = dis[occ!=0]
+        dis = np.linalg.norm(dis[:,:,:2],2,-1) 
+        occ = dis / self.img_size * 2
+        #occ = np.exp(-5*occ)  # 1/5 img size
+        occ = np.exp(-25*occ)
+        occ[occ<0.25] = 0. # this corresp to 1/40 img size
+        #dis = np.linalg.norm(dis[:,:,:2],2,-1) * 0.1
+        #occ[occ!=0] = dis[occ!=0]
 
         disn = warp_flow(hp0 + flow, flown[:,:,:2]) - hp0
-        disn = np.linalg.norm(disn[:,:,:2],2,-1) * 0.1
-        occn[occn!=0] = disn[occn!=0]
+        disn = np.linalg.norm(disn[:,:,:2],2,-1)
+        occn = disn / self.img_size * 2
+        occn = np.exp(-25*occn)
+        occn[occn<0.25] = 0.
+        #disn = np.linalg.norm(disn[:,:,:2],2,-1) * 0.1
+        #occn[occn!=0] = disn[occn!=0]
 
         # ndc
         flow[:,:,0] = 2 * (flow[:,:,0]/maxw)
         flow[:,:,1] = 2 * (flow[:,:,1]/maxh)
-        flow[:,:,2] = np.logical_and(flow[:,:,2]!=0, occ<10)  # as the valid pixels
+        #flow[:,:,2] = np.logical_and(flow[:,:,2]!=0, occ<10)  # as the valid pixels
         flown[:,:,0] = 2 * (flown[:,:,0]/maxw)
         flown[:,:,1] = 2 * (flown[:,:,1]/maxh)
-        flown[:,:,2] = np.logical_and(flown[:,:,2]!=0, occn<10)  # as the valid pixels
+        #flown[:,:,2] = np.logical_and(flown[:,:,2]!=0, occn<10)  # as the valid pixels
 
         flow = np.transpose(flow, (2, 0, 1))
         flown = np.transpose(flown, (2, 0, 1))

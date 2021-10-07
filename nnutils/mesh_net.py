@@ -682,6 +682,8 @@ class v2s_net(nn.Module):
                                                 save_path = save_path)
 
             self.dp_conf[idx] = torch.Tensor(fberr_fw)
+            if self.dataid[idx]==self.dataid[jdx]: # remove flow in same vid
+                self.dp_conf[idx] = self.dp_thrd
         self.dp_conf[self.dp_conf>self.dp_thrd] = self.dp_thrd
 
     def convert_batch_input(self, batch):
@@ -919,10 +921,12 @@ class v2s_net(nn.Module):
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
             # warm up by only using flow loss to optimize root pose
+            warmup_weight = (self.progress - opts.warmup_init_steps)/opts.warmup_steps
+            warmup_weight = np.clip(warmup_weight, 0,1)
             if self.pose_update == 0:
                 total_loss = total_loss*0. + flo_loss
             else:
-                total_loss = total_loss + flo_loss
+                total_loss = warmup_weight* total_loss + flo_loss
             aux_out['flo_loss'] = flo_loss
         
         # flow densepose loss
@@ -947,12 +951,13 @@ class v2s_net(nn.Module):
             sil_at_samp_fdp = (sil_at_samp>0) & (dcf_at_samp<self.dp_thrd-1e-3)\
 #                                & (rendered['fdp_valid']==1)
             dcf_at_samp = (-30*dcf_at_samp).sigmoid()
-            dcf_at_samp = dcf_at_samp / dcf_at_samp[sil_at_samp_fdp].mean()
-            fdp_loss = fdp_loss * dcf_at_samp[...,0]
-            
-            fdp_loss = 0.1*fdp_loss[sil_at_samp_fdp[...,0]].mean() # eval on valid pts
-            total_loss = total_loss + fdp_loss
-            aux_out['fdp_loss'] = fdp_loss
+            if sil_at_samp_fdp.sum()>0:
+                dcf_at_samp = dcf_at_samp / dcf_at_samp[sil_at_samp_fdp].mean()
+                fdp_loss = fdp_loss * dcf_at_samp[...,0]
+                
+                fdp_loss = 0.001*fdp_loss[sil_at_samp_fdp[...,0]].mean() # eval on valid pts
+                total_loss = total_loss + fdp_loss
+                aux_out['fdp_loss'] = fdp_loss
         
         # regularization 
         if 'frame_cyc_dis' in rendered.keys():

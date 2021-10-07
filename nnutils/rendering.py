@@ -253,7 +253,7 @@ def render_rays(models,
 
     # root space point correspondence in t2
     xyz_coarse_target = xyz_coarse_sampled.clone()
-
+    xyz_coarse_dentrg = xyz_coarse_sampled.clone()
 
     # free deform
     xyz_coarse_frame = xyz_coarse_sampled.clone()
@@ -379,7 +379,7 @@ def render_rays(models,
     result['xyz_coarse_target'] = xyz_coarse_target
     result['weights_coarse'] = weights_coarse
 
-    if 'xyz_coarse_dentrg' in locals():
+    if 'rtk_vec_dentrg' in rays.keys():
         if 'sim3_j2c_dentrg' in rays.keys():
             # similarity transform to the video canoical space
             sim3_j2c_dt = rays['sim3_j2c_dentrg'][:,None]

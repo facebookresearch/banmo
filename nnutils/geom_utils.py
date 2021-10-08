@@ -444,7 +444,9 @@ def sample_xy(img_size, bs, nsample, device, return_all=False):
     xygrid = xygrid.permute(1,2,0).reshape(1,-1,2).repeat(bs,1,1) # bs,..., 3
     
     if return_all:
-        rand_inds=xygrid.clone()
+        nsample = xygrid.shape[1]
+        rand_inds=torch.Tensor(range(nsample))
+        rand_inds=rand_inds[None].repeat(bs,1)
         xys = xygrid
     else:
         rand_inds = [np.random.choice(img_size**2, size=nsample, replace=False)\
@@ -728,7 +730,7 @@ def match2coords(match, w_rszd):
     return tar_coord
     
 def match2flo(match, w_rszd, img_size, warp_r, warp_t, device):
-    ref_coord = sample_xy(w_rszd, 1, 0, device, return_all=True)[0].view(-1,2)
+    ref_coord = sample_xy(w_rszd, 1, 0, device, return_all=True)[1].view(-1,2)
     ref_coord = ref_coord.matmul(warp_r[:2,:2]) + warp_r[None,:2,2]
     tar_coord = match2coords(match, w_rszd)
     tar_coord = tar_coord.matmul(warp_t[:2,:2]) + warp_t[None,:2,2]
@@ -737,7 +739,7 @@ def match2flo(match, w_rszd, img_size, warp_r, warp_t, device):
     flo_dp = flo_dp.view(w_rszd, w_rszd, 2)
     flo_dp = flo_dp.permute(2,0,1)
 
-    xygrid = sample_xy(w_rszd, 1, 0, device, return_all=True)[0] # scale to img_size
+    xygrid = sample_xy(w_rszd, 1, 0, device, return_all=True)[1] # scale to img_size
     xygrid = xygrid * float(img_size/w_rszd)
     warp_r_inv = Kmatinv(warp_r)
     xygrid = xygrid.matmul(warp_r_inv[:2,:2]) + warp_r_inv[None,:2,2]
@@ -783,7 +785,7 @@ def compute_flow_geodist(dp_refr,dp_targ, geodists):
 
     # cx,cy
     tar_coord = match2coords(match, w_rszd)
-    ref_coord = sample_xy(w_rszd, 1, 0, device, return_all=True)[0].view(-1,2)
+    ref_coord = sample_xy(w_rszd, 1, 0, device, return_all=True)[1].view(-1,2)
     ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
     tar_coord = tar_coord.view(h_rszd, w_rszd, 2)
     flo_dp = (tar_coord - ref_coord) / w_rszd * 2 # [-2,2]
@@ -1111,7 +1113,7 @@ def ood_check_cse(dp_feats, dp_embed, dp_idx):
     
         rpj_idx = max_idx[dp_idx[i]]
         rpj_coord = torch.stack([rpj_idx % w, rpj_idx//w],-1)
-        ref_coord = sample_xy(w, 1, 0, device, return_all=True)[0].view(h,w,2)
+        ref_coord = sample_xy(w, 1, 0, device, return_all=True)[1].view(h,w,2)
         err = (rpj_coord - ref_coord).norm(2,-1) 
         err_list.append(err)
 
@@ -1129,3 +1131,36 @@ def ood_check_cse(dp_feats, dp_embed, dp_idx):
     valid_list = torch.stack(valid_list,0)
 
     return valid_list, error_list
+
+def bbox_dp2rnd(bbox, kaug):
+    """
+    bbox: bs, 4
+    kaug: bs, 4
+    cropab2: bs, 3,3, transformation from dp bbox to rendered bbox coords
+    """
+    cropa2im = torch.cat([(bbox[:,2:] - bbox[:,:2]) / 112., 
+                           bbox[:,:2]],-1)
+    cropa2im = K2mat(cropa2im)
+    im2cropb = K2inv(kaug) 
+    cropa2b = im2cropb.matmul(cropa2im)
+    return cropa2b
+            
+
+
+
+def resample_dp(dp_feats, dp_bbox, kaug, target_size):
+    """
+    dp_feats: bs, 16, h,w
+    dp_bbox:  bs, 4
+    kaug:     bs, 4
+    """
+    dp_size = dp_feats.shape[-1]
+    device = dp_feats.device
+
+    dp2rnd = bbox_dp2rnd(dp_bbox, kaug)
+    rnd2dp = Kmatinv(dp2rnd)
+    xygrid = sample_xy(target_size, 1, 0, device, return_all=True)[1] 
+    xygrid = xygrid.matmul(rnd2dp[:,:2,:2]) + rnd2dp[:,None,:2,2]
+    xygrid = xygrid / dp_size * 2 - 1 
+    dp_feats_rsmp = F.grid_sample(dp_feats, xygrid.view(-1,target_size,target_size,2))
+    return dp_feats_rsmp

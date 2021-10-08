@@ -30,9 +30,10 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 canonical2ndc, obj_to_cam, vec_to_sim3, \
                                 near_far_to_bound, compute_flow_geodist, \
                                 compute_flow_cse, fb_flow_check, pinhole_cam, \
-                                render_color, mask_aug 
+                                render_color, mask_aug, bbox_dp2rnd, resample_dp
 from nnutils.rendering import render_rays
-from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss
+from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
+                                feat_match_loss
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -389,9 +390,11 @@ class v2s_net(nn.Module):
             self.nerf_fine = NeRF()
             self.nerf_models['fine'] = self.nerf_fine
 
+        # TODO add densepose mlp
         if opts.use_viser:
-            from ext_nnutils.viser_net import MeshNet
-            self.viser = MeshNet(self.cnn_shape, opts)
+            self.num_feat = 16
+            self.nerf_feat = NeRF(in_channels_xyz=in_channels_xyz, D=5, W=128,
+     out_channels=self.num_feat,in_channels_dir=0, raw_feat=True, init_beta=1.)
 
         # load densepose surface features
         if opts.warmup_pose_ep>0:
@@ -511,6 +514,27 @@ class v2s_net(nn.Module):
                 else:
                     v = v.view(bs,img_size, img_size, -1)
             results[k] = v
+        
+        # viser feature matching
+        if opts.use_viser:
+            dp_feats_rsmp = resample_dp(self.dp_feats, 
+                    self.dp_bbox, kaug, img_size)
+            feats_at_samp = [dp_feats_rsmp[i].view(self.num_feat,-1).T\
+                             [rand_inds[i].long()] for i in range(bs)]
+            feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
+            rts = feat_match_loss(self.nerf_feat, self.embedding_xyz, feats_at_samp,
+                    results['xyz_coarse_sampled'], results['weights_coarse'],
+                      self.latest_vars['obj_bound'], is_training=self.training)
+            if not self.training: 
+                rts_img = []
+                for rt in rts:
+                    rts_img.append(rt.view(bs,img_size,img_size,-1))
+                rts = rts_img
+            results['pts_pred'] = (rts[0] - self.dp_vmin)/self.dp_vmax
+            results['pts_exp']  = (rts[1] - self.dp_vmin)/self.dp_vmax
+            results['feat_err'] = rts[2]
+        del results['xyz_coarse_sampled']
+
        
         # render flow 
         # bs, nsamp, -1, x
@@ -634,11 +658,7 @@ class v2s_net(nn.Module):
         else:
             h_rszd,w_rszd = 112,112
             # densepose-cropped to dataloader cropped transformation
-            cropa2im = torch.cat([(self.dp_bbox[:,2:] - self.dp_bbox[:,:2]) / 112., 
-                                  self.dp_bbox[:,:2]],-1)
-            cropa2im = K2mat(cropa2im)
-            im2cropb = K2inv(self.kaug) 
-            cropa2b = im2cropb.matmul(cropa2im)
+            cropa2b = bbox_dp2rnd(self.dp_bbox, self.kaug)
         
         hw_rszd = h_rszd*w_rszd
         self.dp_flow   = torch.zeros(bs,2,h_rszd,w_rszd).to(device)
@@ -854,20 +874,6 @@ class v2s_net(nn.Module):
         frameid=self.frameid
         aux_out={}
         
-        # Render viser
-        if opts.use_viser:
-            pdb.set_trace()
-            viser_loss = self.viser(self.input_imgs, 
-                                    self.imgs, 
-                                    self.masks, 
-                                    self.cams, 
-                                    self.flow, 
-                                    self.pp, 
-                                    self.occ, 
-                                    self.frameid, 
-                                    self.dataid)
-
-
         # Render
         rendered, rand_inds = self.nerf_render(rtk, kaug, frameid, opts.img_size, 
                 nsample=opts.nsample, ndepth=opts.ndepth)
@@ -1004,6 +1010,12 @@ class v2s_net(nn.Module):
             vis_loss = 0.01*rendered['vis_loss'].mean()
             total_loss = total_loss + vis_loss
             aux_out['visibility_loss'] = vis_loss
+
+        if opts.use_viser:
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
+            total_loss = total_loss + feat_loss
+            aux_out['feat_loss'] = feat_loss
+            aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
 
         aux_out['total_loss'] = total_loss
         aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]

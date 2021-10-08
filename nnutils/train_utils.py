@@ -134,6 +134,8 @@ class v2s_trainer(Trainer):
 
         params_nerf_coarse=[]
         params_nerf_beta=[]
+        params_nerf_feat=[]
+        params_nerf_beta_feat=[]
         params_nerf_fine=[]
         params_nerf_flowbw=[]
         params_nerf_skin=[]
@@ -152,6 +154,10 @@ class v2s_trainer(Trainer):
                 params_nerf_coarse.append(p)
             if 'nerf_coarse' in name and 'beta' in name:
                 params_nerf_beta.append(p)
+            elif 'nerf_feat' in name and 'beta' not in name:
+                params_nerf_feat.append(p)
+            elif 'nerf_feat' in name and 'beta' in name:
+                params_nerf_beta_feat.append(p)
             elif 'nerf_fine' in name:
                 params_nerf_fine.append(p)
             elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
@@ -184,6 +190,8 @@ class v2s_trainer(Trainer):
         self.optimizer = torch.optim.AdamW(
             [{'params': params_nerf_coarse},
              {'params': params_nerf_beta},
+             {'params': params_nerf_feat},
+             {'params': params_nerf_beta_feat},
              {'params': params_nerf_fine},
              {'params': params_nerf_flowbw},
              {'params': params_nerf_skin},
@@ -210,6 +218,8 @@ class v2s_trainer(Trainer):
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer,\
                         [opts.learning_rate, # params_nerf_coarse
                       10*opts.learning_rate, # params_nerf_beta
+                         opts.learning_rate, # params_nerf_feat
+                      10*opts.learning_rate, # params_nerf_beta_feat
                          opts.learning_rate, # params_nerf_fine
                          opts.learning_rate, # params_nerf_flowbw
                          opts.learning_rate, # params_nerf_skin
@@ -479,7 +489,9 @@ class v2s_trainer(Trainer):
                 self.reset_dataset_crop_factor(1.)
 
             # evaluation
+            torch.cuda.empty_cache()
             rendered_seq, aux_seq = self.eval()                
+            torch.cuda.empty_cache()
             if epoch==0: self.save_network('0') # to save some cameras
             if opts.local_rank==0: self.add_image_grid(rendered_seq, log, epoch)
 
@@ -767,6 +779,8 @@ class v2s_trainer(Trainer):
         """
         grad_nerf_coarse=[]
         grad_nerf_beta=[]
+        grad_nerf_feat=[]
+        grad_nerf_beta_feat=[]
         grad_nerf_fine=[]
         grad_nerf_flowbw=[]
         grad_nerf_skin=[]
@@ -791,6 +805,10 @@ class v2s_trainer(Trainer):
                 grad_nerf_coarse.append(p)
             if 'nerf_coarse' in name and 'beta' in name:
                 grad_nerf_beta.append(p)
+            elif 'nerf_feat' in name and 'beta' not in name:
+                grad_nerf_feat.append(p)
+            elif 'nerf_feat' in name and 'beta' in name:
+                grad_nerf_beta_feat.append(p)
             elif 'nerf_fine' in name:
                 grad_nerf_fine.append(p)
             elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
@@ -827,29 +845,34 @@ class v2s_trainer(Trainer):
         if self.model.module.shape_update == 1:
             self.zero_grad_list(grad_nerf_coarse)
             self.zero_grad_list(grad_nerf_beta)
+    
+        aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,   .1)
+        aux_out['nerf_beta_g']     = clip_grad_norm_(grad_nerf_beta,     .1)
+        aux_out['nerf_feat_g']     = clip_grad_norm_(grad_nerf_feat,     .1)
+        aux_out['nerf_beta_feat_g']= clip_grad_norm_(grad_nerf_beta_feat,.1)
+        aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,     .1)
+        aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,   .1)
+        aux_out['nerf_skin_g']     = clip_grad_norm_(grad_nerf_skin,     .1)
+        aux_out['nerf_vis_g']      = clip_grad_norm_(grad_nerf_vis,      .1)
+        aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts, .1)
+        aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts, .1)
+        aux_out['embedding_time_g']= clip_grad_norm_(grad_embed,         .1)
+        aux_out['env_code_g']      = clip_grad_norm_(grad_env_code,      .1)
+        aux_out['bones_g']         = clip_grad_norm_(grad_bones,         .1)
+        aux_out['ks_g']            = clip_grad_norm_(grad_ks,            .1)
+        aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,       .1)
+        aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,      .1)
+        aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,      .1)
 
-        aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,  .1)
-        aux_out['nerf_beta_g']   = clip_grad_norm_(grad_nerf_beta,  .1)
-        aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,    .1)
-        aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,  .1)
-        aux_out['nerf_skin_g']   = clip_grad_norm_(grad_nerf_skin,  .1)
-        aux_out['nerf_vis_g']   = clip_grad_norm_(grad_nerf_vis,  .1)
-        aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts,.1)
-        aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts,.1)
-        aux_out['embedding_time_g']= clip_grad_norm_(grad_embed,        .1)
-        aux_out['env_code_g']= clip_grad_norm_(grad_env_code,        .1)
-        aux_out['bones_g']         = clip_grad_norm_(grad_bones,        .1)
-        aux_out['ks_g']            = clip_grad_norm_(grad_ks,           .1)
-        aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,      .1)
-        aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,     .1)
-        aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,     .1)
+        if aux_out['nerf_coarse_g']>0.5:
+            self.zero_grad_list(self.model.parameters())
 
     @staticmethod 
     def render_vid(model, batch):
         opts=model.opts
         model.set_input(batch)
         rtk = model.rtk
-        kaug=model.kaug
+        kaug=model.kaug.clone()
         frameid=model.frameid
         render_size=64
         kaug[:,:2] *= opts.img_size/render_size

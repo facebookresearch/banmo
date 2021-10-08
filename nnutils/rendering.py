@@ -378,6 +378,7 @@ def render_rays(models,
         
     result['xyz_coarse_target'] = xyz_coarse_target
     result['weights_coarse'] = weights_coarse
+    result['xyz_coarse_sampled'] = xyz_coarse_sampled 
 
     if 'rtk_vec_dentrg' in rays.keys():
         if 'sim3_j2c_dentrg' in rays.keys():

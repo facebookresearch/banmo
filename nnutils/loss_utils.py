@@ -1,4 +1,5 @@
 import pdb
+import numpy as np
 import torch
 from nnutils.nerf import evaluate_mlp
 from nnutils.geom_utils import rot_angle
@@ -141,3 +142,71 @@ def rtk_cls_loss(scores, grid, rtk_raw, aux_out):
     softmax = torch.softmax(scores, 1)
     aux_out['cls_entropy'] = (-softmax*softmax.log()).sum(1).mean(0)
     return total_loss
+
+
+
+def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound, 
+        is_training=True):
+    """
+    feats:    bs, ns, num_feat
+    pts:      bs, ns, ndepth, 3
+    pts_prob: bs, ns, ndepth
+    loss:     bs, ns, 1
+    """
+    if is_training: 
+        chunk_pts = 32*1024
+    else:
+        chunk_pts = 1024
+    chunk_pix = 200
+    grid_size = 20
+    bs,N,num_feat = feats.shape
+    device = feats.device
+    nsample = bs*N
+    feats = feats.view(nsample,num_feat)
+    feats = F.normalize(feats,2,-1)
+    ndepth = pts_prob.shape[-1]
+    pts = pts.view(nsample,ndepth,3)
+    pts_prob = pts_prob.view(nsample, ndepth,1)
+
+    # sample model on a regular 3d grid, and correlate with feature, nkxkxk
+    p1d = np.linspace(-bound, bound, grid_size).astype(np.float32)
+    query_yxz = np.stack(np.meshgrid(p1d, p1d, p1d), -1)  # (y,x,z)
+    query_yxz = torch.Tensor(query_yxz).to(device).view(-1, 3)
+    query_xyz = torch.cat([query_yxz[:,1:2], query_yxz[:,0:1], query_yxz[:,2:3]],-1)
+
+    cost_vol = []
+    for i in range(0,grid_size**3,chunk_pts):
+        query_xyz_chunk = query_xyz[i:i+chunk_pts]
+        xyz_embedded = embedding_xyz(query_xyz_chunk)[:,None] # (N,1,...)
+        vol_feat_chunk = evaluate_mlp(nerf_feat, xyz_embedded)[:,0] # (chunk, num_feat)
+        # normalize vol feat
+        vol_feat_chunk = F.normalize(vol_feat_chunk,2,-1)
+
+        cost_chunk = []
+        for j in range(0,nsample,chunk_pix):
+            feats_chunk = feats[j:j+chunk_pix] # (chunk pix, num_feat)
+            # cpix, cpts
+            #TODO implement distance
+            cost_subchunk = (vol_feat_chunk[None] * \
+                    feats_chunk[:,None]).sum(-1) * nerf_feat.beta
+            #cost_subchunk = -(vol_feat_chunk[None] - \
+            #       feats_chunk[:,None]).pow(2).sum(-1)*nerf_feat.beta 
+            cost_chunk.append(cost_subchunk)
+        cost_chunk = torch.cat(cost_chunk,0) # (nsample, cpts)
+        cost_vol.append(cost_chunk)
+    cost_vol = torch.cat(cost_vol,-1) # (nsample, k**3)
+    prob_vol = cost_vol.softmax(-1)
+
+    # regress to the true location, n,3
+    if not is_training: torch.cuda.empty_cache()
+    pts_pred = (prob_vol[...,None] * query_xyz[None]).sum(1)
+
+    # compute expected pts
+    pts_exp = (pts * pts_prob).sum(1)
+
+    # TODO evaluate against model's opacity distirbution along the ray with soft target
+    feat_err = (pts_pred - pts_exp).norm(2,-1) # n,ndepth
+    pts_pred  = pts_pred.view(bs,N,3)
+    pts_exp   = pts_exp.view(bs,N,3)
+    feat_err = feat_err.view(bs,N,1)
+    return pts_pred, pts_exp, feat_err

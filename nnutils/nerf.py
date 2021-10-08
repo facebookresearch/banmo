@@ -367,6 +367,7 @@ def evaluate_mlp(model, xyz_embedded, embed_xyz=None, dir_embedded=None,
                 xyz=None,
                 code=None, sigma_only=False):
     """
+    embed_xyz: embedding function
     chunk is the point-level chunk divided by number of bins
     """
     B,nbins,_ = xyz_embedded.shape

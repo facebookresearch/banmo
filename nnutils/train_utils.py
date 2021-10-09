@@ -864,8 +864,8 @@ class v2s_trainer(Trainer):
         aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,      .1)
         aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,      .1)
 
-        if aux_out['nerf_coarse_g']>0.5:
-            self.zero_grad_list(self.model.parameters())
+        #if aux_out['nerf_coarse_g']>0.5:
+        #    self.zero_grad_list(self.model.parameters())
 
     @staticmethod 
     def render_vid(model, batch):

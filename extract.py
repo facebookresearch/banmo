@@ -122,7 +122,7 @@ def main(_):
     dynamic_mesh = opts.flowbw or opts.lbs
     idx_render = str_to_frame(opts.test_frames, data_info)
 
-    chunk = 50
+    chunk = opts.frame_chunk
     for i in range(0, len(idx_render), chunk):
         rendered_seq, aux_seq = trainer.eval(idx_render=idx_render[i:i+chunk],
                                              dynamic_mesh=dynamic_mesh) 

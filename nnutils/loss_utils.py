@@ -1,4 +1,6 @@
 import pdb
+import trimesh
+import cv2
 import numpy as np
 import torch
 from nnutils.nerf import evaluate_mlp
@@ -201,7 +203,9 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     if not is_training: torch.cuda.empty_cache()
     pts_pred = (prob_vol[...,None] * query_xyz[None]).sum(1)
 
-    # compute expected pts
+    #TODO compute expected pts
+    pts_prob = pts_prob.detach()
+    pts_prob = pts_prob/(1e-9+pts_prob.sum(1)[:,None])
     pts_exp = (pts * pts_prob).sum(1)
 
     # TODO evaluate against model's opacity distirbution along the ray with soft target
@@ -209,4 +213,8 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     pts_pred  = pts_pred.view(bs,N,3)
     pts_exp   = pts_exp.view(bs,N,3)
     feat_err = feat_err.view(bs,N,1)
+
+    #pdb.set_trace()
+    #trimesh.Trimesh(pts_exp[0].cpu().numpy()).export('0.obj')
+    #trimesh.Trimesh(pts_pred[0].cpu().numpy()).export('1.obj')
     return pts_pred, pts_exp, feat_err

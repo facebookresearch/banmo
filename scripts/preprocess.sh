@@ -4,6 +4,7 @@ prefix=$2
 filedir=$rootdir/$prefix
 outdir=$rootdir/output
 suffix=.MOV
+fps=30
 
 # rename to upper case
 cd $filedir
@@ -24,7 +25,7 @@ for infile in $filedir/*$suffix; do
 
   # extract frames
   rm $outdir/*
-  ffmpeg -i $infile -vf fps=10 $outdir/%05d.jpg
+  ffmpeg -i $infile -vf fps=$fps $outdir/%05d.jpg
 
   # segmentation
   todir=$tmpdir/$seqname

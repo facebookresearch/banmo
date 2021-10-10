@@ -135,7 +135,7 @@ flags.DEFINE_integer('lbs_reinit_epochs', -1, 'epochs to initialize bones')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
-flags.DEFINE_bool('nerf_skin', False, 'use mlp skinning function')
+flags.DEFINE_bool('nerf_skin', True, 'use mlp skinning function')
 flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
@@ -240,7 +240,7 @@ class v2s_net(nn.Module):
         # set dnerf model
         max_t=self.data_offset[-1]  
         t_embed_dim = 128
-        self.embedding_time = nn.Embedding(max_t, t_embed_dim)
+        self.pose_code = nn.Embedding(max_t, t_embed_dim)
         if opts.flowbw:
             if opts.se3_flow:
                 flow3d_arch = SE3head
@@ -264,7 +264,7 @@ class v2s_net(nn.Module):
             self.nerf_models['bones'] = self.bones
             self.num_bone_used = self.num_bones # bones used in the model
 
-            self.nerf_bone_rts = nn.Sequential(self.embedding_time,
+            self.nerf_bone_rts = nn.Sequential(self.pose_code,
                                 RTHead(use_quat=False, 
                                 #D=5,W=128,
                                 in_channels_xyz=t_embed_dim,in_channels_dir=0,
@@ -322,7 +322,8 @@ class v2s_net(nn.Module):
             elif self.root_basis == 'exp':
                 self.nerf_root_rts = RTExplicit(max_t, delta=self.use_cam)
             elif self.root_basis == 'mlp':
-                self.nerf_root_rts = nn.Sequential(self.embedding_time,
+                self.root_code = nn.Embedding(max_t, t_embed_dim)
+                self.nerf_root_rts = nn.Sequential(self.root_code,
                                 RTHead(use_quat=use_quat, 
                                 #D=5,W=128,
                                 #activation=nn.Tanh(),
@@ -447,7 +448,7 @@ class v2s_net(nn.Module):
             
             frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
             if opts.flowbw:
-                time_embedded_target = self.embedding_time(frameid_target)
+                time_embedded_target = self.pose_code(frameid_target)
                 rays['time_embedded_target'] = time_embedded_target.repeat(1,
                                                             rays['nsample'],1)
             elif opts.lbs and self.num_bone_used>0:
@@ -471,7 +472,7 @@ class v2s_net(nn.Module):
                     rays['sim3_j2c_dentrg'] = rays['sim3_j2c_dentrg'][:,None].repeat(1,rays['nsample'],1)
                  
         # pass time-dependent inputs
-        time_embedded = self.embedding_time(frameid)
+        time_embedded = self.pose_code(frameid)
         rays['time_embedded'] = time_embedded.repeat(1,rays['nsample'],1)
         if opts.lbs and self.num_bone_used>0:
             bone_rts = self.nerf_bone_rts(frameid)
@@ -909,12 +910,6 @@ class v2s_net(nn.Module):
 
             flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
             flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
-            #rendered_floa = F.normalize(rendered_flo,2,-1)
-            #floa_at_samp   = F.normalize(flo_at_samp,2,-1)
-            #cos = (rendered_floa*floa_at_samp).sum(-1)
-            #eps = 1e-4
-            #cos = cos.clamp(-1+eps,1-eps)
-            #flo_loss = flo_loss+0.001*torch.acos(cos)
             sil_at_samp_flo = (sil_at_samp>0)\
                     # & (rendered['flo_valid']==1)
 

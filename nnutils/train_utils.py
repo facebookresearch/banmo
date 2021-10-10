@@ -142,7 +142,8 @@ class v2s_trainer(Trainer):
         params_nerf_vis=[]
         params_nerf_root_rts=[]
         params_nerf_bone_rts=[]
-        params_embed=[]
+        params_root_code=[]
+        params_pose_code=[]
         params_env_code=[]
         params_bones=[]
         params_ks=[]
@@ -170,8 +171,10 @@ class v2s_trainer(Trainer):
                 params_nerf_root_rts.append(p)
             elif 'nerf_bone_rts' in name:
                 params_nerf_bone_rts.append(p)
-            elif 'embedding_time' in name or 'rest_pose_code' in name:
-                params_embed.append(p)
+            elif 'root_code' in name:
+                params_root_code.append(p)
+            elif 'pose_code' in name or 'rest_pose_code' in name:
+                params_pose_code.append(p)
             elif 'env_code' in name:
                 params_env_code.append(p)
             elif 'bones' == name:
@@ -198,7 +201,8 @@ class v2s_trainer(Trainer):
              {'params': params_nerf_vis},
              {'params': params_nerf_root_rts},
              {'params': params_nerf_bone_rts},
-             {'params': params_embed},
+             {'params': params_root_code},
+             {'params': params_pose_code},
              {'params': params_env_code},
              {'params': params_bones},
              {'params': params_ks},
@@ -226,7 +230,8 @@ class v2s_trainer(Trainer):
                          opts.learning_rate, # params_nerf_vis
         lr_nerf_root_rts*opts.learning_rate, # params_nerf_root_rts
                      0.5*opts.learning_rate, # params_nerf_bone_rts
-                     0.5*opts.learning_rate, # params_embed
+                     0.5*opts.learning_rate, # params_root_code
+                     0.5*opts.learning_rate, # params_pose_code
                          opts.learning_rate, # params_env_code
                          opts.learning_rate, # params_bones
                          opts.learning_rate, # params_ks
@@ -275,8 +280,10 @@ class v2s_trainer(Trainer):
                 self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
                 self.del_key( states, 'sim3_j2c')
 
-            self.model.embedding_time.weight.data[:len_prev_fr] = \
-               states['embedding_time.weight']
+            self.model.root_code.weight.data[:len_prev_fr] = \
+               states['root_code.weight']
+            self.model.pose_code.weight.data[:len_prev_fr] = \
+               states['pose_code.weight']
 
             self.model.env_code.weight.data = \
                 states['env_code.weight']
@@ -287,7 +294,8 @@ class v2s_trainer(Trainer):
 
         # delete size-mismatched variables
         self.del_key( states, 'near_far') 
-        self.del_key( states, 'embedding_time.weight')
+        self.del_key( states, 'root_code.weight')
+        self.del_key( states, 'pose_code.weight')
         self.del_key( states, 'nerf_bone_rts.0.weight')
         self.del_key( states, 'nerf_root_rts.0.weight')
         self.del_key( states, 'env_code.weight')
@@ -787,7 +795,8 @@ class v2s_trainer(Trainer):
         grad_nerf_vis=[]
         grad_nerf_root_rts=[]
         grad_nerf_bone_rts=[]
-        grad_embed=[]
+        grad_root_code=[]
+        grad_pose_code=[]
         grad_env_code=[]
         grad_bones=[]
         grad_ks=[]
@@ -821,8 +830,10 @@ class v2s_trainer(Trainer):
                 grad_nerf_root_rts.append(p)
             elif 'nerf_bone_rts' in name:
                 grad_nerf_bone_rts.append(p)
-            elif 'embedding_time' in name or 'rest_pose_code' in name:
-                grad_embed.append(p)
+            elif 'root_code' in name:
+                grad_root_code.append(p)
+            elif 'pose_code' in name or 'rest_pose_code' in name:
+                grad_pose_code.append(p)
             elif 'env_code' in name:
                 grad_env_code.append(p)
             elif 'bones' == name:
@@ -839,7 +850,8 @@ class v2s_trainer(Trainer):
         
         # freeze root pose when adding in sil/rgb loss 
         if self.model.module.pose_update == 1:
-            self.zero_grad_list(grad_embed)
+            self.zero_grad_list(grad_root_code)
+            self.zero_grad_list(grad_pose_code)
             self.zero_grad_list(grad_nerf_root_rts)
             self.zero_grad_list(grad_nerf_bone_rts)
         if self.model.module.shape_update == 1:
@@ -856,7 +868,8 @@ class v2s_trainer(Trainer):
         aux_out['nerf_vis_g']      = clip_grad_norm_(grad_nerf_vis,      .1)
         aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts, .1)
         aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts, .1)
-        aux_out['embedding_time_g']= clip_grad_norm_(grad_embed,         .1)
+        aux_out['root_code_g']= clip_grad_norm_(grad_root_code,          .1)
+        aux_out['pose_code_g']= clip_grad_norm_(grad_pose_code,          .1)
         aux_out['env_code_g']      = clip_grad_norm_(grad_env_code,      .1)
         aux_out['bones_g']         = clip_grad_norm_(grad_bones,         .1)
         aux_out['ks_g']            = clip_grad_norm_(grad_ks,            .1)

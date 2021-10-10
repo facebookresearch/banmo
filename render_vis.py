@@ -72,7 +72,7 @@ gt_meshes =   [trimesh.load(i, process=False) for i in sorted( glob.glob('%s/*.o
 def main():
     print(args.testdir)
     if args.rest:
-        mesh_rest = trimesh.load('%s/mesh-rest.obj'%(args.testdir, args.seqname),process=False)
+        mesh_rest = trimesh.load('%s/mesh-rest.obj'%(args.testdir),process=False)
     # read all the data
     all_anno = []
     all_mesh = []

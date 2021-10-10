@@ -529,7 +529,7 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
     if opts.flowbw:
         # flowbw
         xyz_embedded = model.embedding_xyz(query_xyz_chunk)
-        time_embedded = model.embedding_time(query_time)[:,0]
+        time_embedded = model.poes_code(query_time)[:,0]
         xyztime_embedded = torch.cat([xyz_embedded, time_embedded],1)
 
         flowbw_chunk = model.nerf_flowbw(xyztime_embedded, xyz=query_xyz_chunk)
@@ -564,7 +564,7 @@ def warp_fw(opts, model, rt_dict, vertices, frameid):
     if opts.flowbw:
         # forward flow
         pts_can_embedded = model.embedding_xyz(pts_can)
-        time_embedded = model.embedding_time(query_time)[:,0]
+        time_embedded = model.pose_code(query_time)[:,0]
         ptstime_embedded = torch.cat([pts_can_embedded, time_embedded],1)
 
         pts_dfm = pts_can + model.nerf_flowfw(ptstime_embedded, xyz=pts_can)
@@ -608,7 +608,7 @@ def canonical2ndc(model, dp_canonical_pts, rtk, kaug, frameid):
     # projection
     dp_canonical_pts = dp_canonical_pts[None]
     if model.opts.flowbw:
-        time_embedded = model.embedding_time(frameid)
+        time_embedded = model.pose_code(frameid)
         time_embedded = time_embedded.repeat(1,npts, 1)
         dp_canonical_embedded = model.embedding_xyz(dp_canonical_pts)[None]
         dp_canonical_embedded = dp_canonical_embedded.repeat(bs,1,1)

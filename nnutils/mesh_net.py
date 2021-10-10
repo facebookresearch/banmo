@@ -929,12 +929,10 @@ class v2s_net(nn.Module):
             flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
 
             # warm up by only using flow loss to optimize root pose
-            warmup_weight = (self.progress - opts.warmup_init_steps)/opts.warmup_steps
-            warmup_weight = np.clip(warmup_weight, 0,1)
             if self.pose_update == 0:
                 total_loss = total_loss*0. + flo_loss
             else:
-                total_loss = warmup_weight* total_loss + flo_loss
+                total_loss = total_loss + flo_loss
             aux_out['flo_loss'] = flo_loss
         
         # flow densepose loss

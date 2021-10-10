@@ -15,7 +15,7 @@ def nerf_gradient(mlp, embed, pts, use_xyz=False,code=None, sigma_only=False):
     pts_embedded = embed(pts)
     if use_xyz: xyz=pts
     else: xyz=None
-    y = evaluate_mlp(mlp, pts_embedded, pts.shape[0], 
+    y = evaluate_mlp(mlp, pts_embedded, chunk=pts.shape[0], 
             xyz=xyz,code=code,sigma_only=sigma_only)
         
     # get gradient for each size-1 output

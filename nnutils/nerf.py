@@ -385,7 +385,10 @@ def evaluate_mlp(model, xyz_embedded, embed_xyz=None, dir_embedded=None,
                 code_chunk = code_chunk[:,None]
             code_chunk = code_chunk.repeat(1,nbins,1)
             embedded = torch.cat([embedded,code_chunk], -1)
-        out_chunks += [model(embedded, sigma_only=sigma_only, xyz=xyz)]
+        if xyz is not None:
+            xyz_chunk = xyz[i:i+chunk]
+        else: xyz_chunk = None
+        out_chunks += [model(embedded, sigma_only=sigma_only, xyz=xyz_chunk)]
 
     out = torch.cat(out_chunks, 0)
     return out

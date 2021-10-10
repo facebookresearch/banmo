@@ -85,14 +85,19 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
         img_gt = rendered_seq['img'][i]
         flo_gt = rendered_seq['flo'][i]
         if save_flo: img_gt = cat_imgflo(img_gt, flo_gt)
-        #cv2.imwrite('%s-img-gt-%05d.jpg'%(save_prefix, idx), img_gt)
+        cv2.imwrite('%s-img-gt-%05d.jpg'%(save_prefix, idx), img_gt)
         flo_gt_vid.append(img_gt)
         
         img_p = rendered_seq['img_coarse'][i]
         flo_p = rendered_seq['flo_coarse'][i]
         if save_flo: img_p = cat_imgflo(img_p, flo_p)
-        #cv2.imwrite('%s-img-p-%05d.jpg'%(save_prefix, idx), img_p)
+        cv2.imwrite('%s-img-p-%05d.jpg'%(save_prefix, idx), img_p)
         flo_p_vid.append(img_p)
+
+        flo_gt = cv2.resize(flo_gt, flo_p.shape[:2])
+        flo_err = np.linalg.norm( flo_p - flo_gt ,2,-1)*1000
+        cv2.imwrite('%s-flo-err-%05d.jpg'%(save_prefix, idx), flo_err)
+
 
 #    fps = 1./(5./len(flo_p_vid))
     upsample_frame = min(30, len(flo_p_vid))

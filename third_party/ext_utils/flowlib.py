@@ -51,8 +51,9 @@ def cat_imgflo(img, flo):
     img in (0,1)
     flo in normalized coordinate
     """
-    img = img * 255
+    img = img.copy() * 255
     h,w = img.shape[:2]
+    flo = flo.copy()
     flo[:,:,0] = flo[:,:,0] * 0.5 * w
     flo[:,:,1] = flo[:,:,1] * 0.5 * h
     imgflo = point_vec(img, flo)

@@ -85,7 +85,7 @@ def mlp_skinning(mlp, code, pts_embed):
     pts_embed: bs,N,x    - N point positional embeddings
     dskin: bs,N,B        - delta skinning matrix
     """
-    dskin = evaluate_mlp(mlp, pts_embed, code=code, chunk=16*1024)
+    dskin = evaluate_mlp(mlp, pts_embed, code=code, chunk=8*1024)
     
     ##TODO
     ## truncated softmax

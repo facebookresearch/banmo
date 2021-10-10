@@ -152,7 +152,7 @@ class v2s_trainer(Trainer):
         for name,p in self.model.named_parameters():
             if 'nerf_coarse' in name and 'beta' not in name:
                 params_nerf_coarse.append(p)
-            if 'nerf_coarse' in name and 'beta' in name:
+            elif 'nerf_coarse' in name and 'beta' in name:
                 params_nerf_beta.append(p)
             elif 'nerf_feat' in name and 'beta' not in name:
                 params_nerf_feat.append(p)
@@ -803,7 +803,7 @@ class v2s_trainer(Trainer):
             except: pass
             if 'nerf_coarse' in name and 'beta' not in name:
                 grad_nerf_coarse.append(p)
-            if 'nerf_coarse' in name and 'beta' in name:
+            elif 'nerf_coarse' in name and 'beta' in name:
                 grad_nerf_beta.append(p)
             elif 'nerf_feat' in name and 'beta' not in name:
                 grad_nerf_feat.append(p)

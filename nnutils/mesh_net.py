@@ -135,7 +135,7 @@ flags.DEFINE_integer('lbs_reinit_epochs', -1, 'epochs to initialize bones')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
-flags.DEFINE_bool('nerf_skin', True, 'use mlp skinning function')
+flags.DEFINE_bool('nerf_skin', False, 'use mlp skinning function')
 flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
@@ -909,6 +909,12 @@ class v2s_net(nn.Module):
 
             flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
             flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
+            #rendered_floa = F.normalize(rendered_flo,2,-1)
+            #floa_at_samp   = F.normalize(flo_at_samp,2,-1)
+            #cos = (rendered_floa*floa_at_samp).sum(-1)
+            #eps = 1e-4
+            #cos = cos.clamp(-1+eps,1-eps)
+            #flo_loss = flo_loss+0.001*torch.acos(cos)
             sil_at_samp_flo = (sil_at_samp>0)\
                     # & (rendered['flo_valid']==1)
 

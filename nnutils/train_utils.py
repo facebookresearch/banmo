@@ -229,9 +229,9 @@ class v2s_trainer(Trainer):
                          opts.learning_rate, # params_nerf_skin
                          opts.learning_rate, # params_nerf_vis
         lr_nerf_root_rts*opts.learning_rate, # params_nerf_root_rts
-                         opts.learning_rate, # params_nerf_bone_rts
+                         0.5*opts.learning_rate, # params_nerf_bone_rts
         lr_nerf_root_rts*opts.learning_rate, # params_root_code
-                         opts.learning_rate, # params_pose_code
+                         0.5*opts.learning_rate, # params_pose_code
                          opts.learning_rate, # params_env_code
                          opts.learning_rate, # params_bones
                          opts.learning_rate, # params_ks

@@ -395,7 +395,12 @@ class v2s_trainer(Trainer):
             rendered_seq['dpc'] += [self.model.dp_vis[self.model.dps.long()][:hbs]]
             rendered_seq['occ'] += [self.model.occ[...,None]      [:hbs]]
             rendered_seq['feat']+= [self.model.dp_feats.std(1)[...,None][:hbs]]
-            rendered_seq['flo_coarse'][0] *= rendered_seq['sil_coarse'][0]
+            rendered_seq['flo_coarse'][0]       *= rendered_seq['sil_coarse'][0]
+            rendered_seq['joint_render_vis'][0] *= rendered_seq['sil_coarse'][0]
+            if opts.use_viser:
+                rendered_seq['pts_pred'][0] *= rendered_seq['sil_coarse'][0]
+                rendered_seq['pts_exp'][0]  *= rendered_seq['sil_coarse'][0]
+                rendered_seq['feat_err'][0] *= rendered_seq['sil_coarse'][0]
             if opts.flow_dp:
                 rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
                 rendered_seq['dcf'] += [self.model.dp_conf[...,None][:hbs]/\
@@ -430,7 +435,8 @@ class v2s_trainer(Trainer):
                                         opts.sample_grid3d, 
                                     frameid=frameid, mesh_dict_in=mesh_dict_rest)
                     mesh=mesh_dict['mesh']
-                    mesh.visual.vertex_colors = mesh_dict_rest['mesh'].\
+                    if mesh_dict_rest is not None:
+                        mesh.visual.vertex_colors = mesh_dict_rest['mesh'].\
                                visual.vertex_colors # assign rest surface color
 
                     # save bones
@@ -505,6 +511,7 @@ class v2s_trainer(Trainer):
 
             self.reset_hparams(epoch)
 
+            print(self.model.bones)
             self.train_one_epoch(epoch, log)
 
             if (epoch+1) % opts.save_epoch_freq == 0:
@@ -954,8 +961,8 @@ class v2s_trainer(Trainer):
 
             ## save color of sampled points 
             #cmap = cm.get_cmap('cool')
-            #pts_col = cmap(vol_visi.float().view(-1).cpu())
-            ##pts_col = cmap(vol_o.sigmoid().view(-1).cpu())
+            ##pts_col = cmap(vol_visi.float().view(-1).cpu())
+            #pts_col = cmap(vol_o.sigmoid().view(-1).cpu())
             #mesh = trimesh.Trimesh(query_xyz.view(-1,3).cpu(), vertex_colors=pts_col)
             #mesh.export('0.obj')
             #pdb.set_trace()

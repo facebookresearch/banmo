@@ -529,7 +529,7 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
     if opts.flowbw:
         # flowbw
         xyz_embedded = model.embedding_xyz(query_xyz_chunk)
-        time_embedded = model.poes_code(query_time)[:,0]
+        time_embedded = model.pose_code(query_time)[:,0]
         xyztime_embedded = torch.cat([xyz_embedded, time_embedded],1)
 
         flowbw_chunk = model.nerf_flowbw(xyztime_embedded, xyz=query_xyz_chunk)

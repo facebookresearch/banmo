@@ -135,7 +135,7 @@ flags.DEFINE_integer('lbs_reinit_epochs', -1, 'epochs to initialize bones')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
-flags.DEFINE_bool('nerf_skin', True, 'use mlp skinning function')
+flags.DEFINE_bool('nerf_skin', False, 'use mlp skinning function')
 flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
@@ -534,6 +534,8 @@ class v2s_net(nn.Module):
                 rts = rts_img
             results['pts_pred'] = (rts[0] - self.dp_vmin)/self.dp_vmax
             results['pts_exp']  = (rts[1] - self.dp_vmin)/self.dp_vmax
+            results['pts_pred'] = results['pts_pred'].clamp(0,1)
+            results['pts_exp']  = results['pts_exp'].clamp(0,1)
             results['feat_err'] = rts[2]
         del results['xyz_coarse_sampled']
 

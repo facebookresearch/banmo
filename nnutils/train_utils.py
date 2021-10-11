@@ -229,9 +229,9 @@ class v2s_trainer(Trainer):
                          opts.learning_rate, # params_nerf_skin
                          opts.learning_rate, # params_nerf_vis
         lr_nerf_root_rts*opts.learning_rate, # params_nerf_root_rts
-                     0.5*opts.learning_rate, # params_nerf_bone_rts
-                     0.5*opts.learning_rate, # params_root_code
-                     0.5*opts.learning_rate, # params_pose_code
+                         opts.learning_rate, # params_nerf_bone_rts
+        lr_nerf_root_rts*opts.learning_rate, # params_root_code
+                         opts.learning_rate, # params_pose_code
                          opts.learning_rate, # params_env_code
                          opts.learning_rate, # params_bones
                          opts.learning_rate, # params_ks
@@ -511,7 +511,6 @@ class v2s_trainer(Trainer):
 
             self.reset_hparams(epoch)
 
-            print(self.model.bones)
             self.train_one_epoch(epoch, log)
 
             if (epoch+1) % opts.save_epoch_freq == 0:
@@ -897,7 +896,8 @@ class v2s_trainer(Trainer):
         render_size=64
         kaug[:,:2] *= opts.img_size/render_size
 
-        rendered, _ = model.nerf_render(rtk, kaug, frameid, render_size)
+        rendered, _ = model.nerf_render(rtk, kaug, frameid, render_size,
+                ndepth=opts.ndepth)
         rendered_first = {}
         for k,v in rendered.items():
             if v.dim()>0: 
@@ -981,9 +981,13 @@ class v2s_trainer(Trainer):
 
                 # assign color based on canonical location
                 vis = mesh.vertices
-                model.module.vis_min = vis.min(0)[None]
+                try:
+                    model.module.vis_min = vis.min(0)[None]
+                    model.module.vis_max = vis.max(0)[None]
+                except: # test time
+                    model.vis_min = vis.min(0)[None]
+                    model.vis_max = vis.max(0)[None]
                 vis = vis - model.vis_min
-                model.module.vis_max = vis.max(0)[None]
                 vis = vis / model.vis_max
                 mesh.visual.vertex_colors[:,:3] = vis*255
 

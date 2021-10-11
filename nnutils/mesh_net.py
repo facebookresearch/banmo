@@ -207,7 +207,7 @@ class v2s_net(nn.Module):
         self.latest_vars['obj_bound'] = near_far_to_bound(self.near_far)
 
         self.vis_min=np.asarray([[0,0,0]])
-        self.vis_max=np.asarray([[1,1,1]])*self.latest_vars['obj_bound']/2
+        self.vis_len=np.asarray([[1,1,1]])*self.latest_vars['obj_bound']/2
         
         if opts.use_sim3:
             # video specific sim3: from video to joint canonical space
@@ -547,12 +547,12 @@ class v2s_net(nn.Module):
                     rts_img.append(rt.view(bs,img_size,img_size,-1))
                 rts = rts_img
             results['pts_pred'] = (rts[0] - torch.Tensor(self.vis_min[None]).\
-                    to(self.device)) / torch.Tensor(self.vis_max[None]).to(self.device)
+                    to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
             results['pts_exp']  = (rts[1] - torch.Tensor(self.vis_min[None]).\
-                    to(self.device)) / torch.Tensor(self.vis_max[None]).to(self.device)
+                    to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
             results['pts_pred'] = results['pts_pred'].clamp(0,1)
             results['pts_exp']  = results['pts_exp'].clamp(0,1)
-            results['feat_err'] = rts[2]/rts[2].max()
+            results['feat_err'] = rts[2]/rts[2].max()*10
         del results['xyz_coarse_sampled']
 
        
@@ -626,7 +626,7 @@ class v2s_net(nn.Module):
     
         results['joint_render_vis'] = (results['joint_render']-\
                        torch.Tensor(self.vis_min[None,None]).to(self.device))/\
-                       torch.Tensor(self.vis_max[None,None]).to(self.device)
+                       torch.Tensor(self.vis_len[None,None]).to(self.device)
         results['joint_render_vis'] = results['joint_render_vis'].clamp(0,1)
         #    pdb.set_trace() 
         #    trimesh.Trimesh(self.dp_verts.cpu(), self.dp_faces,

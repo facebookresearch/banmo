@@ -983,12 +983,12 @@ class v2s_trainer(Trainer):
                 vis = mesh.vertices
                 try:
                     model.module.vis_min = vis.min(0)[None]
-                    model.module.vis_max = vis.max(0)[None]
+                    model.module.vis_len = vis.max(0)[None] - vis.min(0)[None]
                 except: # test time
                     model.vis_min = vis.min(0)[None]
-                    model.vis_max = vis.max(0)[None]
+                    model.vis_len = vis.max(0)[None] - vis.min(0)[None]
                 vis = vis - model.vis_min
-                vis = vis / model.vis_max
+                vis = vis / model.vis_len
                 mesh.visual.vertex_colors[:,:3] = vis*255
 
         # forward warping

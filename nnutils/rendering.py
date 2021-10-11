@@ -295,6 +295,7 @@ def render_rays(models,
             skin_backward=None
 
         # backward skinning
+        #pdb.set_trace()
         xyz_coarse_sampled, skin, bones_dfm = lbs(bones, 
                                                   bone_rts_fw, 
                                                   xyz_coarse_sampled,

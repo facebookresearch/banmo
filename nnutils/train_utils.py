@@ -981,9 +981,9 @@ class v2s_trainer(Trainer):
 
                 # assign color based on canonical location
                 vis = mesh.vertices
-                model.vis_min = vis.min(0)[None]
+                model.module.vis_min = vis.min(0)[None]
                 vis = vis - model.vis_min
-                model.vis_max = vis.max(0)[None]
+                model.module.vis_max = vis.max(0)[None]
                 vis = vis / model.vis_max
                 mesh.visual.vertex_colors[:,:3] = vis*255
 

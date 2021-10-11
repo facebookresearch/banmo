@@ -527,16 +527,32 @@ class v2s_net(nn.Module):
             rts = feat_match_loss(self.nerf_feat, self.embedding_xyz, feats_at_samp,
                     results['xyz_coarse_sampled'], results['weights_coarse'],
                       self.latest_vars['obj_bound'], is_training=self.training)
+
+            #pdb.set_trace()
+            #feat_err = rts[2][0].view(img_size,img_size)
+            #mask_rszd = F.interpolate(self.masks[None],(img_size,img_size))[0,0].bool()
+            #feat_err[~mask_rszd] = 0.
+            #cv2.imwrite('0.png', feat_err.cpu().numpy()*10000)
+            #pts_pred = rts[0][0].view(img_size,img_size,3)[mask_rszd]
+            #pts_exp  = rts[1][0].view(img_size,img_size,3)[mask_rszd]
+            #trimesh.Trimesh(pts_pred.cpu().numpy()).export('0.obj')
+            #trimesh.Trimesh(pts_exp.cpu().numpy()).export('1.obj')
+            #trimesh.Trimesh(results['xyz_coarse_sampled'].view(bs,-1,ndepth,3)\
+            #        [0,:,0].cpu().numpy()).export('2.obj')
+            #trimesh.Trimesh(results['xyz_coarse_sampled'].view(bs,-1,ndepth,3)\
+            #        [0,:,-1].cpu().numpy()).export('3.obj')
             if not self.training: 
                 rts_img = []
                 for rt in rts:
                     rts_img.append(rt.view(bs,img_size,img_size,-1))
                 rts = rts_img
-            results['pts_pred'] = (rts[0] - self.dp_vmin)/self.dp_vmax
-            results['pts_exp']  = (rts[1] - self.dp_vmin)/self.dp_vmax
+            results['pts_pred'] = (rts[0] - torch.Tensor(self.vis_min[None]).\
+                    to(self.device)) / torch.Tensor(self.vis_max[None]).to(self.device)
+            results['pts_exp']  = (rts[1] - torch.Tensor(self.vis_min[None]).\
+                    to(self.device)) / torch.Tensor(self.vis_max[None]).to(self.device)
             results['pts_pred'] = results['pts_pred'].clamp(0,1)
             results['pts_exp']  = results['pts_exp'].clamp(0,1)
-            results['feat_err'] = rts[2]
+            results['feat_err'] = rts[2]/rts[2].max()
         del results['xyz_coarse_sampled']
 
        

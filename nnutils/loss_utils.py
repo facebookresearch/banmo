@@ -155,6 +155,33 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     pts_prob: bs, ns, ndepth
     loss:     bs, ns, 1
     """
+    # part1: matching
+    pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
+            bound,is_training=is_training)
+
+    # part2: compute loss
+    bs     = pts_prob.shape[0]
+    ndepth = pts_prob.shape[-1]
+    pts =           pts.view(-1, ndepth,3)
+    pts_prob = pts_prob.view(-1, ndepth,1)
+    
+    # compute expected pts
+    #pts_prob = pts_prob.detach()
+    pts_prob = pts_prob/(1e-9+pts_prob.sum(1)[:,None])
+    pts_exp = (pts * pts_prob).sum(1)
+
+    # evaluate against model's opacity distirbution along the ray with soft target
+    feat_err = (pts_pred - pts_exp).norm(2,-1) # n,ndepth
+    pts_pred  = pts_pred.view(bs,-1,3)
+    pts_exp   = pts_exp .view(bs,-1,3)
+    feat_err = feat_err .view(bs,-1,1)
+    return pts_pred, pts_exp, feat_err
+    
+def feat_match(nerf_feat, embedding_xyz, feats, bound, 
+        is_training=True):
+    """
+    feats:    bs, ns, num_feat
+    """
     if is_training: 
         chunk_pts = 32*1024
     else:
@@ -166,9 +193,6 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     nsample = bs*N
     feats = feats.view(nsample,num_feat)
     feats = F.normalize(feats,2,-1)
-    ndepth = pts_prob.shape[-1]
-    pts = pts.view(nsample,ndepth,3)
-    pts_prob = pts_prob.view(nsample, ndepth,1)
 
     # sample model on a regular 3d grid, and correlate with feature, nkxkxk
     p1d = np.linspace(-bound, bound, grid_size).astype(np.float32)
@@ -188,11 +212,9 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
         for j in range(0,nsample,chunk_pix):
             feats_chunk = feats[j:j+chunk_pix] # (chunk pix, num_feat)
             # cpix, cpts
-            #TODO implement distance
+            # distance metric
             cost_subchunk = (vol_feat_chunk[None] * \
                     feats_chunk[:,None]).sum(-1) * nerf_feat.beta
-            #cost_subchunk = -(vol_feat_chunk[None] - \
-            #       feats_chunk[:,None]).pow(2).sum(-1)*nerf_feat.beta 
             cost_chunk.append(cost_subchunk)
         cost_chunk = torch.cat(cost_chunk,0) # (nsample, cpts)
         cost_vol.append(cost_chunk)
@@ -202,19 +224,4 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     # regress to the true location, n,3
     if not is_training: torch.cuda.empty_cache()
     pts_pred = (prob_vol[...,None] * query_xyz[None]).sum(1)
-
-    #TODO compute expected pts
-    pts_prob = pts_prob.detach()
-    pts_prob = pts_prob/(1e-9+pts_prob.sum(1)[:,None])
-    pts_exp = (pts * pts_prob).sum(1)
-
-    # TODO evaluate against model's opacity distirbution along the ray with soft target
-    feat_err = (pts_pred - pts_exp).norm(2,-1) # n,ndepth
-    pts_pred  = pts_pred.view(bs,N,3)
-    pts_exp   = pts_exp.view(bs,N,3)
-    feat_err = feat_err.view(bs,N,1)
-
-    #pdb.set_trace()
-    #trimesh.Trimesh(pts_exp[0].cpu().numpy()).export('0.obj')
-    #trimesh.Trimesh(pts_pred[0].cpu().numpy()).export('1.obj')
-    return pts_pred, pts_exp, feat_err
+    return pts_pred

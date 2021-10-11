@@ -552,7 +552,7 @@ class v2s_net(nn.Module):
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
             results['pts_pred'] = results['pts_pred'].clamp(0,1)
             results['pts_exp']  = results['pts_exp'].clamp(0,1)
-            results['feat_err'] = rts[2]/rts[2].max()*10
+            results['feat_err'] = rts[2] # will be used as loss
         del results['xyz_coarse_sampled']
 
        

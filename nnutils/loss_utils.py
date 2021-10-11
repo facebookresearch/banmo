@@ -166,12 +166,15 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     pts_prob = pts_prob.view(-1, ndepth,1)
     
     # compute expected pts
-    #pts_prob = pts_prob.detach()
+    pts_prob = pts_prob.detach()
     pts_prob = pts_prob/(1e-9+pts_prob.sum(1)[:,None])
     pts_exp = (pts * pts_prob).sum(1)
 
+    # loss
     # evaluate against model's opacity distirbution along the ray with soft target
     feat_err = (pts_pred - pts_exp).norm(2,-1) # n,ndepth
+    
+    # rearrange outputs
     pts_pred  = pts_pred.view(bs,-1,3)
     pts_exp   = pts_exp .view(bs,-1,3)
     feat_err = feat_err .view(bs,-1,1)

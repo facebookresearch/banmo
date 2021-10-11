@@ -299,6 +299,8 @@ class v2s_trainer(Trainer):
         self.del_key( states, 'nerf_bone_rts.0.weight')
         self.del_key( states, 'nerf_root_rts.0.weight')
         self.del_key( states, 'env_code.weight')
+
+        # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat
         self.model.load_state_dict(states, strict=False)
     
         return
@@ -401,6 +403,7 @@ class v2s_trainer(Trainer):
                 rendered_seq['pts_pred'][0] *= rendered_seq['sil_coarse'][0]
                 rendered_seq['pts_exp'][0]  *= rendered_seq['sil_coarse'][0]
                 rendered_seq['feat_err'][0] *= rendered_seq['sil_coarse'][0]
+                rendered_seq['feat_err'][0] *= 10/rendered_seq['feat_err'][0].max()
             if opts.flow_dp:
                 rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
                 rendered_seq['dcf'] += [self.model.dp_conf[...,None][:hbs]/\

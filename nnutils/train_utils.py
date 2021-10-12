@@ -402,8 +402,7 @@ class v2s_trainer(Trainer):
             if opts.use_viser:
                 rendered_seq['pts_pred'][0] *= rendered_seq['sil_coarse'][0]
                 rendered_seq['pts_exp'][0]  *= rendered_seq['sil_coarse'][0]
-                rendered_seq['feat_err'][0] *= rendered_seq['sil_coarse'][0]
-                rendered_seq['feat_err'][0] *= 10/rendered_seq['feat_err'][0].max()
+                rendered_seq['feat_err'][0] *= rendered_seq['sil_coarse'][0]*20
             if opts.flow_dp:
                 rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
                 rendered_seq['dcf'] += [self.model.dp_conf[...,None][:hbs]/\
@@ -723,9 +722,8 @@ class v2s_trainer(Trainer):
         """
         opts = self.opts
         # incremental optimization
-   #     if opts.model_path!='' and \
-   # self.model.module.total_steps < opts.warmup_init_steps + opts.warmup_steps:
-        if opts.model_path!='':
+        if opts.model_path!='' and \
+        self.model.module.progress < opts.warmup_init_steps + opts.warmup_steps:
             self.model.module.shape_update = 1
         else:
             self.model.module.shape_update = 0

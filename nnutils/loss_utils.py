@@ -186,7 +186,7 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
     feats:    bs, ns, num_feat
     """
     if is_training: 
-        chunk_pts = 32*1024
+        chunk_pts = 8*1024
     else:
         chunk_pts = 1024
     chunk_pix = 200

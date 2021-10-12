@@ -221,9 +221,9 @@ class v2s_trainer(Trainer):
         else: print('error'); exit()
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer,\
                         [opts.learning_rate, # params_nerf_coarse
-                       5*opts.learning_rate, # params_nerf_beta
+                      10*opts.learning_rate, # params_nerf_beta
                          opts.learning_rate, # params_nerf_feat
-                       5*opts.learning_rate, # params_nerf_beta_feat
+                      10*opts.learning_rate, # params_nerf_beta_feat
                          opts.learning_rate, # params_nerf_fine
                          opts.learning_rate, # params_nerf_flowbw
                          opts.learning_rate, # params_nerf_skin

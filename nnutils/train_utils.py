@@ -221,9 +221,9 @@ class v2s_trainer(Trainer):
         else: print('error'); exit()
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer,\
                         [opts.learning_rate, # params_nerf_coarse
-                      10*opts.learning_rate, # params_nerf_beta
+                       5*opts.learning_rate, # params_nerf_beta
                          opts.learning_rate, # params_nerf_feat
-                      10*opts.learning_rate, # params_nerf_beta_feat
+                       5*opts.learning_rate, # params_nerf_beta_feat
                          opts.learning_rate, # params_nerf_fine
                          opts.learning_rate, # params_nerf_flowbw
                          opts.learning_rate, # params_nerf_skin
@@ -758,7 +758,7 @@ class v2s_trainer(Trainer):
         
         # reinit bones based on extracted surface
         if opts.lbs and (epoch==self.num_epochs//2 or\
-                         epoch==int(3.*self.num_epochs/4)):
+                         epoch==int(self.num_epochs*opts.warmup_steps)):
             reinit_bones(self.model, mesh_rest, opts.num_bones)
             self.model.nerf_models['bones'] = self.model.bones
             self.init_training() # add new params to optimizer

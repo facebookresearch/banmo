@@ -1040,9 +1040,14 @@ def visual_hull_align(rtk, kaug, masks):
     masks = torch.Tensor(masks)
     num_view,h,w = masks.shape
     grid_size = 64
+   
+    if rtk.shape[0]!=num_view:
+        print('rtk size mismtach: %d vs %d'%(rtk.shape[0], num_view))
+        rtk = rtk[:num_view]
+        
     rmat = rtk[:,:3,:3]
     tmat = rtk[:,:3,3:]
-        
+
     Kmat = K2mat(rtk[:,3])
     Kaug = K2inv(kaug) # p = Kaug Kmat P
     kmat = mat2K(Kaug.matmul(Kmat))

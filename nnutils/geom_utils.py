@@ -96,12 +96,14 @@ def mlp_skinning(mlp, code, pts_embed):
     return dskin
     
 
-def skinning(bones, pts, dskin=None):
+def skinning(bones, pts, dskin=None, skin_aux=None):
     """
     bone: ...,B,10  - B gaussian ellipsoids
     pts: bs,N,3    - N 3d points
     skin: bs,N,B   - skinning matrix
     """
+    log_scale= skin_aux[0]
+    w_const  = skin_aux[1]
     bs,N,_ = pts.shape
     B = bones.shape[-2]
     if bones.dim()==2: bones = bones[None].repeat(bs,1,1)
@@ -116,7 +118,7 @@ def skinning(bones, pts, dskin=None):
     mdis = orient.view(bs,1,B,3,3).matmul(mdis[...,None]) # bs,N,B,3,1
     mdis = mdis[...,0]
     mdis = scale.view(bs,1,B,3) * mdis.pow(2)
-    mdis = mdis*100 # TODO accound for scaled near-far plane
+    mdis = mdis*100*log_scale.exp() # TODO accound for scaled near-far plane
     mdis = (-10 * mdis.sum(3)) # bs,N,B
     
     if dskin is not None:
@@ -483,9 +485,12 @@ def generate_bones(num_bones_x, num_bones, bound, device):
 
 def reinit_bones(model, mesh, num_bones):
     """
+    update the data of bones and nerf_bone_rts[1].rgb without add new parameters
     num_bones: number of bones on the surface
     mesh: trimesh
+    warning: ddp does not support adding/deleting parameters after construction
     """
+    #TODO find another way to add/delete bones
     from kmeans_pytorch import kmeans
     device = model.device
     points = torch.Tensor(mesh.vertices).to(device)
@@ -509,11 +514,14 @@ def reinit_bones(model, mesh, num_bones):
     scale = torch.zeros(num_bones,3).to(device)
     bones = torch.cat([center, orient, scale],-1)
 
-    del model.bones
-    del model.nerf_bone_rts[1].rgb
-    model.bones = nn.Parameter(bones)
     model.num_bones = num_bones
-    model.nerf_bone_rts[1].rgb = rthead
+    model.bones.data[:num_bones] = bones
+    num_output = model.nerf_bone_rts[1].num_output
+    bias_reinit =   rthead[0].bias.data
+    weight_reinit=rthead[0].weight.data
+    model.nerf_bone_rts[1].rgb[0].bias.data[:num_bones*num_output] = bias_reinit
+    model.nerf_bone_rts[1].rgb[0].weight.data[:num_bones*num_output] = weight_reinit
+    model.nerf_models['bones'] = model.bones
     return
             
 def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
@@ -546,7 +554,8 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
         else:
             dskin_bwd=None
         bones_dfm = bone_transform(bones, bone_rts_fw)
-        skin_backward = skinning(bones_dfm, query_xyz_chunk, dskin_bwd)
+        skin_backward = skinning(bones_dfm, query_xyz_chunk, 
+                dskin_bwd, skin_aux=model.skin_aux)
 
         query_xyz_chunk,bones_dfm = lbs(bones, 
                                       bone_rts_fw,
@@ -586,7 +595,7 @@ def warp_fw(opts, model, rt_dict, vertices, frameid):
             dskin_fwd = mlp_skinning(model.nerf_skin, rest_pose_code, pts_can_embedded)
         else:
             dskin_fwd=None
-        skin_forward = skinning(bones, pts_can, dskin_fwd)
+        skin_forward = skinning(bones, pts_can, dskin_fwd,skin_aux=model.skin_aux)
 
         pts_dfm,bones_dfm = lbs(bones, bone_rts_fw, skin_forward, 
                 pts_can,backward=False)

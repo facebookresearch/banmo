@@ -285,6 +285,7 @@ def render_rays(models,
     elif 'bones' in models.keys():
         bones = models['bones']
         bone_rts_fw = rays['bone_rts']
+        skin_aux = models['skin_aux']
         
         if 'nerf_skin' in models.keys():
             # compute delta skinning weights of bs, N, B
@@ -295,7 +296,8 @@ def render_rays(models,
         else:
             dskin_bwd=None
         bones_dfm = bone_transform(bones, bone_rts_fw) # coords after deform
-        skin_backward = skinning(bones_dfm, xyz_coarse_sampled, dskin_bwd) # bs, N, B
+        skin_backward = skinning(bones_dfm, xyz_coarse_sampled, 
+                                 dskin_bwd, skin_aux=skin_aux) # bs, N, B
 
         # backward skinning
         xyz_coarse_sampled, bones_dfm = lbs(bones, 
@@ -312,7 +314,8 @@ def render_rays(models,
             dskin_fwd = mlp_skinning(nerf_skin, rest_pose_code, xyz_coarse_embedded)
         else:
             dskin_fwd = None
-        skin_forward = skinning(bones, xyz_coarse_sampled, dskin_fwd)
+        skin_forward = skinning(bones, xyz_coarse_sampled, 
+                            dskin_fwd, skin_aux=skin_aux)
 
         # cycle loss (in the joint canonical space)
         xyz_coarse_frame_cyc,_ = lbs(bones, bone_rts_fw,

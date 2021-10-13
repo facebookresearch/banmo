@@ -106,7 +106,7 @@ flags.DEFINE_bool('cnnpp', False, 'cnn principle points')
 flags.DEFINE_bool('stop_csm', False, 'stop using csm loss')
 flags.DEFINE_bool('nothuman', False, 'using animal model')
 # nerf
-flags.DEFINE_integer('frame_chunk', 50, 'chunk size to split the input frames')
+flags.DEFINE_integer('frame_chunk', 25, 'chunk size to split the input frames')
 flags.DEFINE_integer('chunk', 32*1024, 'chunk size to split the input to avoid OOM')
 flags.DEFINE_integer('N_importance', 0, 'number of additional fine samples')
 flags.DEFINE_float('perturb',   1.0, 'factor to perturb depth sampling points')
@@ -270,6 +270,10 @@ class v2s_net(nn.Module):
                                 #D=5,W=128,
                                 in_channels_xyz=t_embed_dim,in_channels_dir=0,
                                 out_channels=6*self.num_bones, raw_feat=True))
+            #TODO scale+constant parameters
+            skin_aux = torch.Tensor([0,self.obj_scale]) 
+            self.skin_aux = nn.Parameter(skin_aux)
+            self.nerf_models['skin_aux'] = self.skin_aux
 
             if opts.nerf_skin:
                 #TODO
@@ -1028,6 +1032,9 @@ class v2s_net(nn.Module):
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
 
+        if opts.lbs:
+            aux_out['skin_scale'] = self.skin_aux[0].clone().detach()
+            aux_out['skin_const'] = self.skin_aux[1].clone().detach()
         aux_out['total_loss'] = total_loss
         aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]
         return total_loss, aux_out

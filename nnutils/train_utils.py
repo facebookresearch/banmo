@@ -146,6 +146,7 @@ class v2s_trainer(Trainer):
         params_pose_code=[]
         params_env_code=[]
         params_bones=[]
+        params_skin_aux=[]
         params_ks=[]
         params_nerf_dp=[]
         params_sim3_j2c=[]
@@ -177,15 +178,17 @@ class v2s_trainer(Trainer):
                 params_pose_code.append(p)
             elif 'env_code' in name:
                 params_env_code.append(p)
-            elif 'bones' == name:
+            elif 'module.bones' == name:
                 params_bones.append(p)
-            elif 'ks' == name:
+            elif 'module.skin_aux' == name:
+                params_skin_aux.append(p)
+            elif 'module.ks' == name:
                 params_ks.append(p)
             elif 'nerf_dp' in name:
                 params_nerf_dp.append(p)
-            elif 'sim3_j2c' == name:
+            elif 'module.sim3_j2c' == name:
                 params_sim3_j2c.append(p)
-            elif 'dp_verts' == name:
+            elif 'module.dp_verts' == name:
                 params_dp_verts.append(p)
             else: continue
             print(name)
@@ -205,6 +208,7 @@ class v2s_trainer(Trainer):
              {'params': params_pose_code},
              {'params': params_env_code},
              {'params': params_bones},
+             {'params': params_skin_aux},
              {'params': params_ks},
              {'params': params_nerf_dp},
              {'params': params_sim3_j2c},
@@ -234,6 +238,7 @@ class v2s_trainer(Trainer):
                          0.5*opts.learning_rate, # params_pose_code
                          opts.learning_rate, # params_env_code
                          opts.learning_rate, # params_bones
+                      10*opts.learning_rate, # params_skin_aux
                          opts.learning_rate, # params_ks
                          opts.learning_rate, # params_nerf_dp
                       10*opts.learning_rate, # params_sim3_j2c
@@ -514,9 +519,21 @@ class v2s_trainer(Trainer):
             if opts.local_rank==0: self.add_image_grid(rendered_seq, log, epoch)
 
             self.reset_hparams(epoch)
+            try:
+                print(self.model.near_far)
+                print(self.model.bones)
+                print(self.model.nerf_bone_rts[1].rgb[0].weight[0,:10]*100)
+                print(self.model.nerf_bone_rts[1].rgb[0].bias[:10]*100)
+            except: pass
 
             self.train_one_epoch(epoch, log)
-
+            try:
+                print(self.model.near_far)
+                print(self.model.bones)
+                print(self.model.nerf_bone_rts[1].rgb[0].weight[0,:10]*100)
+                print(self.model.nerf_bone_rts[1].rgb[0].bias[:10]*100)
+            except: pass
+            
             if (epoch+1) % opts.save_epoch_freq == 0:
                 print('saving the model at the end of epoch {:d}, iters {:d}'.\
                                   format(epoch, self.model.module.total_steps))
@@ -699,7 +716,7 @@ class v2s_trainer(Trainer):
             self.clip_grad(aux_out)
             self.optimizer.step()
             self.scheduler.step()
-
+                
             #for param_group in self.optimizer.param_groups:
             #    print(param_group['lr'])
 
@@ -761,8 +778,7 @@ class v2s_trainer(Trainer):
         # reinit bones based on extracted surface
         if opts.lbs and (epoch==self.num_epochs//2 or\
                          epoch==int(self.num_epochs*opts.warmup_init_steps)):
-            reinit_bones(self.model, mesh_rest, opts.num_bones)
-            self.model.nerf_models['bones'] = self.model.bones
+            reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
 
         # change near-far plane after half epochs
@@ -773,7 +789,6 @@ class v2s_trainer(Trainer):
 
         self.broadcast()
 
-
     def broadcast(self):
         """
         broadcast variables to other models
@@ -781,14 +796,14 @@ class v2s_trainer(Trainer):
         dist.barrier()
         if self.opts.lbs:
             dist.broadcast_object_list(
-                    [self.model.num_bones, 
-                    self.model.num_bone_used,],
+                    [self.model.module.num_bones, 
+                    self.model.module.num_bone_used,],
                     0)
-            dist.broadcast(self.model.bones,0)
-            dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].weight, 0)
-            dist.broadcast(self.model.nerf_bone_rts[1].rgb[0].bias, 0)
+            dist.broadcast(self.model.module.bones,0)
+            dist.broadcast(self.model.module.nerf_bone_rts[1].rgb[0].weight, 0)
+            dist.broadcast(self.model.module.nerf_bone_rts[1].rgb[0].bias, 0)
 
-        dist.broadcast(self.model.near_far,0)
+        dist.broadcast(self.model.module.near_far,0)
    
     def clip_grad(self, aux_out):
         """
@@ -808,6 +823,7 @@ class v2s_trainer(Trainer):
         grad_pose_code=[]
         grad_env_code=[]
         grad_bones=[]
+        grad_skin_aux=[]
         grad_ks=[]
         grad_nerf_dp=[]
         grad_sim3_j2c=[]
@@ -845,15 +861,17 @@ class v2s_trainer(Trainer):
                 grad_pose_code.append(p)
             elif 'env_code' in name:
                 grad_env_code.append(p)
-            elif 'bones' == name:
+            elif 'module.bones' == name:
                 grad_bones.append(p)
-            elif 'ks' == name:
+            elif 'module.skin_aux' == name:
+                grad_skin_aux.append(p)
+            elif 'module.ks' == name:
                 grad_ks.append(p)
             elif 'nerf_dp' in name:
                 grad_nerf_dp.append(p)
-            elif 'sim3_j2c' == name:
+            elif 'module.sim3_j2c' == name:
                 grad_sim3_j2c.append(p)
-            elif 'dp_verts' == name:
+            elif 'module.dp_verts' == name:
                 grad_dp_verts.append(p)
             else: continue
         
@@ -881,6 +899,7 @@ class v2s_trainer(Trainer):
         aux_out['pose_code_g']= clip_grad_norm_(grad_pose_code,          .1)
         aux_out['env_code_g']      = clip_grad_norm_(grad_env_code,      .1)
         aux_out['bones_g']         = clip_grad_norm_(grad_bones,         .1)
+        aux_out['skin_aux_g']   = clip_grad_norm_(grad_skin_aux,         .1)
         aux_out['ks_g']            = clip_grad_norm_(grad_ks,            .1)
         aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,       .1)
         aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,      .1)

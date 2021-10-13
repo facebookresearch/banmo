@@ -34,6 +34,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
                                 feat_match_loss
+from utils.io import vis_viser
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -541,23 +542,11 @@ class v2s_net(nn.Module):
             results['pts_exp']  = results['pts_exp'].clamp(0,1)
             results['feat_err'] = rts[2] # will be used as loss
             
-            ## visualization
             #pdb.set_trace()
-            #feat_err = rts[2][0].view(img_size,img_size)
-            #mask_rszd = F.interpolate(self.masks[None],(img_size,img_size))[0,0].bool()
-            #feat_err[~mask_rszd] = 0.
-            #cv2.imwrite('0.png', feat_err.cpu().numpy()*10000)
-            #pts_pred = rts[0][0].view(img_size,img_size,3)[mask_rszd]
-            #pts_exp  = rts[1][0].view(img_size,img_size,3)[mask_rszd]
-            #pts_pred_col=results['pts_pred'][0][mask_rszd].cpu().numpy()
-            #pts_exp_col = results['pts_exp'][0][mask_rszd].cpu().numpy()
-            #trimesh.Trimesh(pts_pred.cpu().numpy(),vertex_colors=pts_pred_col).export('0.obj')
-            #trimesh.Trimesh(pts_exp.cpu().numpy() ,vertex_colors=pts_exp_col).export('1.obj')
-            #trimesh.Trimesh(results['xyz_coarse_sampled'].view(bs,-1,ndepth,3)\
-            #        [0,:,0].cpu().numpy()).export('2.obj')
-            #trimesh.Trimesh(results['xyz_coarse_sampled'].view(bs,-1,ndepth,3)\
-            #        [0,:,-1].cpu().numpy()).export('3.obj')
+            # visualization
+            #vis_viser(rts, results, self.masks, bs,img_size, ndepth)
         del results['xyz_coarse_sampled']
+        del results['xyz_coarse_frame']
 
        
         # render flow 

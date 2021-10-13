@@ -280,10 +280,12 @@ class v2s_trainer(Trainer):
                 self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
                 self.del_key( states, 'sim3_j2c')
 
-            self.model.root_code.weight.data[:len_prev_fr] = \
-               states['root_code.weight']
-            self.model.pose_code.weight.data[:len_prev_fr] = \
-               states['pose_code.weight']
+            if self.opts.root_opt:
+                self.model.root_code.weight.data[:len_prev_fr] = \
+                   states['root_code.weight']
+            if self.opts.lbs or self.opts.flowbw:
+                self.model.pose_code.weight.data[:len_prev_fr] = \
+                   states['pose_code.weight']
 
             self.model.env_code.weight.data = \
                 states['env_code.weight']
@@ -758,7 +760,7 @@ class v2s_trainer(Trainer):
         
         # reinit bones based on extracted surface
         if opts.lbs and (epoch==self.num_epochs//2 or\
-                         epoch==int(self.num_epochs*opts.warmup_steps)):
+                         epoch==int(self.num_epochs*opts.warmup_init_steps)):
             reinit_bones(self.model, mesh_rest, opts.num_bones)
             self.model.nerf_models['bones'] = self.model.bones
             self.init_training() # add new params to optimizer

@@ -4,7 +4,7 @@ prefix=$2
 filedir=$rootdir/$prefix
 outdir=$rootdir/output
 suffix=.MOV
-fps=30
+fps=10
 
 # rename to upper case
 cd $filedir

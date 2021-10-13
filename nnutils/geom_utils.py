@@ -117,6 +117,7 @@ def skinning(bones, pts, dskin=None):
     mdis = orient.view(bs,1,B,3,3).matmul(mdis[...,None]) # bs,N,B,3,1
     mdis = mdis[...,0]
     mdis = scale.view(bs,1,B,3) * mdis.pow(2)
+    mdis = mdis*100 # TODO accound for scaled near-far plane
     mdis = (-10 * mdis.sum(3)) # bs,N,B
     
     if dskin is not None:

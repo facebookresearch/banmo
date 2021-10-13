@@ -76,8 +76,6 @@ faces = mesh.faces
 
 mkdir_p( '%s/DAVIS/JPEGImages/Full-Resolution/%s/'   %(filedir,args.outdir))
 mkdir_p( '%s/DAVIS/Annotations/Full-Resolution/%s/'  %(filedir,args.outdir))
-mkdir_p( '%s/DAVIS/FlowFW/Full-Resolution/%s/'       %(filedir,args.outdir))
-mkdir_p( '%s/DAVIS/FlowBW/Full-Resolution/%s/'       %(filedir,args.outdir))
 mkdir_p( '%s/DAVIS/Cameras/Full-Resolution/%s/'       %(filedir,args.outdir))
 mkdir_p( '%s/DAVIS/Meshes/Full-Resolution/%s/'       %(filedir,args.outdir))
 
@@ -139,23 +137,28 @@ for i in range(0,args.nframes):
     mesh_cam.export('%s/DAVIS/Meshes/Full-Resolution/%s/%05d.obj'      %(filedir,args.outdir,i))
 
 
-
-# render flow
-occ = -np.ones((img_size, img_size)).astype(np.float32)
-for i in range(1,args.nframes):
-    verts_ndc = verts_ndc_list[i-1]
-    verts_ndc_n = verts_ndc_list[i]
-    flow_fw = render_flow(renderer, verts_ndc, faces, verts_ndc_n)
-    flow_bw = render_flow(renderer, verts_ndc_n, faces, verts_ndc)
-    # to pixels
-    flow_fw = flow_fw*(img_size-1)/2
-    flow_bw = flow_bw*(img_size-1)/2
-    flow_fw = flow_fw.cpu().numpy()[0]
-    flow_bw = flow_bw.cpu().numpy()[0]
-    
-    write_pfm(  '%s/DAVIS/FlowFW/Full-Resolution/%s/flo-%05d.pfm'%(filedir,args.outdir,i-1),flow_fw)
-    write_pfm(  '%s/DAVIS/FlowBW/Full-Resolution/%s/flo-%05d.pfm'%(filedir,args.outdir,i),  flow_bw)
-    write_pfm(  '%s/DAVIS/FlowFW/Full-Resolution/%s/occ-%05d.pfm'%(filedir,args.outdir,i-1),occ)
-    write_pfm(  '%s/DAVIS/FlowBW/Full-Resolution/%s/occ-%05d.pfm'%(filedir,args.outdir,i),  occ)
-    cv2.imwrite('%s/DAVIS/FlowFW/Full-Resolution/%s/col-%05d.jpg'%(filedir,args.outdir,i-1),flow_to_image(flow_fw)[:,:,::-1])
-    cv2.imwrite('%s/DAVIS/FlowBW/Full-Resolution/%s/col-%05d.jpg'%(filedir,args.outdir,i),  flow_to_image(flow_bw)[:,:,::-1])
+for dframe in [1,2,4,8,16,32]:
+    print('dframe: %d'%(dframe))
+    flobw_outdir = '%s/DAVIS/FlowBW_%d/Full-Resolution/%s/'%(filedir,dframe,args.outdir)
+    flofw_outdir = '%s/DAVIS/FlowFW_%d/Full-Resolution/%s/'%(filedir,dframe,args.outdir)
+    mkdir_p(flofw_outdir)
+    mkdir_p(flobw_outdir)
+    # render flow
+    occ = -np.ones((img_size, img_size)).astype(np.float32)
+    for i in range(dframe,args.nframes):
+        verts_ndc = verts_ndc_list[i-dframe]
+        verts_ndc_n = verts_ndc_list[i]
+        flow_fw = render_flow(renderer, verts_ndc,   faces, verts_ndc_n)
+        flow_bw = render_flow(renderer, verts_ndc_n, faces, verts_ndc)
+        # to pixels
+        flow_fw = flow_fw*(img_size-1)/2
+        flow_bw = flow_bw*(img_size-1)/2
+        flow_fw = flow_fw.cpu().numpy()[0]
+        flow_bw = flow_bw.cpu().numpy()[0]
+        
+        write_pfm(  '%s/flo-%05d.pfm'%(flofw_outdir,i-dframe),flow_fw)
+        write_pfm(  '%s/flo-%05d.pfm'%(flobw_outdir,i),  flow_bw)
+        write_pfm(  '%s/occ-%05d.pfm'%(flofw_outdir,i-dframe),occ)
+        write_pfm(  '%s/occ-%05d.pfm'%(flobw_outdir,i),  occ)
+        cv2.imwrite('%s/col-%05d.jpg'%(flofw_outdir,i-dframe),flow_to_image(flow_fw)[:,:,::-1])
+        cv2.imwrite('%s/col-%05d.jpg'%(flobw_outdir,i),       flow_to_image(flow_bw)[:,:,::-1])

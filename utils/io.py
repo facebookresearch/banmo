@@ -9,11 +9,31 @@ import imageio
 import trimesh
 import glob
 import matplotlib.cm
+import torch.nn.functional as F
 
 import sys
 sys.path.insert(0,'third_party')
 import dataloader.vidbase as base_data
 from ext_utils.flowlib import flow_to_image
+
+
+def vis_viser(rts, results, masks, bs,img_size,ndepth):
+    feat_err = rts[2][0].view(img_size,img_size)
+    mask_rszd = F.interpolate(masks[None],(img_size,img_size))[0,0].bool()
+    feat_err[~mask_rszd] = 0.
+    cv2.imwrite('tmp/viser_err.png', feat_err.cpu().numpy()*10000)
+
+    pts_pred = rts[0][0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
+    pts_exp  = rts[1][0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
+    pts_pred_col=results['pts_pred'][0][mask_rszd].cpu().numpy()
+    pts_exp_col = results['pts_exp'][0][mask_rszd].cpu().numpy()
+    trimesh.Trimesh(pts_pred,vertex_colors=pts_pred_col).export('tmp/viser_pred.obj')
+    trimesh.Trimesh(pts_exp  ,vertex_colors=pts_exp_col).export('tmp/viser_exp.obj')
+
+    near_plane= results['xyz_coarse_frame'].view(bs,-1,ndepth,3)[0,:,0]
+    far_plane = results['xyz_coarse_frame'].view(bs,-1,ndepth,3)[0,:,-1]
+    nf_plane = torch.cat([near_plane, far_plane],0)
+    trimesh.Trimesh(nf_plane.cpu().numpy()).export('tmp/viser_plane.obj')
 
 def merge_dict(dict_list):
     out_dict = {}

@@ -98,15 +98,14 @@ def mlp_skinning(mlp, code, pts_embed):
 
 def skinning(bones, pts, dskin=None):
     """
-    bone: bs,B,10  - B gaussian ellipsoids
+    bone: ...,B,10  - B gaussian ellipsoids
     pts: bs,N,3    - N 3d points
     skin: bs,N,B   - skinning matrix
     """
+    bs,N,_ = pts.shape
     B = bones.shape[-2]
-    N = pts.shape[-2]
+    if bones.dim()==2: bones = bones[None].repeat(bs,1,1)
     bones = bones.view(-1,B,10)
-    pts = pts.view(-1,N,3)
-    bs = pts.shape[0]
    
     center, orient, scale = vec_to_sim3(bones) 
     orient = orient.permute(0,1,3,2) # transpose R
@@ -132,7 +131,7 @@ def skinning(bones, pts, dskin=None):
     skin = mdis.softmax(2)
     return skin
 
-def blend_skinning(bones, rts, pts,dskin=None):
+def blend_skinning(bones, rts, skin, pts):
     """
     bone: bs,B,10   - B gaussian ellipsoids
     rts: bs,B,3,4   - B ririd transforms, applied to bone coordinates
@@ -176,17 +175,14 @@ def blend_skinning(bones, rts, pts,dskin=None):
     Rmat = gmat[:,:,:3,:3]
     Tmat = gmat[:,:,:3,3]
     
-    # compute skinning weight
-    skin = skinning(bones, pts, dskin) # bs, N, B
-
     # Gi=sum(wbGb), V=RV+T
     Rmat_w = (skin[...,None,None] * Rmat[:,None]).sum(2) # bs,N,B,3
     Tmat_w = (skin[...,None] * Tmat[:,None]).sum(2) # bs,N,B,3
     pts = Rmat_w.matmul(pts[...,None]) + Tmat_w[...,None] 
     pts = pts[...,0]
-    return pts, skin
+    return pts
 
-def lbs(bones, rts_fw, xyz_in, backward=True, dskin=None):
+def lbs(bones, rts_fw, skin, xyz_in, backward=True):
     """
     bones: bs,B,10       - B gaussian ellipsoids indicating rest bone coordinates
     rts_fw: bs,B,12       - B rigid transforms, applied to the rest bones
@@ -207,11 +203,11 @@ def lbs(bones, rts_fw, xyz_in, backward=True, dskin=None):
     if backward:
         bones_dfm = bone_transform(bones, rts_fw) # bone coordinates after deform
         rts_bw = rts_invert(rts_fw)
-        xyz, skin = blend_skinning(bones_dfm, rts_bw, xyz_in, dskin)
+        xyz = blend_skinning(bones_dfm, rts_bw, skin, xyz_in)
     else:
-        xyz, skin = blend_skinning(bones.repeat(bs,1,1), rts_fw, xyz_in, dskin)
+        xyz = blend_skinning(bones.repeat(bs,1,1), rts_fw, skin, xyz_in)
         bones_dfm = bone_transform(bones, rts_fw) # bone coordinates after deform
-    return xyz, skin, bones_dfm
+    return xyz, bones_dfm
 
 def obj_to_cam(in_verts, Rmat, Tmat):
     """
@@ -541,14 +537,20 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
         query_xyz_chunk = query_xyz_chunk[:,None]
         bone_rts_fw = model.nerf_bone_rts(query_time)
 
-        ##TODO
-        #if opts.nerf_skin:
-        #    skin_backward=
-        #else:
-        #    skin_backward=None
+        #TODO
+        if opts.nerf_skin:
+            nerf_skin = model.nerf_skin
+            xyz_embedded = model.embedding_xyz(query_xyz_chunk)
+            time_embedded = model.pose_code(query_time)[:,0]
+            dskin_bwd = mlp_skinning(nerf_skin, time_embedded, xyz_embedded)
+        else:
+            dskin_bwd=None
+        bones_dfm = bone_transform(bones, bone_rts_fw)
+        skin_backward = skinning(bones_dfm, query_xyz_chunk, dskin_bwd)
 
-        query_xyz_chunk,_,bones_dfm = lbs(bones, 
+        query_xyz_chunk,bones_dfm = lbs(bones, 
                                       bone_rts_fw,
+                                      skin_backward,
                                       query_xyz_chunk)
 
         query_xyz_chunk = query_xyz_chunk[:,0]
@@ -581,12 +583,13 @@ def warp_fw(opts, model, rt_dict, vertices, frameid):
             rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
             rest_pose_code = rest_pose_code[None].repeat(num_pts, 1,1)
             pts_can_embedded = model.embedding_xyz(pts_can)
-            skin_forward = mlp_skinning(model.nerf_skin, rest_pose_code, pts_can_embedded)
+            dskin_fwd = mlp_skinning(model.nerf_skin, rest_pose_code, pts_can_embedded)
         else:
-            skin_forward=None
+            dskin_fwd=None
+        skin_forward = skinning(bones, pts_can, dskin_fwd)
 
-        pts_dfm,_,bones_dfm = lbs(bones, bone_rts_fw, pts_can,backward=False,
-                                    dskin=skin_forward)
+        pts_dfm,bones_dfm = lbs(bones, bone_rts_fw, skin_forward, 
+                pts_can,backward=False)
         pts_dfm = pts_dfm[:,0]
         rt_dict['bones'] = bones_dfm
     vertices = pts_dfm.cpu().numpy()

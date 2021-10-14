@@ -102,6 +102,7 @@ def skinning(bones, pts, dskin=None, skin_aux=None):
     pts: bs,N,3    - N 3d points
     skin: bs,N,B   - skinning matrix
     """
+    device = pts.device
     log_scale= skin_aux[0]
     w_const  = skin_aux[1]
     bs,N,_ = pts.shape
@@ -124,11 +125,11 @@ def skinning(bones, pts, dskin=None, skin_aux=None):
     if dskin is not None:
         mdis = mdis+dskin
     
-    # truncated softmax
-    max_bone=min(B,3)
-    topk, indices = mdis.topk(max_bone, 2, largest=True)
-    mdis = torch.zeros_like(mdis).fill_(-np.inf)
-    mdis = mdis.scatter(2, indices, topk)
+    ## truncated softmax
+    #max_bone=min(B,3)
+    #topk, indices = mdis.topk(max_bone, 2, largest=True)
+    #mdis = torch.zeros_like(mdis).fill_(-np.inf)
+    #mdis = mdis.scatter(2, indices, topk)
     
     skin = mdis.softmax(2)
     return skin
@@ -176,6 +177,12 @@ def blend_skinning(bones, rts, skin, pts):
     gmat = gmat_b2r.matmul(gmat_b.matmul(gmat_r2b))
     Rmat = gmat[:,:,:3,:3]
     Tmat = gmat[:,:,:3,3]
+
+    ##TODO add identiry mapping for background modeling
+    #Ridn = torch.eye(3)[None,None].repeat(bs,1,1,1).to(device)
+    #Tidn = torch.zeros(bs,1,3).to(device)
+    #Rmat = torch.cat([Rmat, Ridn],1)
+    #Tmat = torch.cat([Tmat, Tidn],1)
     
     # Gi=sum(wbGb), V=RV+T
     Rmat_w = (skin[...,None,None] * Rmat[:,None]).sum(2) # bs,N,B,3

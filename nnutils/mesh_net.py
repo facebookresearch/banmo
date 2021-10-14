@@ -1014,9 +1014,9 @@ class v2s_net(nn.Module):
         # bone location regularization: pull bones away from empth space (low sdf)
         if opts.bone_loc_reg:
             bone_xyz_embed = self.embedding_xyz(self.bones[:,None,:3])
-            density_at_bone = evaluate_mlp(self.nerf_coarse, bone_xyz_embed,
+            sdf_at_bone = evaluate_mlp(self.nerf_coarse, bone_xyz_embed,
                                             sigma_only=True)
-            bone_loc_loss = F.relu(-density_at_bone).mean()
+            bone_loc_loss = 0.01*F.relu(-sdf_at_bone).mean()
             total_loss = total_loss + bone_loc_loss
             aux_out['bone_loc_loss'] = bone_loc_loss
             

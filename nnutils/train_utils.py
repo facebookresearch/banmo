@@ -519,20 +519,8 @@ class v2s_trainer(Trainer):
             if opts.local_rank==0: self.add_image_grid(rendered_seq, log, epoch)
 
             self.reset_hparams(epoch)
-            try:
-                print(self.model.near_far)
-                print(self.model.bones)
-                print(self.model.nerf_bone_rts[1].rgb[0].weight[0,:10]*100)
-                print(self.model.nerf_bone_rts[1].rgb[0].bias[:10]*100)
-            except: pass
 
             self.train_one_epoch(epoch, log)
-            try:
-                print(self.model.near_far)
-                print(self.model.bones)
-                print(self.model.nerf_bone_rts[1].rgb[0].weight[0,:10]*100)
-                print(self.model.nerf_bone_rts[1].rgb[0].bias[:10]*100)
-            except: pass
             
             if (epoch+1) % opts.save_epoch_freq == 0:
                 print('saving the model at the end of epoch {:d}, iters {:d}'.\

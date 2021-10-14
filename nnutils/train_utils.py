@@ -44,7 +44,7 @@ from ext_utils.io import mkdir_p
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
 from utils.io import save_vid, draw_cams, extract_data_info, merge_dict,\
-        render_root_txt
+        render_root_txt, save_bones
 
 class DataParallelPassthrough(torch.nn.parallel.DistributedDataParallel):
     """
@@ -434,6 +434,7 @@ class v2s_trainer(Trainer):
                        'sim3_j2c':[],
                        'impath':[],
                        'bone':[],}
+            if opts.lbs: aux_seq['bone_rest'] = self.model.bones.cpu().numpy()
             for idx,frameid in enumerate(idx_render):
                 print('extracting frame %d'%(frameid))
                 # run marching cubes
@@ -466,19 +467,25 @@ class v2s_trainer(Trainer):
                 impath = self.model.impath[self.model.frameid[idx].long()]
                 aux_seq['impath'].append(impath)
 
+            # save canonical mesh
+            mesh_rest = aux_seq['mesh'][0]
+            self.model.latest_vars['mesh_rest'] = mesh_rest
+        
             # draw camera trajectory
+            suffix_id=0
+            if hasattr(self.model, 'epoch'):
+                suffix_id = self.model.epoch
             if opts.local_rank==0:
                 mesh_cam = draw_cams(aux_seq['rtk'])
-                suffix_id=0
-                if hasattr(self.model, 'epoch'):
-                    suffix_id = self.model.epoch
                 mesh_cam.export('%s/mesh_cam-%02d.obj'%(self.save_dir,suffix_id))
+            
+                mesh_path = '%s/mesh_rest-%02d.obj'%(self.save_dir,suffix_id)
+                mesh_rest.export(mesh_path)
 
-        # save canonical mesh
-        mesh_rest = aux_seq['mesh'][0]
-        self.model.latest_vars['mesh_rest'] = mesh_rest
-        mesh_file = os.path.join(self.save_dir, '%s.obj'%opts.logname)
-        mesh_rest.export(mesh_file)
+                if opts.lbs:
+                    bone_rest = aux_seq['bone_rest']
+                    bone_path = '%s/bone_rest-%02d.obj'%(self.save_dir,suffix_id)
+                    save_bones(bone_rest, 0.1, bone_path)
 
         return rendered_seq, aux_seq
 
@@ -496,6 +503,7 @@ class v2s_trainer(Trainer):
         if opts.lbs: 
             self.model.num_bone_used = 0
             del self.model.module.nerf_models['bones']
+            del self.model.module.nerf_models['nerf_skin']
 
         # CNN pose warmup or  load CNN
         if opts.warmup_pose_ep>0 or opts.pose_cnn_path!='':
@@ -764,7 +772,7 @@ class v2s_trainer(Trainer):
             self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
         
         # reinit bones based on extracted surface
-        if opts.lbs and (epoch==self.num_epochs//2 or\
+        if opts.lbs and (epoch==int(self.num_epochs/3*2) or\
                          epoch==int(self.num_epochs*opts.warmup_init_steps)):
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
@@ -774,6 +782,10 @@ class v2s_trainer(Trainer):
             self.model.near_far.data = get_near_far(mesh_rest.vertices,
                                          self.model.near_far.data,
                                          self.model.latest_vars)
+
+        # add nerf-skin when the shape is good
+        if epoch==int(self.num_epochs/3*2):
+            self.model.module.nerf_models['nerf_skin'] = self.model.module.nerf_skin
 
         self.broadcast()
 

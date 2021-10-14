@@ -125,11 +125,11 @@ def skinning(bones, pts, dskin=None, skin_aux=None):
     if dskin is not None:
         mdis = mdis+dskin
     
-    ## truncated softmax
-    #max_bone=min(B,3)
-    #topk, indices = mdis.topk(max_bone, 2, largest=True)
-    #mdis = torch.zeros_like(mdis).fill_(-np.inf)
-    #mdis = mdis.scatter(2, indices, topk)
+    # truncated softmax
+    max_bone=min(B,3)
+    topk, indices = mdis.topk(max_bone, 2, largest=True)
+    mdis = torch.zeros_like(mdis).fill_(-np.inf)
+    mdis = mdis.scatter(2, indices, topk)
     
     skin = mdis.softmax(2)
     return skin

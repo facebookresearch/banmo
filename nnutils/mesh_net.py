@@ -106,7 +106,7 @@ flags.DEFINE_bool('cnnpp', False, 'cnn principle points')
 flags.DEFINE_bool('stop_csm', False, 'stop using csm loss')
 flags.DEFINE_bool('nothuman', False, 'using animal model')
 # nerf
-flags.DEFINE_integer('frame_chunk', 25, 'chunk size to split the input frames')
+flags.DEFINE_integer('frame_chunk', 20, 'chunk size to split the input frames')
 flags.DEFINE_integer('chunk', 32*1024, 'chunk size to split the input to avoid OOM')
 flags.DEFINE_integer('N_importance', 0, 'number of additional fine samples')
 flags.DEFINE_float('perturb',   1.0, 'factor to perturb depth sampling points')
@@ -136,10 +136,10 @@ flags.DEFINE_integer('lbs_reinit_epochs', -1, 'epochs to initialize bones')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
-flags.DEFINE_bool('nerf_skin', False, 'use mlp skinning function')
+flags.DEFINE_bool('nerf_skin', True, 'use mlp skinning function')
 flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
-flags.DEFINE_bool('bone_loc_reg', False, 'use bone location regularization')
+flags.DEFINE_bool('bone_loc_reg', True, 'use bone location regularization')
 flags.DEFINE_integer('nsample', 256, 'num of samples per image at optimization time')
 flags.DEFINE_integer('ndepth', 128, 'num of depth samples per px at optimization time')
 flags.DEFINE_bool('vis_dpflow', False, 'whether to visualize densepose flow')
@@ -1035,6 +1035,10 @@ class v2s_net(nn.Module):
         if opts.lbs:
             aux_out['skin_scale'] = self.skin_aux[0].clone().detach()
             aux_out['skin_const'] = self.skin_aux[1].clone().detach()
+
+
+        #TODO regularize nerf-skin
+
         aux_out['total_loss'] = total_loss
         aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]
         return total_loss, aux_out

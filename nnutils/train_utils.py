@@ -558,6 +558,7 @@ class v2s_trainer(Trainer):
 
             # find the closest valid frame and replace it
             rtk = aux_seq['rtk'][i]
+            print('%s: %d frames are valid'%(seqname, len(valid_ids_seq)))
             if len(valid_ids_seq)>0 and not aux_seq['is_valid'][i]:
                 closest_valid_idx = valid_ids_seq[np.abs(i-valid_ids_seq).argmin()]
                 rtk[:3,:3] = aux_seq['rtk'][closest_valid_idx][:3,:3]
@@ -772,7 +773,7 @@ class v2s_trainer(Trainer):
             self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
         
         # reinit bones based on extracted surface
-        if opts.lbs and (epoch==int(self.num_epochs/3*2) or\
+        if opts.lbs and (epoch==int(self.num_epochs/2)-1 or\
                          epoch==int(self.num_epochs*opts.warmup_init_steps)):
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer

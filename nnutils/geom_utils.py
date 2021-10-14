@@ -121,15 +121,15 @@ def skinning(bones, pts, dskin=None, skin_aux=None):
     mdis = scale.view(bs,1,B,3) * mdis.pow(2)
     mdis = mdis*100*log_scale.exp() # TODO accound for scaled near-far plane
     mdis = (-10 * mdis.sum(3)) # bs,N,B
-    
+
     if dskin is not None:
         mdis = mdis+dskin
-    
-    # truncated softmax
-    max_bone=min(B,3)
-    topk, indices = mdis.topk(max_bone, 2, largest=True)
-    mdis = torch.zeros_like(mdis).fill_(-np.inf)
-    mdis = mdis.scatter(2, indices, topk)
+
+    ## truncated softmax
+    #max_bone=min(B,3)
+    #topk, indices = mdis.topk(max_bone, 2, largest=True)
+    #mdis = torch.zeros_like(mdis).fill_(-np.inf)
+    #mdis = mdis.scatter(2, indices, topk)
     
     skin = mdis.softmax(2)
     return skin

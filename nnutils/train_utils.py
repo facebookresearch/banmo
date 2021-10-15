@@ -781,7 +781,7 @@ class v2s_trainer(Trainer):
             self.init_training() # add new params to optimizer
 
         # change near-far plane after half epochs
-        if epoch==int(self.num_epochs/2):
+        if epoch>=int(self.num_epochs/2):
             self.model.near_far.data = get_near_far(mesh_rest.vertices,
                                          self.model.near_far.data,
                                          self.model.latest_vars)
@@ -918,7 +918,7 @@ class v2s_trainer(Trainer):
         rtk = model.rtk
         kaug=model.kaug.clone()
         frameid=model.frameid
-        render_size=64
+        render_size=opts.render_size
         kaug[:,:2] *= opts.img_size/render_size
 
         rendered, _ = model.nerf_render(rtk, kaug, frameid, render_size,

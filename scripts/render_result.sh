@@ -90,5 +90,6 @@ $prefix-all.mp4
 #[top][mid][bottom]vstack=inputs=3[v]" \
 
 ffmpeg -y -i $prefix-all.mp4 -vf "scale=iw/2:ih/2" $prefix-all.gif
-imgcat $prefix*.mp4
-imgcat $prefix-all.gif
+#imgcat $prefix*.mp4
+#imgcat $prefix-all.gif
+cp --parents $prefix-all.mp4 ~/dropbox/results/

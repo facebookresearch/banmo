@@ -42,6 +42,7 @@ flags.DEFINE_integer('ngpu', 1, 'number of gpus to use')
 flags.DEFINE_float('random_geo', 1, 'Random geometric augmentation')
 flags.DEFINE_string('seqname', 'syn-spot-40', 'name of the sequence')
 flags.DEFINE_integer('img_size', 512, 'image size')
+flags.DEFINE_integer('render_size', 64, 'size used for rendering visualizations')
 flags.DEFINE_enum('split', 'train', ['train', 'val', 'all', 'test'], 'eval split')
 flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
 flags.DEFINE_string('logname', 'exp_name', 'Experiment Name')
@@ -547,8 +548,8 @@ class v2s_net(nn.Module):
             results['feat_err'] = rts[2] # will be used as loss
             
             #pdb.set_trace()
-            # visualization
-            #vis_viser(rts, results, self.masks, bs,img_size, ndepth)
+            ## visualization
+            #vis_viser(rts, results, self.masks, self.imgs, bs,img_size, ndepth)
         del results['xyz_coarse_sampled']
         del results['xyz_coarse_frame']
 

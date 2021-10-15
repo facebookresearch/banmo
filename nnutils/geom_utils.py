@@ -661,8 +661,12 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
 
     pts = pts_to_view(pts, rtk, device, j2c=j2c)
 
-    near= pts[...,-1].min(-1)[0]/tol_fac
-    far = pts[...,-1].max(-1)[0]*tol_fac
+    pmax = pts[...,-1].max(-1)[0]
+    pmin = pts[...,-1].min(-1)[0]
+    delta = (pmax - pmin)*(tol_fac-1)
+
+    near= pmin-delta
+    far = pmax+delta
 
     max_far = near_far.max().item()
     near_far[idk==1,0] = torch.clamp(near[idk==1], 1e-3, max_far)

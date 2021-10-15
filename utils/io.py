@@ -46,23 +46,45 @@ def save_bones(bones, len_max, path):
     elips.visual.vertex_colors[:len(colormap),:3] = colormap
     elips.export(path)
 
-def vis_viser(rts, results, masks, bs,img_size,ndepth):
+def vis_viser(rts, results, masks, imgs, bs,img_size,ndepth):
     feat_err = rts[2][0].view(img_size,img_size)
     mask_rszd = F.interpolate(masks[None],(img_size,img_size))[0,0].bool()
+    img_rszd =  F.interpolate(imgs       ,(img_size,img_size))[0].permute(1,2,0)
+    img_mskd = img_rszd[mask_rszd].cpu().numpy()
     feat_err[~mask_rszd] = 0.
     cv2.imwrite('tmp/viser_err.png', feat_err.cpu().numpy()*10000)
 
     pts_pred = rts[0][0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
     pts_exp  = rts[1][0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
-    pts_pred_col=results['pts_pred'][0][mask_rszd].cpu().numpy()
-    pts_exp_col = results['pts_exp'][0][mask_rszd].cpu().numpy()
-    trimesh.Trimesh(pts_pred,vertex_colors=pts_pred_col).export('tmp/viser_pred.obj')
-    trimesh.Trimesh(pts_exp  ,vertex_colors=pts_exp_col).export('tmp/viser_exp.obj')
+    #pts_pred_col=results['pts_pred'][0][mask_rszd].cpu().numpy()
+    #pts_exp_col = results['pts_exp'][0][mask_rszd].cpu().numpy()
+    #trimesh.Trimesh(pts_pred, vertex_colors=img_mskd).export('tmp/viser_pred.obj')
+    #trimesh.Trimesh(pts_exp  ,vertex_colors=img_mskd).export('tmp/viser_exp.obj')
 
+    color_plane = torch.stack([img_rszd, torch.ones_like(img_rszd)],0).view(-1,3)
+    color_plane = color_plane.cpu().numpy()
     near_plane= results['xyz_coarse_frame'].view(bs,-1,ndepth,3)[0,:,0]
     far_plane = results['xyz_coarse_frame'].view(bs,-1,ndepth,3)[0,:,-1]
     nf_plane = torch.cat([near_plane, far_plane],0)
-    trimesh.Trimesh(nf_plane.cpu().numpy()).export('tmp/viser_plane.obj')
+    trimesh.Trimesh(nf_plane.cpu().numpy(), vertex_colors=color_plane).\
+            export('tmp/viser_plane.obj')
+
+    # draw lines
+    near_plane_mskd = near_plane[mask_rszd.view(-1)].cpu()
+    draw_lines_ray_canonical(near_plane_mskd, pts_exp,img_mskd,
+                                 'tmp/viser_line_exp.obj')
+    draw_lines_ray_canonical(near_plane_mskd, pts_pred,img_mskd,
+                                 'tmp/viser_line_pred.obj')
+
+def draw_lines_ray_canonical(near_plane_mskd, pts_exp, img_mskd, path):
+    meshes = []
+    for i in range(len(near_plane_mskd)):
+        segment = np.stack([near_plane_mskd[i], pts_exp[i]])
+        line = trimesh.creation.cylinder(0.0001, 
+                segment=segment,sections=5, vertex_colors=img_mskd[i])
+        meshes.append(line)
+    meshes = trimesh.util.concatenate(meshes)
+    meshes.export(path)
 
 def merge_dict(dict_list):
     out_dict = {}

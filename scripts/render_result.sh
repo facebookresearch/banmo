@@ -4,7 +4,7 @@ test_frames=$3
 
 testdir=${model_path%/*} # %: from end
 add_args=${*: 3:$#-1}
-prefix=$testdir/$seqname
+prefix=$testdir/$seqname-$test_frames
 #prefix=/scratch/gengshany/Dropbox/output/$seqname
 
 python extract.py --seqname $seqname \

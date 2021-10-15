@@ -359,14 +359,15 @@ class v2s_trainer(Trainer):
                        'masks':[],
                        }
             for idx,frameid in enumerate(idx_render):
-                print('extracting frame %d'%(frameid))
+                frameid=self.model.frameid[idx]
+                print('extracting frame %d'%(frameid.cpu().numpy()))
                 aux_seq['rtk'].append(rtk[idx].cpu().numpy())
                 aux_seq['kaug'].append(kaug[idx].cpu().numpy())
                 aux_seq['masks'].append(self.model.masks[idx].cpu().numpy())
                 aux_seq['is_valid'].append(valid_list[idx])
                 aux_seq['err_valid'].append(error_list[idx])
                 
-                impath = self.model.impath[self.model.frameid[idx].long()]
+                impath = self.model.impath[frameid.long()]
                 aux_seq['impath'].append(impath)
         return aux_seq
   
@@ -436,7 +437,8 @@ class v2s_trainer(Trainer):
                        'bone':[],}
             if opts.lbs: aux_seq['bone_rest'] = self.model.bones.cpu().numpy()
             for idx,frameid in enumerate(idx_render):
-                print('extracting frame %d'%(frameid))
+                frameid=self.model.frameid[idx].long()
+                print('extracting frame %d'%(frameid.cpu().numpy()))
                 # run marching cubes
                 if dynamic_mesh:
                     if not opts.queryfw:
@@ -464,7 +466,7 @@ class v2s_trainer(Trainer):
                     aux_seq['sim3_j2c'].append(sim3_j2c.cpu().numpy())
                 
                 # save image list
-                impath = self.model.impath[self.model.frameid[idx].long()]
+                impath = self.model.impath[frameid]
                 aux_seq['impath'].append(impath)
 
             # save canonical mesh
@@ -773,7 +775,7 @@ class v2s_trainer(Trainer):
             self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
         
         # reinit bones based on extracted surface
-        if opts.lbs and (epoch==int(self.num_epochs/2)-1 or\
+        if opts.lbs and (epoch==int(self.num_epochs/3*2) or\
                          epoch==int(self.num_epochs*opts.warmup_init_steps)):
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
@@ -785,7 +787,7 @@ class v2s_trainer(Trainer):
                                          self.model.latest_vars)
 
         # add nerf-skin when the shape is good
-        if epoch==int(self.num_epochs/3*2):
+        if epoch==int(self.num_epochs/5*4):
             self.model.module.nerf_models['nerf_skin'] = self.model.module.nerf_skin
 
         self.broadcast()

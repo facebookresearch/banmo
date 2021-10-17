@@ -357,6 +357,8 @@ class v2s_net(nn.Module):
                 geodists[:,0] = np.inf
                 self.geodists = geodists
             self.dp_thrd = 0.1 # threshold to fb error of dp
+            self.is_flow_dp=True
+        else: self.is_flow_dp=False
 
         with open('mesh_material/sheep_5004.pkl', 'rb') as f:
             dp = pickle.load(f)
@@ -461,7 +463,7 @@ class v2s_net(nn.Module):
                 bone_rts_target = self.nerf_bone_rts(frameid_target)
                 rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
 
-            if opts.flow_dp:
+            if self.is_flow_dp:
                 # randomly choose 1 target image
                 rays['rtk_vec_dentrg'] = rtk_vec[self.rand_dentrg] # bs,N,21
                 frameid_dentrg = frameid.view(-1,1)[self.rand_dentrg]
@@ -860,7 +862,7 @@ class v2s_net(nn.Module):
         self.convert_batch_input(batch)
         bs = self.imgs.shape[0]
         
-        if self.opts.flow_dp:
+        if self.is_flow_dp:
             self.compute_dp_flow(bs)
  
         self.convert_root_pose()
@@ -952,7 +954,7 @@ class v2s_net(nn.Module):
             aux_out['flo_loss'] = flo_loss
         
         # flow densepose loss
-        if opts.flow_dp:
+        if self.is_flow_dp:
             rendered_fdp = rendered['fdp_coarse'] # bs,N,2
             fdp_at_samp = []
             dcf_at_samp = []

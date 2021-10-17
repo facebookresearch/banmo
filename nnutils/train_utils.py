@@ -411,7 +411,7 @@ class v2s_trainer(Trainer):
                 rendered_seq['pts_pred'][0] *= rendered_seq['sil_coarse'][0]
                 rendered_seq['pts_exp'][0]  *= rendered_seq['sil_coarse'][0]
                 rendered_seq['feat_err'][0] *= rendered_seq['sil_coarse'][0]*20
-            if opts.flow_dp:
+            if self.model.is_flow_dp:
                 rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
                 rendered_seq['dcf'] += [self.model.dp_conf[...,None][:hbs]/\
                                         self.model.dp_thrd]
@@ -505,6 +505,7 @@ class v2s_trainer(Trainer):
         if opts.lbs: 
             self.model.num_bone_used = 0
             del self.model.module.nerf_models['bones']
+        if opts.nerf_skin:
             del self.model.module.nerf_models['nerf_skin']
 
         # CNN pose warmup or  load CNN
@@ -787,9 +788,12 @@ class v2s_trainer(Trainer):
                                          self.model.latest_vars)
 
         # add nerf-skin when the shape is good
-        if epoch==int(self.num_epochs/5*4):
+        if opts.nerf_skin and epoch==int(self.num_epochs/5*4):
             self.model.module.nerf_models['nerf_skin'] = self.model.module.nerf_skin
 
+        # disable densepose flow loss  flow dp
+        if self.model.progress>0.5:
+            self.model.module.is_flow_dp=False
         self.broadcast()
 
     def broadcast(self):
@@ -812,6 +816,7 @@ class v2s_trainer(Trainer):
         """
         gradient clipping
         """
+        is_invalid_grad=False
         grad_nerf_coarse=[]
         grad_nerf_beta=[]
         grad_nerf_feat=[]
@@ -836,7 +841,7 @@ class v2s_trainer(Trainer):
                 pgrad_nan = p.grad.isnan()
                 if pgrad_nan.sum()>0: 
                     print(name)
-                    pdb.set_trace()
+                    is_invalid_grad=True
             except: pass
             if 'nerf_coarse' in name and 'beta' not in name:
                 grad_nerf_coarse.append(p)
@@ -908,8 +913,8 @@ class v2s_trainer(Trainer):
         aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,      .1)
         aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,      .1)
 
-        #if aux_out['nerf_coarse_g']>0.5:
-        #    self.zero_grad_list(self.model.parameters())
+        if is_invalid_grad:
+            self.zero_grad_list(self.model.parameters())
 
     @staticmethod 
     def render_vid(model, batch):

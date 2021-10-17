@@ -92,4 +92,4 @@ $prefix-all.mp4
 ffmpeg -y -i $prefix-all.mp4 -vf "scale=iw/2:ih/2" $prefix-all.gif
 #imgcat $prefix*.mp4
 #imgcat $prefix-all.gif
-cp --parents $prefix-all.mp4 ~/dropbox/results/
+cp --parents $prefix-all.* ~/dropbox/viser/

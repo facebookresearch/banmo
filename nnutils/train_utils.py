@@ -407,7 +407,7 @@ class v2s_trainer(Trainer):
                 for k, v in rendered.items():
                     rendered_seq[k] += [v]
                     
-                hbs=len(idx_render)
+                hbs=chunk
                 rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:hbs]]
                 rendered_seq['sil'] += [self.model.masks[...,None]      [:hbs]]
                 rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:hbs]]

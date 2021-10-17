@@ -23,7 +23,7 @@ import configparser
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, RTExplicit, Encoder,\
-                    ScoreHead, evaluate_mlp
+                    ScoreHead, evaluate_mlp, Transhead
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
@@ -248,7 +248,7 @@ class v2s_net(nn.Module):
                 flow3d_arch = SE3head
                 out_channels=9
             else:
-                flow3d_arch = NeRF
+                flow3d_arch = Transhead
                 out_channels=3
             self.nerf_flowbw = flow3d_arch(in_channels_xyz=in_channels_xyz+t_embed_dim,
                                 D=5, W=128,

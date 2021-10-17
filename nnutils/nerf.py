@@ -181,6 +181,17 @@ class NeRF(nn.Module):
             out = torch.cat([rgb, sigma], -1)
         return out
 
+class Transhead(NeRF):
+    """
+    translation head
+    """
+    def __init__(self, **kwargs):
+        super(Transhead, self).__init__(**kwargs)
+
+    def forward(self, x, xyz=None,sigma_only=False):
+        flow = super(Transhead, self).forward(x, sigma_only=sigma_only)
+        flow = flow*0.1
+        return flow
 
 class SE3head(NeRF):
     """
@@ -195,6 +206,8 @@ class SE3head(NeRF):
         x = super(SE3head, self).forward(x, sigma_only=sigma_only)
         x = x.view(-1,9)
         rotation, pivot, translation = x.split([3,3,3],-1)
+        pivot = pivot*0.1
+        translation = translation*0.1
         
         shape = xyz.shape
         warped_points = xyz.view(-1,3).clone()

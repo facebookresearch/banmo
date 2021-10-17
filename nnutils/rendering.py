@@ -280,6 +280,12 @@ def render_rays(models,
             flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
                       chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded_target)
             xyz_coarse_target=xyz_coarse_sampled + flow_fw
+        
+        if "time_embedded_dentrg" in rays.keys():
+            time_embedded_dentrg = rays['time_embedded_dentrg'][:,None]
+            flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
+                      chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded_dentrg)
+            xyz_coarse_dentrg=xyz_coarse_sampled + flow_fw
 
 
     elif 'bones' in models.keys():

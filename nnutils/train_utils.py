@@ -389,87 +389,78 @@ class v2s_trainer(Trainer):
                 idx_render = np.linspace(0,len(self.evalloader)-1, 9, dtype=int)
 
             # render
-            batch = []
+            chunk=3
             rendered_seq = defaultdict(list)
-            for i in idx_render:
-                batch.append( self.evalloader.dataset[i] )
-            batch = self.evalloader.collate_fn(batch)
-            rendered = self.render_vid(self.model, batch)
-            for k, v in rendered.items():
-                rendered_seq[k] += [v]
-                
-            hbs=len(idx_render)
-            rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:hbs]]
-            rendered_seq['sil'] += [self.model.masks[...,None]      [:hbs]]
-            rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:hbs]]
-            rendered_seq['dpc'] += [self.model.dp_vis[self.model.dps.long()][:hbs]]
-            rendered_seq['occ'] += [self.model.occ[...,None]      [:hbs]]
-            rendered_seq['feat']+= [self.model.dp_feats.std(1)[...,None][:hbs]]
-            rendered_seq['flo_coarse'][0]       *= rendered_seq['sil_coarse'][0]
-            rendered_seq['joint_render_vis'][0] *= rendered_seq['sil_coarse'][0]
-            if opts.use_viser:
-                rendered_seq['pts_pred'][0] *= rendered_seq['sil_coarse'][0]
-                rendered_seq['pts_exp'][0]  *= rendered_seq['sil_coarse'][0]
-                rendered_seq['feat_err'][0] *= rendered_seq['sil_coarse'][0]*20
-            if self.model.is_flow_dp:
-                rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
-                rendered_seq['dcf'] += [self.model.dp_conf[...,None][:hbs]/\
-                                        self.model.dp_thrd]
-
-            # save images
-            for k,v in rendered_seq.items():
-                rendered_seq[k] = torch.cat(rendered_seq[k],0)
-                if opts.local_rank==0:
-                    print('saving %s to gif'%k)
-                    is_flow = self.isflow(k)
-                    upsample_frame = min(30,len(rendered_seq[k]))
-                    save_vid('%s/%s'%(self.save_dir,k), 
-                            rendered_seq[k].cpu().numpy(), 
-                            suffix='.gif', upsample_frame=upsample_frame, 
-                            is_flow=is_flow)
-
-            # extract mesh sequences
             aux_seq = {'mesh_rest': mesh_dict_rest['mesh'],
                        'mesh':[],
                        'rtk':[],
                        'sim3_j2c':[],
                        'impath':[],
                        'bone':[],}
-            if opts.lbs: aux_seq['bone_rest'] = self.model.bones.cpu().numpy()
-            for idx,frameid in enumerate(idx_render):
-                frameid=self.model.frameid[idx].long()
-                print('extracting frame %d'%(frameid.cpu().numpy()))
-                # run marching cubes
-                if dynamic_mesh:
-                    if not opts.queryfw:
-                       mesh_dict_rest=None 
-                    mesh_dict = self.extract_mesh(self.model,opts.chunk,
-                                        opts.sample_grid3d, 
-                                    frameid=frameid, mesh_dict_in=mesh_dict_rest)
-                    mesh=mesh_dict['mesh']
-                    if mesh_dict_rest is not None:
-                        mesh.visual.vertex_colors = mesh_dict_rest['mesh'].\
-                               visual.vertex_colors # assign rest surface color
+            for j in range(0, len(idx_render), chunk):
+                batch = []
+                for i in idx_render[j:j+chunk]:
+                    batch.append( self.evalloader.dataset[i] )
+                batch = self.evalloader.collate_fn(batch)
+                rendered = self.render_vid(self.model, batch) 
+            
+                for k, v in rendered.items():
+                    rendered_seq[k] += [v]
+                    
+                hbs=len(idx_render)
+                rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:hbs]]
+                rendered_seq['sil'] += [self.model.masks[...,None]      [:hbs]]
+                rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:hbs]]
+                rendered_seq['dpc'] += [self.model.dp_vis[self.model.dps.long()][:hbs]]
+                rendered_seq['occ'] += [self.model.occ[...,None]      [:hbs]]
+                rendered_seq['feat']+= [self.model.dp_feats.std(1)[...,None][:hbs]]
+                rendered_seq['flo_coarse'][0]       *= rendered_seq['sil_coarse'][0]
+                rendered_seq['joint_render_vis'][0] *= rendered_seq['sil_coarse'][0]
+                if opts.use_viser:
+                    rendered_seq['pts_pred'][0] *= rendered_seq['sil_coarse'][0]
+                    rendered_seq['pts_exp'][0]  *= rendered_seq['sil_coarse'][0]
+                    rendered_seq['feat_err'][0] *= rendered_seq['sil_coarse'][0]*20
+                if self.model.is_flow_dp:
+                    rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
+                    rendered_seq['dcf'] += [self.model.dp_conf[...,None][:hbs]/\
+                                            self.model.dp_thrd]
 
-                    # save bones
-                    if 'bones' in mesh_dict.keys():
-                        bone = mesh_dict['bones'][0].cpu().numpy()
-                        aux_seq['bone'].append(bone)
-                else:
-                    mesh=mesh_dict_rest['mesh']
-                aux_seq['mesh'].append(mesh)
+                # extract mesh sequences
+                for idx in range(chunk):
+                    frameid=self.model.frameid[idx].long()
+                    print('extracting frame %d'%(frameid.cpu().numpy()))
+                    # run marching cubes
+                    if dynamic_mesh:
+                        if not opts.queryfw:
+                           mesh_dict_rest=None 
+                        mesh_dict = self.extract_mesh(self.model,opts.chunk,
+                                            opts.sample_grid3d, 
+                                        frameid=frameid, mesh_dict_in=mesh_dict_rest)
+                        mesh=mesh_dict['mesh']
+                        if mesh_dict_rest is not None:
+                            mesh.visual.vertex_colors = mesh_dict_rest['mesh'].\
+                                   visual.vertex_colors # assign rest surface color
 
-                # save cams
-                aux_seq['rtk'].append(self.model.rtk[idx].cpu().numpy())
-                if opts.use_sim3:
-                    sim3_j2c = self.model.sim3_j2c[self.model.dataid[idx].long()]
-                    aux_seq['sim3_j2c'].append(sim3_j2c.cpu().numpy())
-                
-                # save image list
-                impath = self.model.impath[frameid]
-                aux_seq['impath'].append(impath)
+                        # save bones
+                        if 'bones' in mesh_dict.keys():
+                            bone = mesh_dict['bones'][0].cpu().numpy()
+                            aux_seq['bone'].append(bone)
+                    else:
+                        mesh=mesh_dict_rest['mesh']
+                    aux_seq['mesh'].append(mesh)
+
+                    # save cams
+                    aux_seq['rtk'].append(self.model.rtk[idx].cpu().numpy())
+                    if opts.use_sim3:
+                        sim3_j2c = self.model.sim3_j2c[self.model.dataid[idx].long()]
+                        aux_seq['sim3_j2c'].append(sim3_j2c.cpu().numpy())
+                    
+                    # save image list
+                    impath = self.model.impath[frameid]
+                    aux_seq['impath'].append(impath)
 
             # save canonical mesh
+            if opts.lbs: aux_seq['bone_rest'] = self.model.bones.cpu().numpy()
             mesh_rest = aux_seq['mesh'][0]
             self.model.latest_vars['mesh_rest'] = mesh_rest
         
@@ -489,6 +480,18 @@ class v2s_trainer(Trainer):
                     bone_path = '%s/bone_rest-%02d.obj'%(self.save_dir,suffix_id)
                     save_bones(bone_rest, 0.1, bone_path)
 
+            # save images
+            for k,v in rendered_seq.items():
+                rendered_seq[k] = torch.cat(rendered_seq[k],0)
+                if opts.local_rank==0:
+                    print('saving %s to gif'%k)
+                    is_flow = self.isflow(k)
+                    upsample_frame = min(30,len(rendered_seq[k]))
+                    save_vid('%s/%s'%(self.save_dir,k), 
+                            rendered_seq[k].cpu().numpy(), 
+                            suffix='.gif', upsample_frame=upsample_frame, 
+                            is_flow=is_flow)
+
         return rendered_seq, aux_seq
 
     def train(self):
@@ -505,7 +508,7 @@ class v2s_trainer(Trainer):
         if opts.lbs: 
             self.model.num_bone_used = 0
             del self.model.module.nerf_models['bones']
-        if opts.nerf_skin:
+        if opts.lbs and opts.nerf_skin:
             del self.model.module.nerf_models['nerf_skin']
 
         # CNN pose warmup or  load CNN
@@ -788,7 +791,7 @@ class v2s_trainer(Trainer):
                                          self.model.latest_vars)
 
         # add nerf-skin when the shape is good
-        if opts.nerf_skin and epoch==int(self.num_epochs/5*4):
+        if opts.lbs and opts.nerf_skin and epoch==int(self.num_epochs/5*4):
             self.model.module.nerf_models['nerf_skin'] = self.model.module.nerf_skin
 
         # disable densepose flow loss  flow dp

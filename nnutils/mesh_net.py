@@ -468,8 +468,9 @@ class v2s_net(nn.Module):
                 rays['rtk_vec_dentrg'] = rtk_vec[self.rand_dentrg] # bs,N,21
                 frameid_dentrg = frameid.view(-1,1)[self.rand_dentrg]
                 if opts.flowbw:
-                    print('Error: not implemented')
-                    exit()
+                    time_embedded_dentrg = self.pose_code(frameid_dentrg)
+                    rays['time_embedded_dentrg'] = time_embedded_dentrg.repeat(1,
+                                                            rays['nsample'],1)
                 elif opts.lbs and self.num_bone_used>0:
                     bone_rts_dentrg = self.nerf_bone_rts(frameid_dentrg) #bsxbs,x 
                     rays['bone_rts_dentrg'] = bone_rts_dentrg.repeat(1,rays['nsample'],1)
@@ -653,7 +654,7 @@ class v2s_net(nn.Module):
         is_degenerate_pair = len(set((self.frameid.numpy())))==2
         if is_degenerate_pair:
             rand_dentrg = np.asarray(range(bs))
-            rand_dentrg = rand_dentrg.reshape((2,-1)).flip(0).flatten()
+            rand_dentrg = np.flip(rand_dentrg.reshape((2,-1)),0).flatten()
         else:
             rand_dentrg = -1 * np.ones(bs)
             for idx in range(bs):
@@ -1015,7 +1016,7 @@ class v2s_net(nn.Module):
             aux_out['ekl_loss'] = ekl_loss
 
         # bone location regularization: pull bones away from empth space (low sdf)
-        if opts.bone_loc_reg:
+        if opts.lbs and opts.bone_loc_reg:
             bone_xyz_embed = self.embedding_xyz(self.bones[:,None,:3])
             sdf_at_bone = evaluate_mlp(self.nerf_coarse, bone_xyz_embed,
                                             sigma_only=True)

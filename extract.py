@@ -25,8 +25,9 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
     mesh_rest = aux_seq['mesh_rest']
     len_max = (mesh_rest.vertices.max(0) - mesh_rest.vertices.min(0)).max()
     mesh_rest.export('%s/mesh-rest.obj'%save_dir)
-    bone_rest = aux_seq['bone_rest']
-    save_bones(bone_rest, len_max, '%s/bone-rest.obj'%save_dir)
+    if 'bone_rest' in aux_seq.keys():
+        bone_rest = aux_seq['bone_rest']
+        save_bones(bone_rest, len_max, '%s/bone-rest.obj'%save_dir)
 
     flo_gt_vid = []
     flo_p_vid = []

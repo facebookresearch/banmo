@@ -53,7 +53,6 @@ flags.DEFINE_boolean('use_sgd', False, 'if true uses sgd instead of adam, beta1 
 flags.DEFINE_integer('batch_size', 1, 'size of minibatches')
 flags.DEFINE_string('checkpoint_dir', 'logdir/', 'Root directory for output files')
 flags.DEFINE_string('model_path', '', 'load model path')
-flags.DEFINE_boolean('freeze_shape', False, 'whether to load an initial shape and freeze it')
 flags.DEFINE_boolean('finetune', False, 'whether to load the full model and finetune it')
 flags.DEFINE_boolean('upgrade_mesh', False, 'whether to subdivide mesh')
 flags.DEFINE_integer('print_freq', 20, 'scalar logging frequency')
@@ -155,6 +154,8 @@ flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value 
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
+flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
+flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
 flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 
 class v2s_net(nn.Module):
@@ -169,6 +170,7 @@ class v2s_net(nn.Module):
         self.alpha=nn.Parameter(self.alpha)
         self.pose_update = 2 # by default, update all, use all losses
         self.shape_update = 0 # by default, update all
+        self.cvf_update = 0 # by default, update all
         self.root_basis = opts.root_basis
         self.use_cam = opts.use_cam
         

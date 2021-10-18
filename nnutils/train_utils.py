@@ -399,7 +399,8 @@ class v2s_trainer(Trainer):
                        'bone':[],}
             for j in range(0, len(idx_render), chunk):
                 batch = []
-                for i in idx_render[j:j+chunk]:
+                idx_chunk = idx_render[j:j+chunk]
+                for i in idx_chunk:
                     batch.append( self.evalloader.dataset[i] )
                 batch = self.evalloader.collate_fn(batch)
                 rendered = self.render_vid(self.model, batch) 
@@ -407,26 +408,28 @@ class v2s_trainer(Trainer):
                 for k, v in rendered.items():
                     rendered_seq[k] += [v]
                     
-                hbs=chunk
+                hbs=len(idx_chunk)
+                sil_rszd = F.interpolate(self.model.masks[:hbs,None], 
+                            (opts.render_size, opts.render_size))[:,0,...,None]
                 rendered_seq['img'] += [self.model.imgs.permute(0,2,3,1)[:hbs]]
                 rendered_seq['sil'] += [self.model.masks[...,None]      [:hbs]]
                 rendered_seq['flo'] += [self.model.flow.permute(0,2,3,1)[:hbs]]
                 rendered_seq['dpc'] += [self.model.dp_vis[self.model.dps.long()][:hbs]]
                 rendered_seq['occ'] += [self.model.occ[...,None]      [:hbs]]
                 rendered_seq['feat']+= [self.model.dp_feats.std(1)[...,None][:hbs]]
-                rendered_seq['flo_coarse'][0]       *= rendered_seq['sil_coarse'][0]
-                rendered_seq['joint_render_vis'][0] *= rendered_seq['sil_coarse'][0]
+                rendered_seq['flo_coarse'][-1]       *= sil_rszd 
+                rendered_seq['joint_render_vis'][-1] *= sil_rszd 
                 if opts.use_viser:
-                    rendered_seq['pts_pred'][0] *= rendered_seq['sil_coarse'][0]
-                    rendered_seq['pts_exp'][0]  *= rendered_seq['sil_coarse'][0]
-                    rendered_seq['feat_err'][0] *= rendered_seq['sil_coarse'][0]*20
+                    rendered_seq['pts_pred'][-1] *= sil_rszd 
+                    rendered_seq['pts_exp'] [-1]  *= sil_rszd 
+                    rendered_seq['feat_err'][-1] *= sil_rszd*20
                 if self.model.is_flow_dp:
                     rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
                     rendered_seq['dcf'] += [self.model.dp_conf[...,None][:hbs]/\
                                             self.model.dp_thrd]
 
                 # extract mesh sequences
-                for idx in range(chunk):
+                for idx in range(len(idx_chunk)):
                     frameid=self.model.frameid[idx].long()
                     print('extracting frame %d'%(frameid.cpu().numpy()))
                     # run marching cubes
@@ -695,6 +698,7 @@ class v2s_trainer(Trainer):
             if not warmup:
                 self.update_pose_indicator(i)
                 self.update_shape_indicator(i)
+                self.update_cvf_indicator(i)
 
             if opts.debug:
                 if 'start_time' in locals().keys():
@@ -736,6 +740,16 @@ class v2s_trainer(Trainer):
                 torch.cuda.synchronize()
                 start_time = time.time()
     
+    def update_cvf_indicator(self, i):
+        """
+        whether to update canoical volume features
+        0: update all
+        1: freeze 
+        """
+        opts = self.opts
+        if opts.freeze_cvf:
+            self.model.module.cvf_update = 1
+    
     def update_shape_indicator(self, i):
         """
         whether to update shape
@@ -749,6 +763,9 @@ class v2s_trainer(Trainer):
             self.model.module.shape_update = 1
         else:
             self.model.module.shape_update = 0
+        
+        if opts.freeze_shape:
+            self.model.module.shape_update = 1
 
     def update_pose_indicator(self, i):
         """
@@ -895,6 +912,8 @@ class v2s_trainer(Trainer):
         if self.model.module.shape_update == 1:
             self.zero_grad_list(grad_nerf_coarse)
             self.zero_grad_list(grad_nerf_beta)
+        if self.model.module.cvf_update == 1:
+            self.zero_grad_list(grad_nerf_feat)
     
         aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,   .1)
         aux_out['nerf_beta_g']     = clip_grad_norm_(grad_nerf_beta,     .1)
@@ -1051,11 +1070,14 @@ class v2s_trainer(Trainer):
         """
         timg, h,w,x
         """
+
         if self.isflow(tag):
             timg = timg.detach().cpu().numpy()
             timg = flow_to_image(timg)
-        if scale:
+        elif scale:
             timg = (timg-timg.min())/(timg.max()-timg.min())
+        else:
+            timg = torch.clamp(timg, 0,1)
     
         if len(timg.shape)==2:
             formats='HW'

@@ -274,6 +274,8 @@ class v2s_trainer(Trainer):
     def load_network(self,model_path=None, is_eval=True):
         states = torch.load(model_path,map_location='cpu')
         states = self.rm_module_prefix(states)
+        var_path = model_path.replace('params', 'vars').replace('.pth', '.npy')
+        latest_vars = np.load(var_path,allow_pickle=True)[()]
         
         if is_eval:
             # TODO: modify states to be compatible with possibly more datasets
@@ -296,8 +298,7 @@ class v2s_trainer(Trainer):
                 states['env_code.weight']
         
             # load variables
-            var_path = model_path.replace('params', 'vars').replace('.pth', '.npy')
-            self.model.latest_vars = np.load(var_path,allow_pickle=True)[()]
+            self.model.latest_vars = latest_vars
 
         # delete size-mismatched variables
         self.del_key( states, 'near_far') 
@@ -306,6 +307,10 @@ class v2s_trainer(Trainer):
         self.del_key( states, 'nerf_bone_rts.0.weight')
         self.del_key( states, 'nerf_root_rts.0.weight')
         self.del_key( states, 'env_code.weight')
+
+        # load some variables
+        # this is important for volume matching
+        self.model.latest_vars['obj_bound'] = latest_vars['obj_bound'] 
 
         # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat
         self.model.load_state_dict(states, strict=False)
@@ -784,6 +789,9 @@ class v2s_trainer(Trainer):
         else:
             self.model.module.pose_update = 1
 
+        if opts.freeze_root:
+            self.model.module.pose_update = 1
+
     def reset_hparams(self, epoch):
         """
         reset hyper-parameters based on current geometry / cameras
@@ -906,9 +914,7 @@ class v2s_trainer(Trainer):
         # freeze root pose when adding in sil/rgb loss 
         if self.model.module.pose_update == 1:
             self.zero_grad_list(grad_root_code)
-            self.zero_grad_list(grad_pose_code)
             self.zero_grad_list(grad_nerf_root_rts)
-            self.zero_grad_list(grad_nerf_bone_rts)
         if self.model.module.shape_update == 1:
             self.zero_grad_list(grad_nerf_coarse)
             self.zero_grad_list(grad_nerf_beta)

@@ -156,6 +156,7 @@ flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value 
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
 flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
 flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
+flags.DEFINE_bool('freeze_root',False, 'whether to freeze root pose')
 flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 
 class v2s_net(nn.Module):

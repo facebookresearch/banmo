@@ -531,12 +531,13 @@ def reinit_bones(model, mesh, num_bones):
     model.nerf_models['bones'] = model.bones
     return
             
-def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
+def warp_bw(opts, model, rt_dict, query_xyz_chunk, embedid):
     """
     only used in mesh extraction
+    embedid: embedding id
     """
     chunk = query_xyz_chunk.shape[0]
-    query_time = torch.ones(chunk,1).to(model.device)*frameid
+    query_time = torch.ones(chunk,1).to(model.device)*embedid
     query_time = query_time.long()
     if opts.flowbw:
         # flowbw
@@ -573,12 +574,12 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, frameid):
         rt_dict['bones'] = bones_dfm 
     return query_xyz_chunk, rt_dict
         
-def warp_fw(opts, model, rt_dict, vertices, frameid):
+def warp_fw(opts, model, rt_dict, vertices, embedid):
     """
     only used in mesh extraction
     """
     num_pts = vertices.shape[0]
-    query_time = torch.ones(num_pts,1).long().to(model.device)*frameid
+    query_time = torch.ones(num_pts,1).long().to(model.device)*embedid
     pts_can=torch.Tensor(vertices).to(model.device)
     if opts.flowbw:
         # forward flow
@@ -611,7 +612,7 @@ def warp_fw(opts, model, rt_dict, vertices, frameid):
     vertices = pts_dfm.cpu().numpy()
     return vertices, rt_dict
     
-def canonical2ndc(model, dp_canonical_pts, rtk, kaug, frameid):
+def canonical2ndc(model, dp_canonical_pts, rtk, kaug, embedid):
     """
     dp_canonical_pts: 5004,3, pts in the canonical space of each video
     dp_px: bs, 5004, 3
@@ -628,7 +629,7 @@ def canonical2ndc(model, dp_canonical_pts, rtk, kaug, frameid):
     # projection
     dp_canonical_pts = dp_canonical_pts[None]
     if model.opts.flowbw:
-        time_embedded = model.pose_code(frameid)
+        time_embedded = model.pose_code(embedid)
         time_embedded = time_embedded.repeat(1,npts, 1)
         dp_canonical_embedded = model.embedding_xyz(dp_canonical_pts)[None]
         dp_canonical_embedded = dp_canonical_embedded.repeat(bs,1,1)

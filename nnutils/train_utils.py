@@ -363,7 +363,7 @@ class v2s_trainer(Trainer):
                        'impath':[],
                        'masks':[],
                        }
-            for idx,frameid in enumerate(idx_render):
+            for idx,_ in enumerate(idx_render):
                 frameid=self.model.frameid[idx]
                 print('extracting frame %d'%(frameid.cpu().numpy()))
                 aux_seq['rtk'].append(rtk[idx].cpu().numpy())
@@ -436,6 +436,7 @@ class v2s_trainer(Trainer):
                 # extract mesh sequences
                 for idx in range(len(idx_chunk)):
                     frameid=self.model.frameid[idx].long()
+                    embedid=self.model.embedid[idx].long()
                     print('extracting frame %d'%(frameid.cpu().numpy()))
                     # run marching cubes
                     if dynamic_mesh:
@@ -443,7 +444,7 @@ class v2s_trainer(Trainer):
                            mesh_dict_rest=None 
                         mesh_dict = self.extract_mesh(self.model,opts.chunk,
                                             opts.sample_grid3d, 
-                                        frameid=frameid, mesh_dict_in=mesh_dict_rest)
+                                        embedid=embedid, mesh_dict_in=mesh_dict_rest)
                         mesh=mesh_dict['mesh']
                         if mesh_dict_rest is not None:
                             mesh.visual.vertex_colors = mesh_dict_rest['mesh'].\
@@ -918,8 +919,10 @@ class v2s_trainer(Trainer):
         if self.model.module.shape_update == 1:
             self.zero_grad_list(grad_nerf_coarse)
             self.zero_grad_list(grad_nerf_beta)
+            self.zero_grad_list(grad_nerf_vis)
         if self.model.module.cvf_update == 1:
             self.zero_grad_list(grad_nerf_feat)
+            self.zero_grad_list(grad_nerf_beta_feat)
     
         aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,   .1)
         aux_out['nerf_beta_g']     = clip_grad_norm_(grad_nerf_beta,     .1)
@@ -950,11 +953,11 @@ class v2s_trainer(Trainer):
         model.set_input(batch)
         rtk = model.rtk
         kaug=model.kaug.clone()
-        frameid=model.frameid
+        embedid=model.embedid
         render_size=opts.render_size
         kaug[:,:2] *= opts.img_size/render_size
 
-        rendered, _ = model.nerf_render(rtk, kaug, frameid, render_size,
+        rendered, _ = model.nerf_render(rtk, kaug, embedid, render_size,
                 ndepth=opts.ndepth)
         rendered_first = {}
         for k,v in rendered.items():
@@ -967,7 +970,7 @@ class v2s_trainer(Trainer):
     def extract_mesh(model,chunk,grid_size,
                       #threshold = 0.01,
                       threshold = 0.,
-                      frameid=None,
+                      embedid=None,
                       mesh_dict_in=None):
         opts = model.opts
         mesh_dict = {}
@@ -989,9 +992,9 @@ class v2s_trainer(Trainer):
                 query_dir_chunk = query_dir[i:i+chunk]
 
                 # backward warping 
-                if frameid is not None and not opts.queryfw:
+                if embedid is not None and not opts.queryfw:
                     query_xyz_chunk, mesh_dict = warp_bw(opts, model, mesh_dict, 
-                                                   query_xyz_chunk, frameid)
+                                                   query_xyz_chunk, embedid)
                     
                 xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
                 out_chunks += [model.nerf_coarse(xyz_embedded, sigma_only=True)]
@@ -1050,11 +1053,11 @@ class v2s_trainer(Trainer):
                 mesh.visual.vertex_colors[:,:3] = vis*255
 
         # forward warping
-        if frameid is not None and opts.queryfw:
+        if embedid is not None and opts.queryfw:
             mesh = mesh_dict_in['mesh'].copy()
             vertices = mesh.vertices
             vertices, mesh_dict = warp_fw(opts, model, mesh_dict, 
-                                           vertices, frameid)
+                                           vertices, embedid)
             mesh.vertices = vertices
                
         mesh_dict['mesh'] = mesh

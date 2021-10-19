@@ -432,7 +432,7 @@ class v2s_net(nn.Module):
             [float(i) for i in config.get('data_%d'%nvid, 'near_far').split(',')]
         return near_far
 
-    def nerf_render(self, rtk, kaug, frameid, img_size, nsample=256, ndepth=128):
+    def nerf_render(self, rtk, kaug, embedid, img_size, nsample=256, ndepth=128):
         opts=self.opts
         Rmat = rtk[:,:3,:3]
         Tmat = rtk[:,:3,3]
@@ -440,7 +440,7 @@ class v2s_net(nn.Module):
         Kaug = K2inv(kaug) # p = Kaug Kmat P
         Kinv = Kmatinv(Kaug.matmul(Kmat))
         bs = Kinv.shape[0]
-        frameid = frameid.long().to(self.device)[:,None]
+        embedid = embedid.long().to(self.device)[:,None]
         if opts.use_sim3:
             # don't update the canonical frame sim3
             sim3_j2c = torch.cat([self.sim3_j2c[:1].detach(),  
@@ -457,25 +457,25 @@ class v2s_net(nn.Module):
             rtk_vec_target = rtk_vec.view(2,-1).flip(0)
             rays['rtk_vec_target'] = rtk_vec_target.reshape(rays['rtk_vec'].shape)
             
-            frameid_target = frameid.view(2,-1).flip(0).reshape(-1,1)
+            embedid_target = embedid.view(2,-1).flip(0).reshape(-1,1)
             if opts.flowbw:
-                time_embedded_target = self.pose_code(frameid_target)
+                time_embedded_target = self.pose_code(embedid_target)
                 rays['time_embedded_target'] = time_embedded_target.repeat(1,
                                                             rays['nsample'],1)
             elif opts.lbs and self.num_bone_used>0:
-                bone_rts_target = self.nerf_bone_rts(frameid_target)
+                bone_rts_target = self.nerf_bone_rts(embedid_target)
                 rays['bone_rts_target'] = bone_rts_target.repeat(1,rays['nsample'],1)
 
             if self.is_flow_dp:
                 # randomly choose 1 target image
                 rays['rtk_vec_dentrg'] = rtk_vec[self.rand_dentrg] # bs,N,21
-                frameid_dentrg = frameid.view(-1,1)[self.rand_dentrg]
+                embedid_dentrg = embedid.view(-1,1)[self.rand_dentrg]
                 if opts.flowbw:
-                    time_embedded_dentrg = self.pose_code(frameid_dentrg)
+                    time_embedded_dentrg = self.pose_code(embedid_dentrg)
                     rays['time_embedded_dentrg'] = time_embedded_dentrg.repeat(1,
                                                             rays['nsample'],1)
                 elif opts.lbs and self.num_bone_used>0:
-                    bone_rts_dentrg = self.nerf_bone_rts(frameid_dentrg) #bsxbs,x 
+                    bone_rts_dentrg = self.nerf_bone_rts(embedid_dentrg) #bsxbs,x 
                     rays['bone_rts_dentrg'] = bone_rts_dentrg.repeat(1,rays['nsample'],1)
 
                 if opts.use_sim3:
@@ -484,10 +484,10 @@ class v2s_net(nn.Module):
                     rays['sim3_j2c_dentrg'] = rays['sim3_j2c_dentrg'][:,None].repeat(1,rays['nsample'],1)
                  
         # pass time-dependent inputs
-        time_embedded = self.pose_code(frameid)
+        time_embedded = self.pose_code(embedid)
         rays['time_embedded'] = time_embedded.repeat(1,rays['nsample'],1)
         if opts.lbs and self.num_bone_used>0:
-            bone_rts = self.nerf_bone_rts(frameid)
+            bone_rts = self.nerf_bone_rts(embedid)
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
         if opts.use_sim3:
@@ -761,6 +761,7 @@ class v2s_net(nn.Module):
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1).cpu()
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1).cpu()
        
+        self.embedid = self.frameid + self.data_offset[self.dataid.long()]
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]
 
         # process silhouette
@@ -895,11 +896,11 @@ class v2s_net(nn.Module):
             print('set input time:%.2f'%(time.time()-start_time))
         rtk = self.rtk
         kaug= self.kaug
-        frameid=self.frameid
+        embedid=self.embedid
         aux_out={}
         
         # Render
-        rendered, rand_inds = self.nerf_render(rtk, kaug, frameid, opts.img_size, 
+        rendered, rand_inds = self.nerf_render(rtk, kaug, embedid, opts.img_size, 
                 nsample=opts.nsample, ndepth=opts.ndepth)
         rendered_img = rendered['img_coarse']
         rendered_sil = rendered['sil_coarse']
@@ -1034,7 +1035,7 @@ class v2s_net(nn.Module):
             aux_out['visibility_loss'] = vis_loss
 
         if opts.use_viser:
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]

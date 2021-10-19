@@ -71,18 +71,23 @@ def vis_viser(rts, results, masks, imgs, bs,img_size,ndepth):
 
     # draw lines
     near_plane_mskd = near_plane[mask_rszd.view(-1)].cpu()
-    draw_lines_ray_canonical(near_plane_mskd, pts_exp,img_mskd,
-                                 'tmp/viser_line_exp.obj')
     draw_lines_ray_canonical(near_plane_mskd, pts_pred,img_mskd,
                                  'tmp/viser_line_pred.obj')
+    draw_lines_ray_canonical(pts_pred, pts_exp,img_mskd,
+                                 'tmp/viser_line_exp.obj')
 
 def draw_lines_ray_canonical(near_plane_mskd, pts_exp, img_mskd, path):
+    colormap = label_colormap()
+    len_color = len(colormap)
     meshes = []
+    idx=0
     for i in range(len(near_plane_mskd)):
-        segment = np.stack([near_plane_mskd[i], pts_exp[i]])
-        line = trimesh.creation.cylinder(0.0001, 
-                segment=segment,sections=5, vertex_colors=img_mskd[i])
-        meshes.append(line)
+        if i%100==0:
+            segment = np.stack([near_plane_mskd[i], pts_exp[i]])
+            line = trimesh.creation.cylinder(0.0001, 
+                    segment=segment,sections=5, vertex_colors=colormap[idx%len_color])
+            meshes.append(line)
+            idx+=1
     meshes = trimesh.util.concatenate(meshes)
     meshes.export(path)
 

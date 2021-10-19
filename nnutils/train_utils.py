@@ -182,7 +182,7 @@ class v2s_trainer(Trainer):
                 params_bones.append(p)
             elif 'module.skin_aux' == name:
                 params_skin_aux.append(p)
-            elif 'module.ks' == name:
+            elif 'module.ks_param' == name:
                 params_ks.append(p)
             elif 'nerf_dp' in name:
                 params_nerf_dp.append(p)
@@ -821,7 +821,7 @@ class v2s_trainer(Trainer):
             self.model.module.nerf_models['nerf_skin'] = self.model.module.nerf_skin
 
         # disable densepose flow loss  flow dp
-        if self.model.progress>0.5:
+        if self.model.progress>0.8:
             self.model.module.is_flow_dp=False
         self.broadcast()
 
@@ -902,7 +902,7 @@ class v2s_trainer(Trainer):
                 grad_bones.append(p)
             elif 'module.skin_aux' == name:
                 grad_skin_aux.append(p)
-            elif 'module.ks' == name:
+            elif 'module.ks_param' == name:
                 grad_ks.append(p)
             elif 'nerf_dp' in name:
                 grad_nerf_dp.append(p)
@@ -912,10 +912,12 @@ class v2s_trainer(Trainer):
                 grad_dp_verts.append(p)
             else: continue
         
-        # freeze root pose when adding in sil/rgb loss 
+        # freeze root/body pose when adding in sil/rgb loss 
         if self.model.module.pose_update == 1:
             self.zero_grad_list(grad_root_code)
             self.zero_grad_list(grad_nerf_root_rts)
+            self.zero_grad_list(grad_pose_code)
+            self.zero_grad_list(grad_nerf_bone_rts)
         if self.model.module.shape_update == 1:
             self.zero_grad_list(grad_nerf_coarse)
             self.zero_grad_list(grad_nerf_beta)

@@ -3,13 +3,15 @@ tmpdir=tmp/
 prefix=$2
 filedir=$rootdir/$prefix
 outdir=$rootdir/output
-suffix=.MOV
+suffix=$3
 fps=10
 
-# rename to upper case
-cd $filedir
-for file in ./*; do mv -- "$file" "${file^^}"; done
-cd -
+if [ "$suffix" = ".MOV" ]; then
+  # rename to upper case
+  cd $filedir
+  for file in ./*; do mv -- "$file" "${file^^}"; done
+  cd -
+fi
 
 counter=0
 for infile in $filedir/*$suffix; do
@@ -21,20 +23,28 @@ for infile in $filedir/*$suffix; do
 #  fi
 
   echo $infile  
-  seqname=$prefix$(printf "%02d" $counter)
 
-  # extract frames
-  rm $outdir/*
-  ffmpeg -i $infile -vf fps=$fps $outdir/%05d.jpg
+  if [ "$suffix" = ".MOV" ]; then
+    seqname=$prefix$(printf "%02d" $counter)
+    ## process videos
+    # extract frames
+    rm $outdir/*
+    ffmpeg -i $infile -vf fps=$fps $outdir/%05d.jpg
 
-  # segmentation
-  todir=$tmpdir/$seqname
-  rm $todir -rf
-  mkdir $todir
-  mkdir $todir/images/
-  mkdir $todir/masks/
-  cp $outdir/* $todir/images
-  python scripts/densepose.py $seqname
+    # segmentation
+    todir=$tmpdir/$seqname
+    rm $todir -rf
+    mkdir $todir
+    mkdir $todir/images/
+    mkdir $todir/masks/
+    cp $outdir/* $todir/images
+    python scripts/densepose.py $seqname
+  else
+    seqname=$(basename "$infile")
+    seqname=${seqname::-4}
+    # process segmented data
+    unzip -o $infile -d database/DAVIS/
+  fi
 
   python scripts/compute_dp.py $seqname
 
@@ -50,5 +60,6 @@ for infile in $filedir/*$suffix; do
   #rm  $rootdir/$seqname.zip
   #zip $rootdir/$seqname.zip -r  */Full-Resolution/$seqname/
   #cd -
+
   counter=$((counter+1))
 done

@@ -1035,7 +1035,7 @@ class v2s_net(nn.Module):
             aux_out['visibility_loss'] = vis_loss
 
         if opts.use_viser:
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]

@@ -33,7 +33,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 render_color, mask_aug, bbox_dp2rnd, resample_dp
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
-                                feat_match_loss
+                                feat_match_loss, kp_reproj_loss
 from utils.io import vis_viser
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
@@ -545,13 +545,21 @@ class v2s_net(nn.Module):
                 for rt in rts:
                     rts_img.append(rt.view(bs,img_size,img_size,-1))
                 rts = rts_img
-            results['pts_pred'] = (rts[0] - torch.Tensor(self.vis_min[None]).\
+
+            pts_pred = rts[0]
+            pts_exp  = rts[1]
+            feat_err = rts[2]
+
+            ## TODO add projection loss
+            #proj_err = kp_reproj_loss(pts_pred, xys)
+
+            results['pts_pred'] = (pts_pred - torch.Tensor(self.vis_min[None]).\
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
-            results['pts_exp']  = (rts[1] - torch.Tensor(self.vis_min[None]).\
+            results['pts_exp']  = (pts_exp - torch.Tensor(self.vis_min[None]).\
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
             results['pts_pred'] = results['pts_pred'].clamp(0,1)
             results['pts_exp']  = results['pts_exp'].clamp(0,1)
-            results['feat_err'] = rts[2] # will be used as loss
+            results['feat_err'] = feat_err # will be used as loss
             
             #pdb.set_trace()
             ## visualization
@@ -907,7 +915,7 @@ class v2s_net(nn.Module):
         img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3
         sil_at_samp = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
            
-        # loss
+        # image and silhouette loss
         img_loss = (rendered_img - img_at_samp).pow(2)
         img_loss = img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss = opts.sil_wt*F.mse_loss(rendered_sil, sil_at_samp)
@@ -1034,19 +1042,19 @@ class v2s_net(nn.Module):
             total_loss = total_loss + vis_loss
             aux_out['visibility_loss'] = vis_loss
 
+        # viser loss
         if opts.use_viser:
             feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
 
+        #TODO regularize nerf-skin
+
+        # save some variables
         if opts.lbs:
             aux_out['skin_scale'] = self.skin_aux[0].clone().detach()
             aux_out['skin_const'] = self.skin_aux[1].clone().detach()
-
-
-        #TODO regularize nerf-skin
-
         aux_out['total_loss'] = total_loss
         aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]
         return total_loss, aux_out

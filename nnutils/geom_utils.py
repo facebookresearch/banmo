@@ -447,7 +447,7 @@ def raycast(xys, Rmat, Tmat, Kinv, near_far):
 def sample_xy(img_size, bs, nsample, device, return_all=False):
     xygrid = np.meshgrid(range(img_size), range(img_size))  # w,h->hxw
     xygrid = torch.Tensor(xygrid).to(device)  # (x,y)
-    xygrid = xygrid.permute(1,2,0).reshape(1,-1,2).repeat(bs,1,1) # bs,..., 3
+    xygrid = xygrid.permute(1,2,0).reshape(1,-1,2).repeat(bs,1,1) # bs,..., 2
     
     if return_all:
         nsample = xygrid.shape[1]

@@ -173,12 +173,22 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     # loss
     # evaluate against model's opacity distirbution along the ray with soft target
     feat_err = (pts_pred - pts_exp).norm(2,-1) # n,ndepth
-    
+
     # rearrange outputs
     pts_pred  = pts_pred.view(bs,-1,3)
     pts_exp   = pts_exp .view(bs,-1,3)
     feat_err = feat_err .view(bs,-1,1)
     return pts_pred, pts_exp, feat_err
+    
+def kp_reproj_loss(pts_pred, xys):
+    """
+    pts_pred,   bs, h,w,3
+    xys,        bs,n,2
+    """
+    # TODO add another loss that computes re-projection error
+    #proj_err = 
+    return proj_err
+    
     
 def feat_match(nerf_feat, embedding_xyz, feats, bound, 
         is_training=True):

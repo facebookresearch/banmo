@@ -82,7 +82,7 @@ def draw_lines_ray_canonical(near_plane_mskd, pts_exp, img_mskd, path):
     meshes = []
     idx=0
     for i in range(len(near_plane_mskd)):
-        if i%100==0:
+        if i%30==0:
             segment = np.stack([near_plane_mskd[i], pts_exp[i]])
             line = trimesh.creation.cylinder(0.0001, 
                     segment=segment,sections=5, vertex_colors=colormap[idx%len_color])

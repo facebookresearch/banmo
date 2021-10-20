@@ -296,6 +296,9 @@ class v2s_trainer(Trainer):
 
             self.model.env_code.weight.data = \
                 states['env_code.weight']
+
+            if 'ks_param' in states.keys():
+                self.model.ks_param.data = states['ks_param']
         
             # load variables
             self.model.latest_vars = latest_vars
@@ -307,6 +310,8 @@ class v2s_trainer(Trainer):
         self.del_key( states, 'nerf_bone_rts.0.weight')
         self.del_key( states, 'nerf_root_rts.0.weight')
         self.del_key( states, 'env_code.weight')
+        if 'ks_param' in states.keys():
+            self.del_key( states, 'ks_param')
 
         # load some variables
         # this is important for volume matching
@@ -425,8 +430,8 @@ class v2s_trainer(Trainer):
                 rendered_seq['flo_coarse'][-1]       *= sil_rszd 
                 rendered_seq['joint_render_vis'][-1] *= sil_rszd 
                 if opts.use_viser:
-                    rendered_seq['pts_pred'][-1] *= sil_rszd 
-                    rendered_seq['pts_exp'] [-1]  *= sil_rszd 
+                    rendered_seq['pts_pred'][-1] *= rendered_seq['sil_coarse'][0]
+                    rendered_seq['pts_exp'] [-1] *= rendered_seq['sil_coarse'][0]
                     rendered_seq['feat_err'][-1] *= sil_rszd*20
                 if self.model.is_flow_dp:
                     rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
@@ -777,7 +782,7 @@ class v2s_trainer(Trainer):
         """
         whether to update pose (with flo)
         0: update all,  flo
-        1: freeze pose, flo/sil/rgb
+        1: freeze pose, flo/sil/rgb => this causes drift issue
         2: update all,  flo/sil/rgb
         """
         opts = self.opts
@@ -788,7 +793,7 @@ class v2s_trainer(Trainer):
                 i%2 == 0:
             self.model.module.pose_update = 0
         else:
-            self.model.module.pose_update = 1
+            self.model.module.pose_update = 2
 
         if opts.freeze_root:
             self.model.module.pose_update = 1
@@ -918,6 +923,7 @@ class v2s_trainer(Trainer):
             self.zero_grad_list(grad_nerf_root_rts)
             self.zero_grad_list(grad_pose_code)
             self.zero_grad_list(grad_nerf_bone_rts)
+            self.zero_grad_list(grad_nerf_flowbw)
         if self.model.module.shape_update == 1:
             self.zero_grad_list(grad_nerf_coarse)
             self.zero_grad_list(grad_nerf_beta)

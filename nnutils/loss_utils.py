@@ -4,7 +4,8 @@ import cv2
 import numpy as np
 import torch
 from nnutils.nerf import evaluate_mlp
-from nnutils.geom_utils import rot_angle
+from nnutils.geom_utils import rot_angle, mat2K, Kmatinv, obj_to_cam, \
+                                pinhole_cam, lbs, skinning, mlp_skinning
 import torch.nn.functional as F
 
 def nerf_gradient(mlp, embed, pts, use_xyz=False,code=None, sigma_only=False):
@@ -180,13 +181,50 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     feat_err = feat_err .view(bs,-1,1)
     return pts_pred, pts_exp, feat_err
     
-def kp_reproj_loss(pts_pred, xys):
+def kp_reproj_loss(pts_pred, xys, models, embeddings, rays):
     """
-    pts_pred,   bs, h,w,3
+    pts_pred,   bs, ...,3
     xys,        bs,n,2
     """
-    # TODO add another loss that computes re-projection error
-    #proj_err = 
+    bs,ns,_ = xys.shape
+    N = bs*ns
+    xyz_coarse_sampled = pts_pred.view(-1,1,3)
+    #TODO remove it later
+    xyz_coarse_sampled = xyz_coarse_sampled.detach()
+    xys = xys.view(-1,1,2)
+
+    # TODO wrap flowbw and lbs into the same module
+    # TODO include loss for flowbw
+    rtk_vec =  rays['rtk_vec']    .view(N,-1) # bs, ns, 21
+    if 'bones' in models.keys():
+        bone_rts_fw = rays['bone_rts'].view(N,-1) # bs, ns,-1
+        if 'nerf_skin' in models.keys():
+            nerf_skin = models['nerf_skin']
+        else: nerf_skin = None
+        bones = models['bones']
+        skin_aux = models['skin_aux']
+        rest_pose_code = models['rest_pose_code']
+        embedding_xyz = embeddings['xyz']
+
+        rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
+        rest_pose_code = rest_pose_code[None].repeat(N, 1,1)
+        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+        dskin_fwd = mlp_skinning(nerf_skin, rest_pose_code, xyz_coarse_embedded)
+        skin_forward = skinning(bones, xyz_coarse_sampled, 
+                            dskin_fwd, skin_aux=skin_aux)
+        xyz_coarse_sampled,_ = lbs(bones, bone_rts_fw,
+                          skin_forward, xyz_coarse_sampled, backward=False)
+
+    Rmat = rtk_vec[:,0:9]  .view(N,1,3,3)
+    Tmat = rtk_vec[:,9:12] .view(N,1,3)
+    Kinv = rtk_vec[:,12:21].view(N,1,3,3)
+    K = mat2K(Kmatinv(Kinv))
+
+    xyz_coarse_sampled = obj_to_cam( xyz_coarse_sampled, Rmat, Tmat) 
+    xyz_coarse_sampled = pinhole_cam(xyz_coarse_sampled,K)
+    
+    proj_err = (xys - xyz_coarse_sampled[...,:2]).norm(2,-1)
+    proj_err = proj_err.view(pts_pred.shape[:-1]+(1,))
     return proj_err
     
     

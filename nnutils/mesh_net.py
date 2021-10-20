@@ -154,6 +154,7 @@ flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value 
 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
+flags.DEFINE_bool('use_proj', False, 'whether to use reprojection loss')
 flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
 flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
 flags.DEFINE_bool('freeze_root',False, 'whether to freeze root pose')
@@ -551,7 +552,11 @@ class v2s_net(nn.Module):
             feat_err = rts[2]
 
             ## TODO add projection loss
-            #proj_err = kp_reproj_loss(pts_pred, xys)
+            if opts.use_proj:
+                proj_err = kp_reproj_loss(pts_pred, xys, self.nerf_models, 
+                        self.embeddings, rays)
+                proj_err = proj_err/img_size * 2
+                results['proj_err'] = proj_err # will be used as loss
 
             results['pts_pred'] = (pts_pred - torch.Tensor(self.vis_min[None]).\
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
@@ -1048,6 +1053,11 @@ class v2s_net(nn.Module):
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
+        
+        if opts.use_proj:
+            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.02
+            total_loss = total_loss + proj_loss
+            aux_out['proj_loss'] = proj_loss
 
         #TODO regularize nerf-skin
 

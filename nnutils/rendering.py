@@ -296,11 +296,12 @@ def render_rays(models,
         if 'nerf_skin' in models.keys():
             # compute delta skinning weights of bs, N, B
             nerf_skin = models['nerf_skin'] 
-            time_embedded = rays['time_embedded'][:,None]
-            xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-            dskin_bwd = mlp_skinning(nerf_skin, time_embedded, xyz_coarse_embedded)
         else:
-            dskin_bwd=None
+            nerf_skin = None
+        time_embedded = rays['time_embedded'][:,None]
+        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+        dskin_bwd = mlp_skinning(nerf_skin, time_embedded, xyz_coarse_embedded)
+        
         bones_dfm = bone_transform(bones, bone_rts_fw) # coords after deform
         skin_backward = skinning(bones_dfm, xyz_coarse_sampled, 
                                  dskin_bwd, skin_aux=skin_aux) # bs, N, B
@@ -312,14 +313,11 @@ def render_rays(models,
                                                   xyz_coarse_sampled,
                                                   )
 
-        if 'nerf_skin' in models.keys():
-            rest_pose_code =  models['rest_pose_code']
-            rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
-            rest_pose_code = rest_pose_code[None].repeat(N_rays, 1,1)
-            xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-            dskin_fwd = mlp_skinning(nerf_skin, rest_pose_code, xyz_coarse_embedded)
-        else:
-            dskin_fwd = None
+        rest_pose_code =  models['rest_pose_code']
+        rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
+        rest_pose_code = rest_pose_code[None].repeat(N_rays, 1,1)
+        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+        dskin_fwd = mlp_skinning(nerf_skin, rest_pose_code, xyz_coarse_embedded)
         skin_forward = skinning(bones, xyz_coarse_sampled, 
                             dskin_fwd, skin_aux=skin_aux)
 

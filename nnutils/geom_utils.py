@@ -85,7 +85,10 @@ def mlp_skinning(mlp, code, pts_embed):
     pts_embed: bs,N,x    - N point positional embeddings
     dskin: bs,N,B        - delta skinning matrix
     """
-    dskin = evaluate_mlp(mlp, pts_embed, code=code, chunk=8*1024)
+    if mlp is None:
+        dskin = None
+    else:
+        dskin = evaluate_mlp(mlp, pts_embed, code=code, chunk=8*1024)
     
     ##TODO
     ## truncated softmax
@@ -556,11 +559,11 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, embedid):
         #TODO
         if opts.nerf_skin:
             nerf_skin = model.nerf_skin
-            xyz_embedded = model.embedding_xyz(query_xyz_chunk)
-            time_embedded = model.pose_code(query_time)[:,0]
-            dskin_bwd = mlp_skinning(nerf_skin, time_embedded, xyz_embedded)
         else:
-            dskin_bwd=None
+            nerf_skin = None
+        xyz_embedded = model.embedding_xyz(query_xyz_chunk)
+        time_embedded = model.pose_code(query_time)[:,0]
+        dskin_bwd = mlp_skinning(nerf_skin, time_embedded, xyz_embedded)
         bones_dfm = bone_transform(bones, bone_rts_fw)
         skin_backward = skinning(bones_dfm, query_xyz_chunk, 
                 dskin_bwd, skin_aux=model.skin_aux)
@@ -596,13 +599,14 @@ def warp_fw(opts, model, rt_dict, vertices, embedid):
         
         ##TODO
         if opts.nerf_skin:
-            rest_pose_code =  model.rest_pose_code
-            rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
-            rest_pose_code = rest_pose_code[None].repeat(num_pts, 1,1)
-            pts_can_embedded = model.embedding_xyz(pts_can)
-            dskin_fwd = mlp_skinning(model.nerf_skin, rest_pose_code, pts_can_embedded)
+            nerf_skin = model.nerf_skin
         else:
-            dskin_fwd=None
+            nerf_skin = None
+        rest_pose_code =  model.rest_pose_code
+        rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
+        rest_pose_code = rest_pose_code[None].repeat(num_pts, 1,1)
+        pts_can_embedded = model.embedding_xyz(pts_can)
+        dskin_fwd = mlp_skinning(nerf_skin, rest_pose_code, pts_can_embedded)
         skin_forward = skinning(bones, pts_can, dskin_fwd,skin_aux=model.skin_aux)
 
         pts_dfm,bones_dfm = lbs(bones, bone_rts_fw, skin_forward, 

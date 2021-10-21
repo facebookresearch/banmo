@@ -185,12 +185,14 @@ def kp_reproj_loss(pts_pred, xys, models, embeddings, rays):
     """
     pts_pred,   bs, ...,3
     xys,        bs,n,2
+    kp reprojection loss is only used to update root/body pose and skinning weights
     """
     bs,ns,_ = xys.shape
     N = bs*ns
     xyz_coarse_sampled = pts_pred.view(-1,1,3)
-    #TODO remove it later
-    xyz_coarse_sampled = xyz_coarse_sampled.detach()
+    # detach grad since reproj-loss would not benefit feature learning 
+    # (due to ambiguity)
+    xyz_coarse_sampled = xyz_coarse_sampled.detach() 
     xys = xys.view(-1,1,2)
 
     # TODO wrap flowbw and lbs into the same module

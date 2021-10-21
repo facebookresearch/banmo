@@ -132,7 +132,10 @@ flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 25, 'maximum number of bones')
 flags.DEFINE_float('warmup_init_steps', 0.2, 'steps before using sil loss')
 flags.DEFINE_float('warmup_steps', 0.2, 'steps used to increase sil loss')
+flags.DEFINE_float('warmup_proj_steps', 0.2, 'steps to warmup with proj loss')
 flags.DEFINE_integer('lbs_reinit_epochs', -1, 'epochs to initialize bones')
+flags.DEFINE_float('reinit_bone_steps', 0.667, 'steps to initialize bones')
+flags.DEFINE_float('dskin_steps', 0.8, 'steps to add delta skinning weights')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
@@ -939,7 +942,6 @@ class v2s_net(nn.Module):
             total_loss = total_loss + dp_loss
             aux_out['dp_loss'] = dp_loss
             
-        
         # flow loss
         if opts.use_corresp:
             rendered_flo = rendered['flo_coarse']
@@ -1001,6 +1003,25 @@ class v2s_net(nn.Module):
                 total_loss = total_loss + fdp_loss
                 aux_out['fdp_loss'] = fdp_loss
         
+        # viser loss
+        if opts.use_viser:
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
+            total_loss = total_loss + feat_loss
+            aux_out['feat_loss'] = feat_loss
+            aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
+        
+        
+        if opts.use_proj:
+            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.2
+            # warm up by only using projection loss to optimize bones
+            # TODO warmup if fine-tuning a pre-trained shape
+            # TODO need to do if after bone is initialized
+            if (self.progress > opts.reinit_bone_steps and \
+                self.progress < opts.reinit_bone_steps + opts.warmup_proj_steps):
+                total_loss = total_loss*0. +proj_loss
+            aux_out['proj_loss'] = proj_loss
+        
+        
         # regularization 
         if 'frame_cyc_dis' in rendered.keys():
             # cycle loss
@@ -1046,18 +1067,6 @@ class v2s_net(nn.Module):
             vis_loss = 0.01*rendered['vis_loss'].mean()
             total_loss = total_loss + vis_loss
             aux_out['visibility_loss'] = vis_loss
-
-        # viser loss
-        if opts.use_viser:
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
-            total_loss = total_loss + feat_loss
-            aux_out['feat_loss'] = feat_loss
-            aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
-        
-        if opts.use_proj:
-            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.02
-            total_loss = total_loss + proj_loss
-            aux_out['proj_loss'] = proj_loss
 
         #TODO regularize nerf-skin
 

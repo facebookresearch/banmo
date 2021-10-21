@@ -430,7 +430,7 @@ class v2s_trainer(Trainer):
                 rendered_seq['flo_coarse'][-1]       *= sil_rszd 
                 rendered_seq['joint_render_vis'][-1] *= sil_rszd 
                 if opts.use_viser:
-                    rendered_seq['pts_pred'][-1] *= rendered_seq['sil_coarse'][-1]
+                    rendered_seq['pts_pred'][-1] *= sil_rszd 
                     rendered_seq['pts_exp'] [-1] *= rendered_seq['sil_coarse'][-1]
                     rendered_seq['feat_err'][-1] *= sil_rszd*20
                 if opts.use_proj:
@@ -812,7 +812,7 @@ class v2s_trainer(Trainer):
             self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
         
         # reinit bones based on extracted surface
-        if opts.lbs and (epoch==int(self.num_epochs/3*2) or\
+        if opts.lbs and (epoch==int(self.num_epochs*opts.reinit_bone_steps) or\
                          epoch==int(self.num_epochs*opts.warmup_init_steps)):
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
@@ -824,7 +824,8 @@ class v2s_trainer(Trainer):
                                          self.model.latest_vars)
 
         # add nerf-skin when the shape is good
-        if opts.lbs and opts.nerf_skin and epoch==int(self.num_epochs/5*4):
+        if opts.lbs and opts.nerf_skin and \
+                epoch==int(self.num_epochs*opts.dskin_steps):
             self.model.module.nerf_models['nerf_skin'] = self.model.module.nerf_skin
 
         # disable densepose flow loss  flow dp

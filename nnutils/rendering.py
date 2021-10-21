@@ -414,11 +414,11 @@ def render_rays(models,
         if 'flowbw' in models.keys():
             result['frame_rigloss'] =  (frame_disp3d  * weights_coarse.detach()).sum(-1)
             #TODO enable elastic energy?
-            ## only evaluate at with_grad mode
-            #if xyz_coarse_frame.requires_grad:
-            #    # elastic energy
-            #    result['elastic_loss'] = elastic_loss(model_flowbw, embedding_xyz, 
-            #                      xyz_coarse_frame, time_embedded)
+            # only evaluate at with_grad mode
+            if xyz_coarse_frame.requires_grad:
+                # elastic energy
+                result['elastic_loss'] = elastic_loss(model_flowbw, embedding_xyz, 
+                                  xyz_coarse_frame, time_embedded)
         else:
             result['frame_rigloss'] =  (frame_rigloss).mean(-1)
 

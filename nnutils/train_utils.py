@@ -760,6 +760,14 @@ class v2s_trainer(Trainer):
         1: freeze 
         """
         opts = self.opts
+
+        # during kp reprojection optimization
+        if (opts.use_proj and self.model.module.progress > opts.proj_start and \
+                self.model.module.progress < (opts.proj_end+opts.proj_start)/2):
+            self.model.module.cvf_update = 1
+        else:
+            self.model.module.cvf_update = 0
+
         if opts.freeze_cvf:
             self.model.module.cvf_update = 1
     
@@ -771,8 +779,11 @@ class v2s_trainer(Trainer):
         """
         opts = self.opts
         # incremental optimization
-        if opts.model_path!='' and \
-        self.model.module.progress < opts.warmup_init_steps + opts.warmup_steps:
+        # or during kp reprojection optimization
+        if (opts.model_path!='' and \
+        self.model.module.progress < opts.warmup_init_steps + opts.warmup_steps) or\
+           (opts.use_proj and self.model.module.progress > opts.proj_start and \
+               self.model.module.progress < (opts.proj_end+opts.proj_start)/2):
             self.model.module.shape_update = 1
         else:
             self.model.module.shape_update = 0

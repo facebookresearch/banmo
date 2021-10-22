@@ -761,12 +761,12 @@ class v2s_trainer(Trainer):
         """
         opts = self.opts
 
-        # during kp reprojection optimization
-        if (opts.use_proj and self.model.module.progress > opts.proj_start and \
-                self.model.module.progress < (opts.proj_end+opts.proj_start)/2):
-            self.model.module.cvf_update = 1
-        else:
-            self.model.module.cvf_update = 0
+        ## during kp reprojection optimization
+        #if (opts.use_proj and self.model.module.progress > opts.proj_start and \
+        #        self.model.module.progress < (opts.proj_end+opts.proj_start)/2):
+        #    self.model.module.cvf_update = 1
+        #else:
+        #    self.model.module.cvf_update = 0
 
         if opts.freeze_cvf:
             self.model.module.cvf_update = 1
@@ -781,9 +781,10 @@ class v2s_trainer(Trainer):
         # incremental optimization
         # or during kp reprojection optimization
         if (opts.model_path!='' and \
-        self.model.module.progress < opts.warmup_init_steps + opts.warmup_steps) or\
-           (opts.use_proj and self.model.module.progress > opts.proj_start and \
-               self.model.module.progress < (opts.proj_end+opts.proj_start)/2):
+        self.model.module.progress < opts.warmup_init_steps + opts.warmup_steps)\
+        :
+        # or (opts.use_proj and self.model.module.progress > opts.proj_start and \
+        #       self.model.module.progress < (opts.proj_end+opts.proj_start)/2):
             self.model.module.shape_update = 1
         else:
             self.model.module.shape_update = 0
@@ -818,18 +819,18 @@ class v2s_trainer(Trainer):
         opts = self.opts
         mesh_rest = self.model.latest_vars['mesh_rest']
 
-        # reset object bound, only for visualization
-        if epoch>int(self.num_epochs/2):
+        # reset object bound, for feature matching
+        if epoch>int(self.num_epochs*(opts.warmup_init_steps)):
             self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
         
         # reinit bones based on extracted surface
-        if opts.lbs and (epoch==int(self.num_epochs*opts.reinit_bone_steps) or\
+        if opts.lbs and (epoch==int(self.num_epochs*(opts.warmup_init_steps+opts.warmup_steps)) or\
                          epoch==int(self.num_epochs*opts.warmup_init_steps)):
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
 
         # change near-far plane after half epochs
-        if epoch>=int(self.num_epochs/2):
+        if epoch>=int(self.num_epochs*0.5):
             self.model.near_far.data = get_near_far(mesh_rest.vertices,
                                          self.model.near_far.data,
                                          self.model.latest_vars)
@@ -840,7 +841,7 @@ class v2s_trainer(Trainer):
             self.model.module.nerf_models['nerf_skin'] = self.model.module.nerf_skin
 
         # disable densepose flow loss  flow dp
-        if self.model.progress>0.8:
+        if self.model.progress>0.75:
             self.model.module.is_flow_dp=False
         self.broadcast()
 

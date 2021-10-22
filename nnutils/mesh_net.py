@@ -33,7 +33,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 render_color, mask_aug, bbox_dp2rnd, resample_dp
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
-                                feat_match_loss, kp_reproj_loss
+                            feat_match_loss, kp_reproj_loss, grad_update_bone
 from utils.io import vis_viser
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
@@ -928,7 +928,7 @@ class v2s_net(nn.Module):
            
         # image and silhouette loss
         img_loss = (rendered_img - img_at_samp).pow(2)
-        img_loss = 0.2*img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
+        img_loss = img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss = opts.sil_wt*F.mse_loss(rendered_sil, sil_at_samp)
         total_loss = img_loss
         if not opts.bg: total_loss = total_loss + sil_loss 
@@ -944,6 +944,22 @@ class v2s_net(nn.Module):
             dp_loss = dp_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
             total_loss = total_loss + dp_loss
             aux_out['dp_loss'] = dp_loss
+        
+        if opts.use_proj:
+            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.2
+            aux_out['proj_loss'] = proj_loss
+            # warm up by only using projection loss to optimize bones
+            # TODO warmup if fine-tuning a pre-trained shape
+            # TODO need to do if after bone is initialized
+            #warmup_weight = (self.progress - opts.proj_start)/(opts.proj_end-opts.proj_start)
+            #warmup_weight = (warmup_weight - 0.5) * 2
+            #warmup_weight = np.clip(warmup_weight, 0,1)
+            #if (self.progress > opts.proj_start and \
+            #    self.progress < opts.proj_end):
+            #    total_loss = total_loss*warmup_weight +proj_loss
+            # only add it after feature volume is trained well
+            if self.progress > opts.warmup_init_steps + opts.warmup_init_steps:
+                total_loss = total_loss +proj_loss
             
         # flow loss
         if opts.use_corresp:
@@ -1006,19 +1022,6 @@ class v2s_net(nn.Module):
                 total_loss = total_loss + fdp_loss
                 aux_out['fdp_loss'] = fdp_loss
         
-        if opts.use_proj:
-            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.2
-            # warm up by only using projection loss to optimize bones
-            # TODO warmup if fine-tuning a pre-trained shape
-            # TODO need to do if after bone is initialized
-            warmup_weight = (self.progress - opts.proj_start)/(opts.proj_end-opts.proj_start)
-            warmup_weight = (warmup_weight - 0.5) * 2
-            warmup_weight = np.clip(warmup_weight, 0,1)
-            if (self.progress > opts.proj_start and \
-                self.progress < opts.proj_end):
-                total_loss = total_loss*warmup_weight +proj_loss
-            aux_out['proj_loss'] = proj_loss
-        
         # viser loss
         if opts.use_viser:
             feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
@@ -1066,6 +1069,8 @@ class v2s_net(nn.Module):
             #sdf_at_bone = evaluate_mlp(self.nerf_vis, bone_xyz_embed)
             bone_loc_loss = 0.01*F.relu(-sdf_at_bone).mean()
             total_loss = total_loss + bone_loc_loss
+            #bone_loc_loss = grad_update_bone(self.bones, self.embedding_xyz,
+            #                        self.nerf_vis, opts.learning_rate)
             aux_out['bone_loc_loss'] = bone_loc_loss
             
         # visibility loss

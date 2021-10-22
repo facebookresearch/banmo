@@ -278,3 +278,29 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
     if not is_training: torch.cuda.empty_cache()
     pts_pred = (prob_vol[...,None] * query_xyz[None]).sum(1)
     return pts_pred
+
+
+def grad_update_bone(bones,embedding_xyz, nerf_vis, learning_rate):
+    """
+    #TODO need to update bones locally
+    """
+    device = bones.device
+    bones_data = bones.data.detach()
+    bones_data.requires_grad_(True)
+    bone_xyz_embed = embedding_xyz(bones_data[:,None,:3])
+    sdf_at_bone = evaluate_mlp(nerf_vis, bone_xyz_embed)
+    bone_loc_loss = F.relu(-sdf_at_bone).mean()
+    
+    # compute gradient wrt bones
+    d_output = torch.ones_like(bone_loc_loss, requires_grad=False, device=device)
+    gradient = torch.autograd.grad(
+        outputs=bone_loc_loss,
+        inputs=bones_data,
+        grad_outputs=d_output,
+        create_graph=True,
+        retain_graph=True,
+        only_inputs=True)[0]
+
+    bones.data = bones.data-gradient*learning_rate
+
+    return bone_loc_loss

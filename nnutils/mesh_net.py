@@ -18,7 +18,9 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 import trimesh, pytorch3d, pytorch3d.loss, pdb
 from pytorch3d import transforms
+#from pytorch3d import structures
 import configparser
+#from geomloss import SamplesLoss
 
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
@@ -132,12 +134,11 @@ flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 25, 'maximum number of bones')
 flags.DEFINE_float('warmup_init_steps', 0.2, 'steps before using sil loss')
 flags.DEFINE_float('warmup_steps', 0.2, 'steps used to increase sil loss')
-flags.DEFINE_float('warmup_proj_steps', 0.2, 'steps to warmup with proj loss')
 flags.DEFINE_integer('lbs_reinit_epochs', -1, 'epochs to initialize bones')
 #flags.DEFINE_float('reinit_bone_steps', 0, 'steps to initialize bones')
 flags.DEFINE_float('reinit_bone_steps', 0.667, 'steps to initialize bones')
-flags.DEFINE_float('proj_start', 0.85, 'steps to strat projection opt')
-flags.DEFINE_float('proj_end', 0.95,  'steps to end projection opt')
+flags.DEFINE_float('proj_start', 0.0, 'steps to strat projection opt')
+flags.DEFINE_float('proj_end', 0.5,  'steps to end projection opt')
 flags.DEFINE_float('dskin_steps', 0.8, 'steps to add delta skinning weights')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
@@ -944,22 +945,6 @@ class v2s_net(nn.Module):
             dp_loss = dp_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
             total_loss = total_loss + dp_loss
             aux_out['dp_loss'] = dp_loss
-        
-        if opts.use_proj:
-            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.2
-            aux_out['proj_loss'] = proj_loss
-            # warm up by only using projection loss to optimize bones
-            # TODO warmup if fine-tuning a pre-trained shape
-            # TODO need to do if after bone is initialized
-            #warmup_weight = (self.progress - opts.proj_start)/(opts.proj_end-opts.proj_start)
-            #warmup_weight = (warmup_weight - 0.5) * 2
-            #warmup_weight = np.clip(warmup_weight, 0,1)
-            #if (self.progress > opts.proj_start and \
-            #    self.progress < opts.proj_end):
-            #    total_loss = total_loss*warmup_weight +proj_loss
-            # only add it after feature volume is trained well
-            if self.progress > opts.warmup_init_steps + opts.warmup_init_steps:
-                total_loss = total_loss +proj_loss
             
         # flow loss
         if opts.use_corresp:
@@ -1029,6 +1014,19 @@ class v2s_net(nn.Module):
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
         
+        if opts.use_proj:
+            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.2
+            aux_out['proj_loss'] = proj_loss
+            # warm up by only using projection loss to optimize bones
+            # only add it after feature volume is trained well
+            warmup_weight = (self.progress - opts.proj_start)/(opts.proj_end-opts.proj_start)
+            warmup_weight = (warmup_weight - 0.5) * 2
+            warmup_weight = np.clip(warmup_weight, 0,1)
+            if (self.progress > opts.proj_start and \
+                self.progress < opts.proj_end):
+                total_loss = total_loss*warmup_weight + \
+                              proj_loss*(1-warmup_weight)
+        
         # regularization 
         if 'frame_cyc_dis' in rendered.keys():
             # cycle loss
@@ -1062,7 +1060,6 @@ class v2s_net(nn.Module):
 
         # bone location regularization: pull bones away from empth space (low sdf)
         if opts.lbs and opts.bone_loc_reg:
-            #TODO need to update bones locally
             bone_xyz_embed = self.embedding_xyz(self.bones[:,None,:3])
             sdf_at_bone = evaluate_mlp(self.nerf_coarse, bone_xyz_embed,
                                             sigma_only=True)
@@ -1072,6 +1069,18 @@ class v2s_net(nn.Module):
             #bone_loc_loss = grad_update_bone(self.bones, self.embedding_xyz,
             #                        self.nerf_vis, opts.learning_rate)
             aux_out['bone_loc_loss'] = bone_loc_loss
+            #mesh_rest = self.latest_vars['mesh_rest']
+            #if len(mesh_rest.vertices)>100: # not a degenerate mesh
+            #    mesh_rest = structures.meshes.Meshes(
+            #            verts=torch.Tensor(mesh_rest.vertices[None]),
+            #            faces=torch.Tensor(mesh_rest.faces[None]))
+            #    shape_samp = pytorch3d.ops.sample_points_from_meshes(mesh_rest,
+            #                            1000, return_normals=False)
+            #    shape_samp = shape_samp[0].to(self.device)
+            #    samploss = SamplesLoss(loss="sinkhorn", p=2, blur=.05)
+            #    bone_loc_loss = 0.1*samploss(self.bones[:,:3], shape_samp).mean()
+            #    total_loss = total_loss + bone_loc_loss
+            #    aux_out['bone_loc_loss'] = bone_loc_loss
             
         # visibility loss
         if 'vis_loss' in rendered.keys():

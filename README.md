@@ -51,6 +51,8 @@ python submit.py scripts/template.sh ncat-509-correspdp-lbs-ropt-10f nerfies_cat
 python submit.py scripts/template.sh redo-mcat-6-corresp-lbs-flowdp-rot1 mcat_6 10168 --num_epochs 40 --use_corresp --lbs --flow_dp --rot_angle 1
 python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 cat_601-lbs-correspd-root-cnn-8gpu cat_601 10041 --num_epochs 30 --use_corresp --lbs --root_opt --flow_dp --nouse_cam --cnn_root
 bash scripts/template-mgpu.sh 0 test-sfm cat_905 10010 --num_epochs 30 --use_corresp --root_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --lbs
+python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats4-lbsn-correspdv-ropt3 sfm-mcats4 10002 --num_epochs 30 --lbs --use_corresp --flow_dp --use_viser --root_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth
+python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 cat_905-lbsn-correspdv-ropt-ft2 cat_905 10005 --num_epochs 30 --lbs --use_corresp --use_viser --flow_dp --root_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --model_path logdir/sfm-mcats4-lbsn-correspdv-ropt-100ep/params_100.pth --use_proj --warmup_init_steps 0 --reinit_bone_steps 0 --noanneal_freq --warmup_steps 0
 ```
 
 To draw root pose trajectory

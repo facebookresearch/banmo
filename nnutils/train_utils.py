@@ -761,12 +761,12 @@ class v2s_trainer(Trainer):
         """
         opts = self.opts
 
-        ## during kp reprojection optimization
-        #if (opts.use_proj and self.model.module.progress > opts.proj_start and \
-        #        self.model.module.progress < (opts.proj_end+opts.proj_start)/2):
-        #    self.model.module.cvf_update = 1
-        #else:
-        #    self.model.module.cvf_update = 0
+        # during kp reprojection optimization
+        if (opts.use_proj and self.model.module.progress > opts.proj_start and \
+               self.model.module.progress < (opts.proj_start+opts.proj_end)/2):
+            self.model.module.cvf_update = 1
+        else:
+            self.model.module.cvf_update = 0
 
         if opts.freeze_cvf:
             self.model.module.cvf_update = 1
@@ -782,9 +782,8 @@ class v2s_trainer(Trainer):
         # or during kp reprojection optimization
         if (opts.model_path!='' and \
         self.model.module.progress < opts.warmup_init_steps + opts.warmup_steps)\
-        :
-        # or (opts.use_proj and self.model.module.progress > opts.proj_start and \
-        #       self.model.module.progress < (opts.proj_end+opts.proj_start)/2):
+         or (opts.use_proj and self.model.module.progress > opts.proj_start and \
+               self.model.module.progress <(opts.proj_start + opts.proj_end)/2):
             self.model.module.shape_update = 1
         else:
             self.model.module.shape_update = 0
@@ -824,7 +823,7 @@ class v2s_trainer(Trainer):
             self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
         
         # reinit bones based on extracted surface
-        if opts.lbs and (epoch==int(self.num_epochs*(opts.warmup_init_steps+opts.warmup_steps)) or\
+        if opts.lbs and (epoch==int(self.num_epochs*opts.reinit_bone_steps) or\
                          epoch==int(self.num_epochs*opts.warmup_init_steps)):
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer

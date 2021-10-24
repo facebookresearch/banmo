@@ -317,6 +317,10 @@ class v2s_trainer(Trainer):
         # this is important for volume matching
         self.model.latest_vars['obj_bound'] = latest_vars['obj_bound'] 
 
+        ##TODO change beta 
+        #self.model.nerf_coarse.beta.data = states['nerf_coarse.beta'].log()
+        #self.del_key( states, 'nerf_coarse.beta')
+
         # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat
         self.model.load_state_dict(states, strict=False)
     
@@ -762,7 +766,7 @@ class v2s_trainer(Trainer):
         opts = self.opts
 
         # during kp reprojection optimization
-        if (opts.use_proj and self.model.module.progress > opts.proj_start and \
+        if (opts.freeze_proj and self.model.module.progress > opts.proj_start and \
                self.model.module.progress < (opts.proj_start+opts.proj_end)/2):
             self.model.module.cvf_update = 1
         else:
@@ -782,7 +786,7 @@ class v2s_trainer(Trainer):
         # or during kp reprojection optimization
         if (opts.model_path!='' and \
         self.model.module.progress < opts.warmup_init_steps + opts.warmup_steps)\
-         or (opts.use_proj and self.model.module.progress > opts.proj_start and \
+         or (opts.freeze_proj and self.model.module.progress > opts.proj_start and \
                self.model.module.progress <(opts.proj_start + opts.proj_end)/2):
             self.model.module.shape_update = 1
         else:

@@ -162,6 +162,7 @@ flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value 
 #viser
 flags.DEFINE_bool('use_viser', False, 'whether to use viser')
 flags.DEFINE_bool('use_proj', False, 'whether to use reprojection loss')
+flags.DEFINE_bool('freeze_proj', False, 'whether to freeze some params w/ proj loss')
 flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
 flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
 flags.DEFINE_bool('freeze_root',False, 'whether to freeze root pose')
@@ -1015,17 +1016,20 @@ class v2s_net(nn.Module):
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
         
         if opts.use_proj:
-            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.2
+            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.1
             aux_out['proj_loss'] = proj_loss
-            # warm up by only using projection loss to optimize bones
-            # only add it after feature volume is trained well
-            warmup_weight = (self.progress - opts.proj_start)/(opts.proj_end-opts.proj_start)
-            warmup_weight = (warmup_weight - 0.5) * 2
-            warmup_weight = np.clip(warmup_weight, 0,1)
-            if (self.progress > opts.proj_start and \
-                self.progress < opts.proj_end):
-                total_loss = total_loss*warmup_weight + \
-                              proj_loss*(1-warmup_weight)
+            if opts.freeze_proj:
+                # warm up by only using projection loss to optimize bones
+                warmup_weight = (self.progress - opts.proj_start)/(opts.proj_end-opts.proj_start)
+                warmup_weight = (warmup_weight - 0.5) * 2
+                warmup_weight = np.clip(warmup_weight, 0,1)
+                if (self.progress > opts.proj_start and \
+                    self.progress < opts.proj_end):
+                    total_loss = total_loss*warmup_weight + \
+                               2*proj_loss*(1-warmup_weight)
+            elif self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+                # only add it after feature volume is trained well
+                total_loss = total_loss + proj_loss
         
         # regularization 
         if 'frame_cyc_dis' in rendered.keys():
@@ -1095,7 +1099,7 @@ class v2s_net(nn.Module):
             aux_out['skin_scale'] = self.skin_aux[0].clone().detach()
             aux_out['skin_const'] = self.skin_aux[1].clone().detach()
         aux_out['total_loss'] = total_loss
-        aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]
+        aux_out['beta'] = self.nerf_coarse.beta.clone().detach().exp()[0]
         return total_loss, aux_out
 
     def forward_warmup(self, batch):

@@ -126,7 +126,6 @@ class NeRF(nn.Module):
 
         self.raw_feat = raw_feat
 
-        init_beta = np.log(init_beta)
         self.beta = torch.Tensor([init_beta]) # logbeta
         self.beta = nn.Parameter(self.beta)
         

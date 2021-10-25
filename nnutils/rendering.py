@@ -173,7 +173,7 @@ def render_rays(models,
         sigmas = sigmas+noise
         #sigmas = F.softplus(sigmas)
         #sigmas = torch.relu(sigmas)
-        ibetas = 1/model.beta.exp()
+        ibetas = 1/(model.beta.abs()+1e-9)
         #ibetas = 100
         sdf = -sigmas
         sigmas = (0.5 + 0.5 * sdf.sign() * torch.expm1(-sdf.abs() * ibetas))

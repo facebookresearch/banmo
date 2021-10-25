@@ -267,7 +267,7 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
             # cpix, cpts
             # distance metric
             cost_subchunk = (vol_feat_chunk[None] * \
-                    feats_chunk[:,None]).sum(-1) * nerf_feat.beta
+                    feats_chunk[:,None]).sum(-1) * (nerf_feat.beta.abs()+1e-9)
             cost_chunk.append(cost_subchunk)
         cost_chunk = torch.cat(cost_chunk,0) # (nsample, cpts)
         cost_vol.append(cost_chunk)

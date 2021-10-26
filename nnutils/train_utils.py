@@ -319,7 +319,7 @@ class v2s_trainer(Trainer):
         self.model.latest_vars['obj_bound'] = latest_vars['obj_bound'] 
 
         ##TODO change beta 
-        #self.model.nerf_coarse.beta.data = states['nerf_coarse.beta'].log()
+        #self.model.nerf_coarse.beta.data = states['nerf_coarse.beta'].exp()
         #self.del_key( states, 'nerf_coarse.beta')
 
         # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat

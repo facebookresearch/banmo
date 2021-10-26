@@ -158,7 +158,12 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     """
     # part1: matching
     pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
-            bound,is_training=is_training)
+            bound,grid_size=20,is_training=is_training)
+    ## iterative matching
+    #bound = bound/4
+    #pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
+    #        bound,grid_size=10,is_training=is_training, init_pts=pts_pred)
+
 
     # part2: compute loss
     bs     = pts_prob.shape[0]
@@ -231,7 +236,7 @@ def kp_reproj_loss(pts_pred, xys, models, embeddings, rays):
     
     
 def feat_match(nerf_feat, embedding_xyz, feats, bound, 
-        is_training=True):
+        grid_size=20,is_training=True, init_pts=None):
     """
     feats:    bs, ns, num_feat
     """
@@ -240,7 +245,6 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
     else:
         chunk_pts = 1024
     chunk_pix = 200
-    grid_size = 20
     bs,N,num_feat = feats.shape
     device = feats.device
     nsample = bs*N
@@ -253,20 +257,42 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
     query_yxz = torch.Tensor(query_yxz).to(device).view(-1, 3)
     query_xyz = torch.cat([query_yxz[:,1:2], query_yxz[:,0:1], query_yxz[:,2:3]],-1)
 
+    if init_pts is not None:
+        query_xyz = query_xyz[None] + init_pts[:,None]
+    else:
+        # N x Ns x 3
+        query_xyz = query_xyz[None]
+
+    #TODO inject some noise at training time
+    if is_training:
+        query_xyz = query_xyz + torch.randn_like(query_xyz[:,0])[:,None] \
+                * float(bound * 0.05)
+
     cost_vol = []
     for i in range(0,grid_size**3,chunk_pts):
-        query_xyz_chunk = query_xyz[i:i+chunk_pts]
-        xyz_embedded = embedding_xyz(query_xyz_chunk)[:,None] # (N,1,...)
-        vol_feat_chunk = evaluate_mlp(nerf_feat, xyz_embedded)[:,0] # (chunk, num_feat)
-        # normalize vol feat
-        vol_feat_chunk = F.normalize(vol_feat_chunk,2,-1)
+        if init_pts is None:
+            query_xyz_chunk = query_xyz[0,i:i+chunk_pts]
+            xyz_embedded = embedding_xyz(query_xyz_chunk)[:,None] # (N,1,...)
+            vol_feat_subchunk = evaluate_mlp(nerf_feat, xyz_embedded)[:,0] # (chunk, num_feat)
+            # normalize vol feat
+            vol_feat_subchunk = F.normalize(vol_feat_subchunk,2,-1)[None]
 
         cost_chunk = []
         for j in range(0,nsample,chunk_pix):
             feats_chunk = feats[j:j+chunk_pix] # (chunk pix, num_feat)
+     
+            if init_pts is not None:
+                #TODO only query 3d grid according to each px when they are diff
+                # vol feature
+                query_xyz_chunk = query_xyz[j:j+chunk_pix,i:i+chunk_pts].clone()
+                xyz_embedded = embedding_xyz(query_xyz_chunk)
+                vol_feat_subchunk = evaluate_mlp(nerf_feat, xyz_embedded)
+                # normalize vol feat
+                vol_feat_subchunk = F.normalize(vol_feat_subchunk,2,-1)
+
             # cpix, cpts
             # distance metric
-            cost_subchunk = (vol_feat_chunk[None] * \
+            cost_subchunk = (vol_feat_subchunk * \
                     feats_chunk[:,None]).sum(-1) * (nerf_feat.beta.abs()+1e-9)
             cost_chunk.append(cost_subchunk)
         cost_chunk = torch.cat(cost_chunk,0) # (nsample, cpts)
@@ -276,7 +302,8 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
 
     # regress to the true location, n,3
     if not is_training: torch.cuda.empty_cache()
-    pts_pred = (prob_vol[...,None] * query_xyz[None]).sum(1)
+    # n, ns, 1 * n, ns, 3
+    pts_pred = (prob_vol[...,None] * query_xyz).sum(1)
     return pts_pred
 
 

@@ -81,13 +81,13 @@ def draw_lines_ray_canonical(near_plane_mskd, pts_exp, img_mskd, path):
     len_color = len(colormap)
     meshes = []
     idx=0
-    for i in range(len(near_plane_mskd)):
-        if i%30==0:
-            segment = np.stack([near_plane_mskd[i], pts_exp[i]])
-            line = trimesh.creation.cylinder(0.0001, 
-                    segment=segment,sections=5, vertex_colors=colormap[idx%len_color])
-            meshes.append(line)
-            idx+=1
+    num_pts = len(near_plane_mskd)
+    for i in range(0,num_pts, num_pts//50): # display 50 points
+        segment = np.stack([near_plane_mskd[i], pts_exp[i]])
+        line = trimesh.creation.cylinder(0.0001, 
+                segment=segment,sections=5, vertex_colors=colormap[idx%len_color])
+        meshes.append(line)
+        idx+=1
     meshes = trimesh.util.concatenate(meshes)
     meshes.export(path)
 

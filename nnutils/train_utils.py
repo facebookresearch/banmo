@@ -279,8 +279,9 @@ class v2s_trainer(Trainer):
         
         if is_eval:
             # TODO: modify states to be compatible with possibly more datasets
-            len_prev_fr = states['near_far'].shape[0]
-            self.model.near_far.data[:len_prev_fr] = states['near_far']
+            len_prev_fr = min(states['near_far'].shape[0], 
+                              self.model.near_far.shape[0])
+            self.model.near_far.data[:len_prev_fr] = states['near_far'][:len_prev_fr] 
 
             if self.opts.use_sim3:
                 len_prev_vid= states['sim3_j2c'].shape[0]
@@ -289,10 +290,10 @@ class v2s_trainer(Trainer):
 
             if self.opts.root_opt:
                 self.model.root_code.weight.data[:len_prev_fr] = \
-                   states['root_code.weight']
+                   states['root_code.weight'][:len_prev_fr] 
             if self.opts.lbs or self.opts.flowbw:
                 self.model.pose_code.weight.data[:len_prev_fr] = \
-                   states['pose_code.weight']
+                   states['pose_code.weight'][:len_prev_fr] 
 
             self.model.env_code.weight.data = \
                 states['env_code.weight']

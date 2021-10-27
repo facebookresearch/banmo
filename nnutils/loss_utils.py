@@ -159,7 +159,7 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     ### part1: matching
     pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
             bound,grid_size=20,is_training=is_training)
-    ##TODO iterative matching 2
+    #TODO iterative matching 2
     #pts_pred1 = feat_match(nerf_feat, embedding_xyz, feats, 
     #        bound,grid_size=20,is_training=is_training)
     #pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
@@ -278,7 +278,7 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
         query_xyz = query_xyz[None]
 
     #TODO inject some noise at training time
-    if is_training:
+    if is_training and init_pts is None:
         query_xyz = query_xyz + torch.randn_like(query_xyz[:,0])[:,None] \
                 * float(bound * 0.05)
 

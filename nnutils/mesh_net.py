@@ -601,6 +601,7 @@ class v2s_net(nn.Module):
         del results['weights_coarse']
         del results['xyz_coarse_sampled']
         del results['xyz_coarse_frame']
+
         if opts.debug:
             torch.cuda.synchronize()
             print('feature mtaching time: %.2f'%(time.time()-start_time))

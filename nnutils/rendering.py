@@ -135,7 +135,9 @@ def render_rays(models,
 
     #TODO
     # output: 
-    # with loss: 'img_coarse', 'sil_coarse',  'vis_loss', 'flo/fdp_coarse', 'flo_fdp_valid'
+    # with loss: 'img_coarse', 'sil_coarse',  'vis_loss', 
+    #            'flo/fdp_coarse', 'flo_fdp_valid',
+    # 
     #            'xyz_coarse_sampled', 'weights_coarse'
     # w/o  loss: 'depth_coarse', 'joint_render', 'xyz_coarse_frame'
     result, weights_coarse = inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,

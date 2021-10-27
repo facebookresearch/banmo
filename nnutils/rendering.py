@@ -136,18 +136,17 @@ def render_rays(models,
 
     #TODO
     # output: 
-    # with loss: 'img_coarse', 'sil_coarse',  'vis_loss', 
-    #            'flo/fdp_coarse', 'flo_fdp_valid',
-    # 
-    #            'xyz_coarse_sampled', 'weights_coarse'
-    # w/o  loss: 'depth_coarse', 'joint_render', 'xyz_coarse_frame'
+    # [a] c+f loss:   'img_coarse', 'sil_coarse',
+    # [s] coarse-loss: 'vis_loss', 'flo/fdp_coarse', 'flo/fdp_valid',
+    # [u] fine loss:   'feat_err', 'proj_err (not used)' 
+    # [u] w/o  loss:   'depth_rnd', 'joint_render', 'pts_pred', 'pts_exp'
+    
     result, weights_coarse = inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                               N_rays, embedding_xyz, rays_d, noise_std,
                               obj_bound, dir_embedded, z_vals,
                               xys, img_size)
+
     # for fine model, change z_vals, models to fine, sampled points
-
-
     if use_fine: # sample points for fine model
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
         z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
@@ -160,10 +159,16 @@ def render_rays(models,
                            rays_d.unsqueeze(1) * z_vals.unsqueeze(2)
                            # (N_rays, N_samples+N_importance, 3)
 
-        result,_ = inference_deform(xyz_fine_sampled, rays, models, chunk, N_samples,
+        result_fine,_ = inference_deform(xyz_fine_sampled, rays, models, chunk, N_samples,
                               N_rays, embedding_xyz, rays_d, noise_std,
                               obj_bound, dir_embedded, z_vals,
                               xys, img_size)
+        update_keys = ['feat_err', 'proj_err', 'depth_rnd', 'joint_render', 
+                       'pts_pred', 'pts_exp']
+        for k in update_keys: result[k] = result_fine[k]
+
+        append_keys = ['img_coarse', 'sil_coarse']
+        for k in append_keys: result[k+'_fine'] = result_fine[k]
     return result
     
 def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 
@@ -376,12 +381,12 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     else:
         env_code = None
 
-    rgb_coarse, depth_coarse, weights_coarse, vis_coarse = \
+    rgb_coarse, depth_rnd, weights_coarse, vis_coarse = \
         inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                 dir_embedded, z_vals, N_rays, N_samples, chunk, noise_std,
                 weights_only=False, env_code=env_code)
     result = {'img_coarse': rgb_coarse,
-              'depth_coarse': depth_coarse,
+              'depth_rnd': depth_rnd,
               'sil_coarse': weights_coarse[:,:-1].sum(1),
              }
     

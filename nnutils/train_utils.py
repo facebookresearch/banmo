@@ -1097,7 +1097,7 @@ class v2s_trainer(Trainer):
     def add_image_grid(self, rendered_seq, log, epoch):
         for k,v in rendered_seq.items():
             grid_img = image_grid(rendered_seq[k],3,3)
-            if k=='depth_coarse':scale=True
+            if k=='depth_rnd':scale=True
             if k=='occ':scale=True
             else: scale=False
             self.add_image(log, k, grid_img, epoch, scale=scale)

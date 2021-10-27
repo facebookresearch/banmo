@@ -194,7 +194,7 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     feat_err = feat_err .view(base_shape+(1,))
     return pts_pred, pts_exp, feat_err
     
-def kp_reproj_loss(pts_pred, xys, models, embeddings_xyz, rays):
+def kp_reproj_loss(pts_pred, xys, models, embedding_xyz, rays):
     """
     pts_pred,   ...,3
     xys,        bs,n,2

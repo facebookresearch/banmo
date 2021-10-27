@@ -32,7 +32,8 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 canonical2ndc, obj_to_cam, vec_to_sim3, \
                                 near_far_to_bound, compute_flow_geodist, \
                                 compute_flow_cse, fb_flow_check, pinhole_cam, \
-                                render_color, mask_aug, bbox_dp2rnd, resample_dp
+                                render_color, mask_aug, bbox_dp2rnd, resample_dp, \
+                                vrender_flo
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
                             feat_match_loss, kp_reproj_loss, grad_update_bone
@@ -445,6 +446,10 @@ class v2s_net(nn.Module):
 
     def nerf_render(self, rtk, kaug, embedid, img_size, nsample=256, ndepth=128):
         opts=self.opts
+        # render rays
+        if opts.debug:
+            torch.cuda.synchronize()
+            start_time = time.time()
         Rmat = rtk[:,:3,:3]
         Tmat = rtk[:,:3,3]
         Kmat = K2mat(rtk[:,3,:])
@@ -509,8 +514,11 @@ class v2s_net(nn.Module):
         if opts.env_code:
             rays['env_code'] = self.env_code(self.dataid.long().to(self.device))
             rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
+        
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('prepare rendering time: %.2f'%(time.time()-start_time))
 
-        # render rays
         bs_rays = rays['bs'] * rays['nsample'] # over pixels
         results=defaultdict(list)
         for i in range(0, bs_rays, opts.chunk):
@@ -531,6 +539,8 @@ class v2s_net(nn.Module):
                         chunk=opts.chunk, # chunk size is effective in val mode
                         obj_bound=self.latest_vars['obj_bound'],
                         use_fine=use_fine,
+                        xys=xys,
+                        img_size=img_size,
                         )
             for k, v in rendered_chunks.items():
                 results[k] += [v]
@@ -545,6 +555,9 @@ class v2s_net(nn.Module):
                 else:
                     v = v.view(bs,img_size, img_size, -1)
             results[k] = v
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('rendering time: %.2f'%(time.time()-start_time))
         
         # viser feature matching
         if opts.use_viser:
@@ -585,68 +598,12 @@ class v2s_net(nn.Module):
             #pdb.set_trace()
             ## visualization
             #vis_viser(rts, results, self.masks, self.imgs, bs,img_size, ndepth)
+        del results['weights_coarse']
         del results['xyz_coarse_sampled']
         del results['xyz_coarse_frame']
-
-       
-        # render flow 
-        # bs, nsamp, -1, x
-        weights_coarse = results['weights_coarse'].clone()
-        weights_shape = weights_coarse.shape
-        xyz_coarse_target = results['xyz_coarse_target']
-        xyz_coarse_target = xyz_coarse_target.view(weights_shape+(3,))
-        xy_coarse_target = xyz_coarse_target[...,:2]
-
-        # deal with negative z
-        invalid_ind = torch.logical_or(xyz_coarse_target[...,-1]<1e-5,
-                               xy_coarse_target.norm(2,-1).abs()>2*img_size)
-        weights_coarse[invalid_ind] = 0.
-        xy_coarse_target[invalid_ind] = 0.
-
-        # renormalize
-        weights_coarse = weights_coarse/(1e-9+weights_coarse.sum(-1)[...,None])
-
-        # candidate motion vector
-        xys_unsq = xys.view(weights_shape[:-1]+(1,2))
-        flo_coarse = xy_coarse_target - xys_unsq
-        flo_coarse =  weights_coarse[...,None] * flo_coarse
-        flo_coarse = flo_coarse.sum(-2)
-
-        ## candidate target point
-        #xys_unsq = xys.view(weights_shape[:-1]+(2,))
-        #xy_coarse_target = weights_coarse[...,None] * xy_coarse_target
-        #xy_coarse_target = xy_coarse_target.sum(-2)
-        #flo_coarse = xy_coarse_target - xys_unsq
-
-        results['flo_coarse'] = flo_coarse/img_size * 2
-        results['flo_valid'] = (invalid_ind.sum(-1)==0).float()[...,None]
-        del results['xyz_coarse_target']
-
-        if 'xyz_coarse_dentrg' in results.keys():
-            weights_coarse = results['weights_coarse'].clone()
-            xyz_coarse_dentrg = results['xyz_coarse_dentrg']
-            xyz_coarse_dentrg = xyz_coarse_dentrg.view(weights_shape+(3,))
-            xy_coarse_dentrg = xyz_coarse_dentrg[...,:2]
-
-            # deal with negative z
-            invalid_ind = torch.logical_or(xyz_coarse_dentrg[...,-1]<1e-5,
-                                   xy_coarse_dentrg.norm(2,-1).abs()>2*img_size)
-            weights_coarse[invalid_ind] = 0.
-            xy_coarse_dentrg[invalid_ind] = 0.
-
-            # renormalize
-            weights_coarse = weights_coarse/(1e-9+weights_coarse.sum(-1)[...,None])
-
-            # candidate motion vector
-            xys_unsq = xys.view(weights_shape[:-1]+(1,2))
-            fdp = xy_coarse_dentrg - xys_unsq
-            fdp =  weights_coarse[...,None] * fdp
-            fdp = fdp.sum(-2)
-
-            results['fdp_coarse'] = fdp/img_size * 2
-            results['fdp_valid'] = (invalid_ind.sum(-1)==0).float()[...,None]
-            del results['xyz_coarse_dentrg']
-        del results['weights_coarse']
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('feature mtaching time: %.2f'%(time.time()-start_time))
 
         if opts.use_dp:
             # visualize cse predictions
@@ -666,6 +623,9 @@ class v2s_net(nn.Module):
         #            vertex_colors=self.dp_vis.cpu()).export('0.obj')
         #    trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
         # vertex_colors=dp_vis_pred[0].view(-1,3).cpu()).export('1.obj')
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('compute flow time: %.2f'%(time.time()-start_time))
                
         
         return results, rand_inds
@@ -935,6 +895,9 @@ class v2s_net(nn.Module):
         rendered_sil = rendered['sil_coarse']
         img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3
         sil_at_samp = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('set input + render time:%.2f'%(time.time()-start_time))
            
         # image and silhouette loss
         img_loss = (rendered_img - img_at_samp).pow(2)

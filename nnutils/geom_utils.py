@@ -351,6 +351,7 @@ def render_color(renderer, in_verts, faces, colors, texture_type='vertex'):
 
 def render_flow(renderer, verts, faces, verts_n):
     """
+    rasterization
     verts in ndc
     verts: ...,N,3/4
     verts_n: ...,N,3/4
@@ -1198,3 +1199,45 @@ def resample_dp(dp_feats, dp_bbox, kaug, target_size):
     xygrid = xygrid / dp_size * 2 - 1 
     dp_feats_rsmp = F.grid_sample(dp_feats, xygrid.view(-1,target_size,target_size,2))
     return dp_feats_rsmp
+
+
+def vrender_flo(weights_coarse, xyz_coarse_target, xys, img_size):
+    """
+    weights_coarse:     ..., ndepth
+    xyz_coarse_target:  ..., ndepth, 3
+    flo_coarse:         ..., 2
+    flo_valid:          ..., 1
+    """
+    # render flow 
+    weights_coarse = weights_coarse.clone()
+    xyz_coarse_target = xyz_coarse_target.clone()
+
+    # bs, nsamp, -1, x
+    weights_shape = weights_coarse.shape
+    xyz_coarse_target = xyz_coarse_target.view(weights_shape+(3,))
+    xy_coarse_target = xyz_coarse_target[...,:2]
+
+    # deal with negative z
+    invalid_ind = torch.logical_or(xyz_coarse_target[...,-1]<1e-5,
+                           xy_coarse_target.norm(2,-1).abs()>2*img_size)
+    weights_coarse[invalid_ind] = 0.
+    xy_coarse_target[invalid_ind] = 0.
+
+    # renormalize
+    weights_coarse = weights_coarse/(1e-9+weights_coarse.sum(-1)[...,None])
+
+    # candidate motion vector
+    xys_unsq = xys.view(weights_shape[:-1]+(1,2))
+    flo_coarse = xy_coarse_target - xys_unsq
+    flo_coarse =  weights_coarse[...,None] * flo_coarse
+    flo_coarse = flo_coarse.sum(-2)
+
+    ## candidate target point
+    #xys_unsq = xys.view(weights_shape[:-1]+(2,))
+    #xy_coarse_target = weights_coarse[...,None] * xy_coarse_target
+    #xy_coarse_target = xy_coarse_target.sum(-2)
+    #flo_coarse = xy_coarse_target - xys_unsq
+
+    flo_coarse = flo_coarse/img_size * 2
+    flo_valid = (invalid_ind.sum(-1)==0).float()[...,None]
+    return flo_coarse, flo_valid

@@ -6,7 +6,7 @@ from pytorch3d import transforms
 
 from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
                                vec_to_sim3, rtmat_invert, rot_angle, mlp_skinning,\
-                               bone_transform, skinning
+                               bone_transform, skinning, vrender_flo
 from nnutils.nerf import evaluate_mlp
 from nnutils.loss_utils import elastic_loss, visibility_loss
 
@@ -75,6 +75,8 @@ def render_rays(models,
                 chunk=1024*32,
                 obj_bound=None,
                 use_fine=False,
+                xys=None,
+                img_size=None,
                 ):
     """
     Render rays by computing the output of @model applied on @rays
@@ -132,9 +134,14 @@ def render_rays(models,
                          rays_d.unsqueeze(1) * z_vals.unsqueeze(2) # (N_rays, N_samples, 3)
 
     #TODO
+    # output: 
+    # with loss: 'img_coarse', 'sil_coarse',  'vis_loss', 'flo/fdp_coarse', 'flo_fdp_valid'
+    #            'xyz_coarse_sampled', 'weights_coarse'
+    # w/o  loss: 'depth_coarse', 'joint_render', 'xyz_coarse_frame'
     result, weights_coarse = inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                               N_rays, embedding_xyz, rays_d, noise_std,
-                              obj_bound, dir_embedded, z_vals)
+                              obj_bound, dir_embedded, z_vals,
+                              xys, img_size)
     # for fine model, change z_vals, models to fine, sampled points
 
 
@@ -152,7 +159,8 @@ def render_rays(models,
 
         result,_ = inference_deform(xyz_fine_sampled, rays, models, chunk, N_samples,
                               N_rays, embedding_xyz, rays_d, noise_std,
-                              obj_bound, dir_embedded, z_vals)
+                              obj_bound, dir_embedded, z_vals,
+                              xys, img_size)
     return result
     
 def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 
@@ -256,7 +264,8 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
     
 def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                          N_rays, embedding_xyz, rays_d, noise_std,
-                         obj_bound, dir_embedded, z_vals):
+                         obj_bound, dir_embedded, z_vals,
+                         xys, img_size):
     if 'sim3_j2c' in rays.keys():
         # similarity transform to the joint canoical space
         sim3_j2c = rays['sim3_j2c'][:,None]
@@ -398,7 +407,6 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
     xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
         
-    result['xyz_coarse_target'] = xyz_coarse_target
     result['weights_coarse'] = weights_coarse
     result['xyz_coarse_sampled'] = xyz_coarse_sampled 
     result['xyz_coarse_frame']   = xyz_coarse_frame 
@@ -423,7 +431,6 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
         xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat, Tmat) 
         xyz_coarse_dentrg = pinhole_cam(xyz_coarse_dentrg,K)
         
-        result['xyz_coarse_dentrg'] = xyz_coarse_dentrg
         
         
     if 'flowbw' in models.keys() or  'bones' in models.keys():
@@ -452,4 +459,18 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     if 'nerf_vis' in models.keys():
         result['vis_loss'] = visibility_loss(models['nerf_vis'], embedding_xyz,
                         xyz_coarse_sampled, vis_coarse, obj_bound, chunk)
+
+    # render flow 
+    flo_coarse, flo_valid = vrender_flo(weights_coarse, xyz_coarse_target,
+                                        xys, img_size)
+    result['flo_coarse'] = flo_coarse
+    result['flo_valid'] = flo_valid
+
+    if 'rtk_vec_dentrg' in rays.keys():
+        fdp_coarse, fdp_valid = vrender_flo(weights_coarse, 
+                                            xyz_coarse_dentrg, xys, img_size)
+        result['fdp_coarse'] = fdp_coarse
+        result['fdp_valid'] = fdp_valid
+
+
     return result, weights_coarse

@@ -74,8 +74,7 @@ def render_rays(models,
                 N_importance=0,
                 chunk=1024*32,
                 obj_bound=None,
-                white_back=False,
-                test_time=False
+                use_fine=False,
                 ):
     """
     Render rays by computing the output of @model applied on @rays
@@ -90,124 +89,13 @@ def render_rays(models,
         noise_std: factor to perturb the model's prediction of sigma
         N_importance: number of fine samples per ray
         chunk: the chunk size in batched inference
-        white_back: whether the background is white (dataset dependent)
-        test_time: whether it is test (inference only) or not. If True, it will not do inference
-                   on coarse rgb to save time
 
     Outputs:
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
-
-    def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 
-            env_code=None, weights_only=False):
-        """
-        Helper function that performs model inference.
-
-        Inputs:
-            model: NeRF model (coarse or fine)
-            embedding_xyz: embedding module for xyz
-            xyz_: (N_rays, N_samples_, 3) sampled positions
-                  N_samples_ is the number of sampled points in each ray;
-                             = N_samples for coarse model
-                             = N_samples+N_importance for fine model
-            dir_: (N_rays, 3) ray directions
-            dir_embedded: (N_rays, embed_dir_channels) embedded directions
-            z_vals: (N_rays, N_samples_) depths of the sampled positions
-            weights_only: do inference on sigma only or not
-
-        Outputs:
-            if weights_only:
-                weights: (N_rays, N_samples_): weights of each sample
-            else:
-                rgb_final: (N_rays, 3) the final rgb image
-                depth_final: (N_rays) depth map
-                weights: (N_rays, N_samples_): weights of each sample
-        """
-        N_samples_ = xyz_.shape[1]
-        # Embed directions
-        xyz_ = xyz_.view(-1, 3) # (N_rays*N_samples_, 3)
-        if not weights_only:
-            dir_embedded = torch.repeat_interleave(dir_embedded, repeats=N_samples_, dim=0)
-                           # (N_rays*N_samples_, embed_dir_channels)
-
-        # Perform model inference to get rgb and raw sigma
-        B = xyz_.shape[0]
-        #out_chunks = []
-        #for i in range(0, B, chunk):
-        #    # Embed positions by chunk
-        #    xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
-        #    if not weights_only:
-        #        xyzdir_embedded = torch.cat([xyz_embedded,
-        #                                     dir_embedded[i:i+chunk]], 1)
-        #    else:
-        #        xyzdir_embedded = xyz_embedded
-        #    out_chunks += [model(xyzdir_embedded, sigma_only=weights_only)]
-        #out = torch.cat(out_chunks, 0)
-        out = evaluate_mlp(model, xyz_.view(N_rays,N_samples,3), 
-                embed_xyz = embedding_xyz,
-                dir_embedded = dir_embedded.view(N_rays,N_samples,-1),
-                code=env_code,
-                chunk=chunk//N_samples, sigma_only=weights_only).view(B,-1)
-
-        if weights_only:
-            sigmas = out.view(N_rays, N_samples_)
-        else:
-            rgbsigma = out.view(N_rays, N_samples_, 4)
-            rgbs = rgbsigma[..., :3] # (N_rays, N_samples_, 3)
-            sigmas = rgbsigma[..., 3] # (N_rays, N_samples_)
-
-        # Convert these values using volume rendering (Section 4)
-        deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
-        # a hacky way to ensures prob. sum up to 1     
-        # while the prob. of last bin does not correspond with the values
-        delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
-        deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
-
-        # Multiply each distance by the norm of its corresponding direction ray
-        # to convert to real world distance (accounts for non-unit directions).
-        deltas = deltas * torch.norm(dir_.unsqueeze(1), dim=-1)
-
-        noise = torch.randn(sigmas.shape, device=sigmas.device) * noise_std
-
-        # compute alpha by the formula (3)
-        sigmas = sigmas+noise
-        #sigmas = F.softplus(sigmas)
-        #sigmas = torch.relu(sigmas)
-        ibetas = 1/(model.beta.abs()+1e-9)
-        #ibetas = 100
-        sdf = -sigmas
-        sigmas = (0.5 + 0.5 * sdf.sign() * torch.expm1(-sdf.abs() * ibetas))
-        sigmas = sigmas * ibetas
-
-        alphas = 1-torch.exp(-deltas*sigmas) # (N_rays, N_samples_), p_i
-        alphas_shifted = \
-            torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, a1, a2, ...]
-        alpha_prod = torch.cumprod(alphas_shifted, -1)[:, :-1]
-        weights = alphas * alpha_prod # (N_rays, N_samples_)
-        weights_sum = weights.sum(1) # (N_rays), the accumulated opacity along the rays
-                                     # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
-        visibility = alpha_prod.detach() # 1 q_0 q_j-1
-        if weights_only:
-            return weights
-
-        # compute final weighted outputs
-        rgb_final = torch.sum(weights.unsqueeze(-1)*rgbs, -2) # (N_rays, 3)
-        depth_final = torch.sum(weights*z_vals, -1) # (N_rays)
-
-        if white_back:
-            rgb_final = rgb_final + 1-weights_sum.unsqueeze(-1)
-
-        return rgb_final, depth_final, weights, visibility
-
-
     # Extract models from lists
-    model_coarse = models['coarse']
     embedding_xyz = embeddings['xyz']
     embedding_dir = embeddings['dir']
-    if 'env_code' in rays.keys():
-        env_code = rays['env_code']
-    else:
-        env_code = None
 
     # Decompose the inputs
     rays_o = rays['rays_o']
@@ -238,10 +126,137 @@ def render_rays(models,
         perturb_rand = perturb * torch.rand(z_vals.shape, device=rays_d.device)
         z_vals = lower + (upper - lower) * perturb_rand
 
+    # zvals are not optimized
     # produce points in the root body space
     xyz_coarse_sampled = rays_o.unsqueeze(1) + \
                          rays_d.unsqueeze(1) * z_vals.unsqueeze(2) # (N_rays, N_samples, 3)
 
+    #TODO
+    result, weights_coarse = inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
+                              N_rays, embedding_xyz, rays_d, noise_std,
+                              obj_bound, dir_embedded, z_vals)
+    # for fine model, change z_vals, models to fine, sampled points
+
+
+    if use_fine: # sample points for fine model
+        z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
+        z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
+                             N_importance, det=(perturb==0)).detach()
+                  # detach so that grad doesn't propogate to weights_coarse from here
+
+        z_vals, _ = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)
+
+        xyz_fine_sampled = rays_o.unsqueeze(1) + \
+                           rays_d.unsqueeze(1) * z_vals.unsqueeze(2)
+                           # (N_rays, N_samples+N_importance, 3)
+
+        result,_ = inference_deform(xyz_fine_sampled, rays, models, chunk, N_samples,
+                              N_rays, embedding_xyz, rays_d, noise_std,
+                              obj_bound, dir_embedded, z_vals)
+    return result
+    
+def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 
+        N_rays, N_samples,chunk, noise_std,
+        env_code=None, weights_only=False):
+    """
+    Helper function that performs model inference.
+
+    Inputs:
+        model: NeRF model (coarse or fine)
+        embedding_xyz: embedding module for xyz
+        xyz_: (N_rays, N_samples_, 3) sampled positions
+              N_samples_ is the number of sampled points in each ray;
+                         = N_samples for coarse model
+                         = N_samples+N_importance for fine model
+        dir_: (N_rays, 3) ray directions
+        dir_embedded: (N_rays, embed_dir_channels) embedded directions
+        z_vals: (N_rays, N_samples_) depths of the sampled positions
+        weights_only: do inference on sigma only or not
+
+    Outputs:
+        if weights_only:
+            weights: (N_rays, N_samples_): weights of each sample
+        else:
+            rgb_final: (N_rays, 3) the final rgb image
+            depth_final: (N_rays) depth map
+            weights: (N_rays, N_samples_): weights of each sample
+    """
+    N_samples_ = xyz_.shape[1]
+    # Embed directions
+    xyz_ = xyz_.view(-1, 3) # (N_rays*N_samples_, 3)
+    if not weights_only:
+        dir_embedded = torch.repeat_interleave(dir_embedded, repeats=N_samples_, dim=0)
+                       # (N_rays*N_samples_, embed_dir_channels)
+
+    # Perform model inference to get rgb and raw sigma
+    B = xyz_.shape[0]
+    #out_chunks = []
+    #for i in range(0, B, chunk):
+    #    # Embed positions by chunk
+    #    xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
+    #    if not weights_only:
+    #        xyzdir_embedded = torch.cat([xyz_embedded,
+    #                                     dir_embedded[i:i+chunk]], 1)
+    #    else:
+    #        xyzdir_embedded = xyz_embedded
+    #    out_chunks += [model(xyzdir_embedded, sigma_only=weights_only)]
+    #out = torch.cat(out_chunks, 0)
+    out = evaluate_mlp(model, xyz_.view(N_rays,N_samples,3), 
+            embed_xyz = embedding_xyz,
+            dir_embedded = dir_embedded.view(N_rays,N_samples,-1),
+            code=env_code,
+            chunk=chunk//N_samples, sigma_only=weights_only).view(B,-1)
+
+    if weights_only:
+        sigmas = out.view(N_rays, N_samples_)
+    else:
+        rgbsigma = out.view(N_rays, N_samples_, 4)
+        rgbs = rgbsigma[..., :3] # (N_rays, N_samples_, 3)
+        sigmas = rgbsigma[..., 3] # (N_rays, N_samples_)
+
+    # Convert these values using volume rendering (Section 4)
+    deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
+    # a hacky way to ensures prob. sum up to 1     
+    # while the prob. of last bin does not correspond with the values
+    delta_inf = 1e10 * torch.ones_like(deltas[:, :1]) # (N_rays, 1) the last delta is infinity
+    deltas = torch.cat([deltas, delta_inf], -1)  # (N_rays, N_samples_)
+
+    # Multiply each distance by the norm of its corresponding direction ray
+    # to convert to real world distance (accounts for non-unit directions).
+    deltas = deltas * torch.norm(dir_.unsqueeze(1), dim=-1)
+
+    noise = torch.randn(sigmas.shape, device=sigmas.device) * noise_std
+
+    # compute alpha by the formula (3)
+    sigmas = sigmas+noise
+    #sigmas = F.softplus(sigmas)
+    #sigmas = torch.relu(sigmas)
+    ibetas = 1/(model.beta.abs()+1e-9)
+    #ibetas = 100
+    sdf = -sigmas
+    sigmas = (0.5 + 0.5 * sdf.sign() * torch.expm1(-sdf.abs() * ibetas))
+    sigmas = sigmas * ibetas
+
+    alphas = 1-torch.exp(-deltas*sigmas) # (N_rays, N_samples_), p_i
+    alphas_shifted = \
+        torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, a1, a2, ...]
+    alpha_prod = torch.cumprod(alphas_shifted, -1)[:, :-1]
+    weights = alphas * alpha_prod # (N_rays, N_samples_)
+    weights_sum = weights.sum(1) # (N_rays), the accumulated opacity along the rays
+                                 # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
+    visibility = alpha_prod.detach() # 1 q_0 q_j-1
+    if weights_only:
+        return weights
+
+    # compute final weighted outputs
+    rgb_final = torch.sum(weights.unsqueeze(-1)*rgbs, -2) # (N_rays, 3)
+    depth_final = torch.sum(weights*z_vals, -1) # (N_rays)
+
+    return rgb_final, depth_final, weights, visibility
+    
+def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
+                         N_rays, embedding_xyz, rays_d, noise_std,
+                         obj_bound, dir_embedded, z_vals):
     if 'sim3_j2c' in rays.keys():
         # similarity transform to the joint canoical space
         sim3_j2c = rays['sim3_j2c'][:,None]
@@ -255,9 +270,9 @@ def render_rays(models,
     # root space point correspondence in t2
     xyz_coarse_target = xyz_coarse_sampled.clone()
     xyz_coarse_dentrg = xyz_coarse_sampled.clone()
+    xyz_coarse_frame  = xyz_coarse_sampled.clone()
 
     # free deform
-    xyz_coarse_frame = xyz_coarse_sampled.clone()
     if 'flowbw' in models.keys():
         model_flowbw = models['flowbw']
         model_flowfw = models['flowfw']
@@ -341,20 +356,22 @@ def render_rays(models,
             bone_rts_dentrg = rays['bone_rts_dentrg']
             xyz_coarse_dentrg,_ = lbs(bones, bone_rts_dentrg, 
                                skin_forward, xyz_coarse_sampled,backward=False)
-        
-    if test_time:
-        weights_coarse = \
-            inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
-                      dir_embedded, z_vals, weights_only=True, env_code=env_code)
-        result = {'sil_coarse': weights_coarse[:,:-1].sum(1)}
+
+    # nerf shape/rgb
+    model_coarse = models['coarse']
+    if 'env_code' in rays.keys():
+        env_code = rays['env_code']
     else:
-        rgb_coarse, depth_coarse, weights_coarse, vis_coarse = \
-            inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
-                      dir_embedded, z_vals, weights_only=False, env_code=env_code)
-        result = {'img_coarse': rgb_coarse,
-                  'depth_coarse': depth_coarse,
-                  'sil_coarse': weights_coarse[:,:-1].sum(1),
-                 }
+        env_code = None
+
+    rgb_coarse, depth_coarse, weights_coarse, vis_coarse = \
+        inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
+                dir_embedded, z_vals, N_rays, N_samples, chunk, noise_std,
+                weights_only=False, env_code=env_code)
+    result = {'img_coarse': rgb_coarse,
+              'depth_coarse': depth_coarse,
+              'sil_coarse': weights_coarse[:,:-1].sum(1),
+             }
     
     xyz_joint = xyz_coarse_sampled
     if 'nerf_dp' in models.keys():
@@ -435,26 +452,4 @@ def render_rays(models,
     if 'nerf_vis' in models.keys():
         result['vis_loss'] = visibility_loss(models['nerf_vis'], embedding_xyz,
                         xyz_coarse_sampled, vis_coarse, obj_bound, chunk)
-
-    if N_importance > 0: # sample points for fine model
-        z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
-        z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
-                             N_importance, det=(perturb==0)).detach()
-                  # detach so that grad doesn't propogate to weights_coarse from here
-
-        z_vals, _ = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)
-
-        xyz_fine_sampled = rays_o.unsqueeze(1) + \
-                           rays_d.unsqueeze(1) * z_vals.unsqueeze(2)
-                           # (N_rays, N_samples+N_importance, 3)
-
-        model_fine = models['fine']
-        rgb_fine, depth_fine, weights_fine, vis_fine = \
-            inference(model_fine, embedding_xyz, xyz_fine_sampled, rays_d,
-                      dir_embedded, z_vals, weights_only=False, env_code=env_code)
-
-        result['img_fine'] = rgb_fine
-        result['depth_fine'] = depth_fine
-        result['sil_fine'] = weights_fine.sum(1)
-
-    return result
+    return result, weights_coarse

@@ -167,6 +167,7 @@ flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
 flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
 flags.DEFINE_bool('freeze_root',False, 'whether to freeze root pose')
 flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
+flags.DEFINE_float('fine_steps', 1.01, 'by default, not using fine samples')
 
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, data_info):
@@ -181,6 +182,7 @@ class v2s_net(nn.Module):
         self.pose_update = 2 # by default, update all, use all losses
         self.shape_update = 0 # by default, update all
         self.cvf_update = 0 # by default, update all
+        self.progress = 0. # also reseted in optimizer
         self.root_basis = opts.root_basis
         self.use_cam = opts.use_cam
         
@@ -513,6 +515,11 @@ class v2s_net(nn.Module):
         results=defaultdict(list)
         for i in range(0, bs_rays, opts.chunk):
             rays_chunk = chunk_rays(rays,i,opts.chunk)
+            # decide whether to use fine samples 
+            if self.progress > opts.fine_steps:
+                use_fine = True
+            else:
+                use_fine = False
             rendered_chunks = render_rays(self.nerf_models,
                         self.embeddings,
                         rays_chunk,
@@ -523,7 +530,8 @@ class v2s_net(nn.Module):
                         N_importance=opts.N_importance,
                         chunk=opts.chunk, # chunk size is effective in val mode
                         obj_bound=self.latest_vars['obj_bound'],
-                        white_back=False) # never turn on white_back
+                        use_fine=use_fine,
+                        )
             for k, v in rendered_chunks.items():
                 results[k] += [v]
         

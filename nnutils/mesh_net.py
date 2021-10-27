@@ -511,7 +511,7 @@ class v2s_net(nn.Module):
             rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
 
         # render rays
-        bs_rays = rays['bs'] * rays['nsample']
+        bs_rays = rays['bs'] * rays['nsample'] # over pixels
         results=defaultdict(list)
         for i in range(0, bs_rays, opts.chunk):
             rays_chunk = chunk_rays(rays,i,opts.chunk)
@@ -1035,7 +1035,8 @@ class v2s_net(nn.Module):
                     self.progress < opts.proj_end):
                     total_loss = total_loss*warmup_weight + \
                                2*proj_loss*(1-warmup_weight)
-            elif self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+            elif self.progress > (opts.warmup_init_steps + opts.warmup_steps) and\
+                 self.progress < 0.8: #TODO change this to a arg
                 # only add it after feature volume is trained well
                 total_loss = total_loss + proj_loss
         

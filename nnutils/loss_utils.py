@@ -157,13 +157,13 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     loss:     bs, ns, 1
     """
     ### part1: matching
-    pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
-            bound,grid_size=20,is_training=is_training)
-    #TODO iterative matching 2
-    #pts_pred1 = feat_match(nerf_feat, embedding_xyz, feats, 
-    #        bound,grid_size=20,is_training=is_training)
     #pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
-    #        bound/8,grid_size=5,is_training=is_training, init_pts=pts_pred1)
+    #        bound,grid_size=20,is_training=is_training)
+    #TODO iterative matching 2
+    pts_pred1 = feat_match(nerf_feat, embedding_xyz, feats, 
+            bound,grid_size=20,is_training=is_training)
+    pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
+            bound/8,grid_size=5,is_training=is_training, init_pts=pts_pred1)
     ####TODO iterative matching 1
     #pts_pred1 = feat_match(nerf_feat, embedding_xyz, feats, 
     #        bound,grid_size=10,is_training=is_training)
@@ -185,10 +185,10 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
 
     # loss
     # evaluate against model's opacity distirbution along the ray with soft target
-    feat_err = (pts_pred - pts_exp).norm(2,-1) # n,ndepth
+    #feat_err = (pts_pred - pts_exp).norm(2,-1) # n,ndepth
     #TODO iterative matching 2
-    #feat_err = 0.8* (pts_pred1 - pts_exp.detach()).norm(2,-1) + \
-    #                 (pts_pred - pts_exp).norm(2,-1)
+    feat_err = 0.8* (pts_pred1 - pts_exp.detach()).norm(2,-1) + \
+                     (pts_pred - pts_exp).norm(2,-1)
     ##TODO iterative matching 1
     #feat_err = 0.64*(pts_pred1 - pts_exp.detach()).norm(2,-1) + \
     #           0.8 *(pts_pred2 - pts_exp.detach()).norm(2,-1) + \

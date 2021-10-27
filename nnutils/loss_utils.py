@@ -151,12 +151,27 @@ def rtk_cls_loss(scores, grid, rtk_raw, aux_out):
 def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound, 
         is_training=True):
     """
-    feats:    bs, ns, num_feat
-    pts:      bs, ns, ndepth, 3
-    pts_prob: bs, ns, ndepth
-    loss:     bs, ns, 1
+    feats:    ..., num_feat
+    pts:      ..., ndepth, 3
+    pts_prob: ..., ndepth
+    loss:     ..., 1
     """
-    ## part1: matching
+    pts = pts.clone()
+    pts_prob = pts_prob.clone()
+
+    base_shape = feats.shape[:-1] # bs, ns
+    nfeat =     feats.shape[-1]
+    ndepth = pts_prob.shape[-1]
+    feats=        feats.view(-1, nfeat)
+    pts =           pts.view(-1, ndepth,3)
+    pts_prob = pts_prob.view(-1, ndepth,1)
+    
+    # part1: compute expected pts
+    pts_prob = pts_prob.detach()
+    pts_prob = pts_prob/(1e-9+pts_prob.sum(1)[:,None])
+    pts_exp = (pts * pts_prob).sum(1)
+
+    ## part2: matching
     pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
             bound,grid_size=20,is_training=is_training)
     ##TODO iterative matching 2
@@ -165,17 +180,7 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     #pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
     #        bound/8,grid_size=5,is_training=is_training, init_pts=pts_pred1)
 
-    # part2: compute loss
-    bs     = pts_prob.shape[0]
-    ndepth = pts_prob.shape[-1]
-    pts =           pts.view(-1, ndepth,3)
-    pts_prob = pts_prob.view(-1, ndepth,1)
-    
-    # compute expected pts
-    pts_prob = pts_prob.detach()
-    pts_prob = pts_prob/(1e-9+pts_prob.sum(1)[:,None])
-    pts_exp = (pts * pts_prob).sum(1)
-
+    # part3: compute loss
     # loss
     # evaluate against model's opacity distirbution along the ray with soft target
     feat_err = (pts_pred - pts_exp).norm(2,-1) # n,ndepth
@@ -184,16 +189,18 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     #                 (pts_pred - pts_exp).norm(2,-1)
 
     # rearrange outputs
-    pts_pred  = pts_pred.view(bs,-1,3)
-    pts_exp   = pts_exp .view(bs,-1,3)
-    feat_err = feat_err .view(bs,-1,1)
+    pts_pred  = pts_pred.view(base_shape+(3,))
+    pts_exp   = pts_exp .view(base_shape+(3,))
+    feat_err = feat_err .view(base_shape+(1,))
     return pts_pred, pts_exp, feat_err
     
-def kp_reproj_loss(pts_pred, xys, models, embeddings, rays):
+def kp_reproj_loss(pts_pred, xys, models, embeddings_xyz, rays):
     """
-    pts_pred,   bs, ...,3
+    pts_pred,   ...,3
     xys,        bs,n,2
-    kp reprojection loss is only used to update root/body pose and skinning weights
+    proj_err,   ...,1 same as pts_pred
+    kp reprojection loss is only used to update root/body pose 
+    and skinning weights
     """
     bs,ns,_ = xys.shape
     N = bs*ns
@@ -214,7 +221,6 @@ def kp_reproj_loss(pts_pred, xys, models, embeddings, rays):
         bones = models['bones']
         skin_aux = models['skin_aux']
         rest_pose_code = models['rest_pose_code']
-        embedding_xyz = embeddings['xyz']
 
         rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
         rest_pose_code = rest_pose_code[None].repeat(N, 1,1)
@@ -241,17 +247,15 @@ def kp_reproj_loss(pts_pred, xys, models, embeddings, rays):
 def feat_match(nerf_feat, embedding_xyz, feats, bound, 
         grid_size=20,is_training=True, init_pts=None):
     """
-    feats:    bs, ns, num_feat
+    feats:    -1, num_feat
     """
     if is_training: 
         chunk_pts = 8*1024
     else:
         chunk_pts = 1024
     chunk_pix = 200
-    bs,N,num_feat = feats.shape
+    nsample,_ = feats.shape
     device = feats.device
-    nsample = bs*N
-    feats = feats.view(nsample,num_feat)
     feats = F.normalize(feats,2,-1)
 
     # sample model on a regular 3d grid, and correlate with feature, nkxkxk

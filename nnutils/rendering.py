@@ -8,7 +8,8 @@ from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
                                vec_to_sim3, rtmat_invert, rot_angle, mlp_skinning,\
                                bone_transform, skinning, vrender_flo
 from nnutils.nerf import evaluate_mlp
-from nnutils.loss_utils import elastic_loss, visibility_loss
+from nnutils.loss_utils import elastic_loss, visibility_loss, feat_match_loss,\
+                                kp_reproj_loss
 
 __all__ = ['render_rays']
 
@@ -409,10 +410,6 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
     xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
         
-    result['weights_coarse'] = weights_coarse
-    result['xyz_coarse_sampled'] = xyz_coarse_sampled 
-    result['xyz_coarse_frame']   = xyz_coarse_frame 
-
     if 'rtk_vec_dentrg' in rays.keys():
         if 'sim3_j2c_dentrg' in rays.keys():
             # similarity transform to the video canoical space
@@ -473,6 +470,25 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                                             xyz_coarse_dentrg, xys, img_size)
         result['fdp_coarse'] = fdp_coarse
         result['fdp_valid'] = fdp_valid
+    
+    # viser feature matching
+    if 'feats_at_samp' in rays.keys():
+        feats_at_samp = rays['feats_at_samp']
+        nerf_feat = models['nerf_feat']
+        pts_pred, pts_exp, feat_err = feat_match_loss(nerf_feat, embedding_xyz,
+                   feats_at_samp, xyz_coarse_sampled, weights_coarse,
+                   obj_bound, is_training=nerf_feat.training)
+
+
+        # 3d-2d projection
+        proj_err = kp_reproj_loss(pts_pred, xys, models, 
+                embedding_xyz, rays)
+        proj_err = proj_err/img_size * 2
+        
+        result['pts_pred'] = pts_pred
+        result['pts_exp']  = pts_exp
+        result['feat_err'] = feat_err # will be used as loss
+        result['proj_err'] = proj_err # will be used as loss
 
 
     return result, weights_coarse

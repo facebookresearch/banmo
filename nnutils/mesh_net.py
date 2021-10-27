@@ -420,6 +420,7 @@ class v2s_net(nn.Module):
             self.num_feat = 16
             self.nerf_feat = NeRF(in_channels_xyz=in_channels_xyz, D=5, W=128,
      out_channels=self.num_feat,in_channels_dir=0, raw_feat=True, init_beta=1.)
+            self.nerf_models['nerf_feat'] = self.nerf_feat
 
         # load densepose surface features
         if opts.warmup_pose_ep>0:
@@ -515,6 +516,14 @@ class v2s_net(nn.Module):
             rays['env_code'] = self.env_code(self.dataid.long().to(self.device))
             rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
         
+        if opts.use_viser:
+            dp_feats_rsmp = resample_dp(self.dp_feats, 
+                    self.dp_bbox, kaug, img_size)
+            feats_at_samp = [dp_feats_rsmp[i].view(self.num_feat,-1).T\
+                             [rand_inds[i].long()] for i in range(bs)]
+            feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
+            rays['feats_at_samp'] = feats_at_samp
+        
         if opts.debug:
             torch.cuda.synchronize()
             print('prepare rendering time: %.2f'%(time.time()-start_time))
@@ -561,46 +570,16 @@ class v2s_net(nn.Module):
         
         # viser feature matching
         if opts.use_viser:
-            dp_feats_rsmp = resample_dp(self.dp_feats, 
-                    self.dp_bbox, kaug, img_size)
-            feats_at_samp = [dp_feats_rsmp[i].view(self.num_feat,-1).T\
-                             [rand_inds[i].long()] for i in range(bs)]
-            feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
-            rts = feat_match_loss(self.nerf_feat, self.embedding_xyz, feats_at_samp,
-                    results['xyz_coarse_sampled'], results['weights_coarse'],
-                      self.latest_vars['obj_bound'], is_training=self.training)
-
-            if not self.training: 
-                rts_img = []
-                for rt in rts:
-                    rts_img.append(rt.view(bs,img_size,img_size,-1))
-                rts = rts_img
-
-            pts_pred = rts[0]
-            pts_exp  = rts[1]
-            feat_err = rts[2]
-
-            ## TODO add projection loss
-            if opts.use_proj:
-                proj_err = kp_reproj_loss(pts_pred, xys, self.nerf_models, 
-                        self.embeddings, rays)
-                proj_err = proj_err/img_size * 2
-                results['proj_err'] = proj_err # will be used as loss
-
-            results['pts_pred'] = (pts_pred - torch.Tensor(self.vis_min[None]).\
+            results['pts_pred'] = (results['pts_pred'] - torch.Tensor(self.vis_min[None]).\
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
-            results['pts_exp']  = (pts_exp - torch.Tensor(self.vis_min[None]).\
+            results['pts_exp']  = (results['pts_exp'] - torch.Tensor(self.vis_min[None]).\
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
             results['pts_pred'] = results['pts_pred'].clamp(0,1)
             results['pts_exp']  = results['pts_exp'].clamp(0,1)
-            results['feat_err'] = feat_err # will be used as loss
             
             #pdb.set_trace()
             ## visualization
             #vis_viser(rts, results, self.masks, self.imgs, bs,img_size, ndepth)
-        del results['weights_coarse']
-        del results['xyz_coarse_sampled']
-        del results['xyz_coarse_frame']
 
         if opts.debug:
             torch.cuda.synchronize()

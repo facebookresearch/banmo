@@ -46,16 +46,21 @@ def save_bones(bones, len_max, path):
     elips.visual.vertex_colors[:len(colormap),:3] = colormap
     elips.export(path)
 
-def vis_viser(rts, results, masks, imgs, bs,img_size,ndepth):
-    feat_err = rts[2][0].view(img_size,img_size)
+def vis_viser(results, masks, imgs, bs,img_size,ndepth):
+    xyz_coarse_frame = results['xyz_coarse_frame'] 
+    feat_err = results['feat_err'] 
+    pts_pred = results['pts_pred'] 
+    pts_exp  = results['pts_exp'] 
+
+    feat_err = feat_err[0].view(img_size,img_size)
     mask_rszd = F.interpolate(masks[None],(img_size,img_size))[0,0].bool()
     img_rszd =  F.interpolate(imgs       ,(img_size,img_size))[0].permute(1,2,0)
     img_mskd = img_rszd[mask_rszd].cpu().numpy()
     feat_err[~mask_rszd] = 0.
     cv2.imwrite('tmp/viser_err.png', feat_err.cpu().numpy()*10000)
 
-    pts_pred = rts[0][0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
-    pts_exp  = rts[1][0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
+    pts_pred = pts_pred[0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
+    pts_exp  = pts_exp[0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
     #pts_pred_col=results['pts_pred'][0][mask_rszd].cpu().numpy()
     #pts_exp_col = results['pts_exp'][0][mask_rszd].cpu().numpy()
     #trimesh.Trimesh(pts_pred, vertex_colors=img_mskd).export('tmp/viser_pred.obj')
@@ -63,8 +68,8 @@ def vis_viser(rts, results, masks, imgs, bs,img_size,ndepth):
 
     color_plane = torch.stack([img_rszd, torch.ones_like(img_rszd)],0).view(-1,3)
     color_plane = color_plane.cpu().numpy()
-    near_plane= results['xyz_coarse_frame'].view(bs,-1,ndepth,3)[0,:,0]
-    far_plane = results['xyz_coarse_frame'].view(bs,-1,ndepth,3)[0,:,-1]
+    near_plane= xyz_coarse_frame.view(bs,-1,ndepth,3)[0,:,0]
+    far_plane = xyz_coarse_frame.view(bs,-1,ndepth,3)[0,:,-1]
     nf_plane = torch.cat([near_plane, far_plane],0)
     trimesh.Trimesh(nf_plane.cpu().numpy(), vertex_colors=color_plane).\
             export('tmp/viser_plane.obj')

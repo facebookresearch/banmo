@@ -571,16 +571,18 @@ class v2s_net(nn.Module):
         
         # viser feature matching
         if opts.use_viser:
+            #pdb.set_trace()
+            ## visualization
+            #vis_viser(results, self.masks, self.imgs, 
+            #            bs,img_size, ndepth)
+            
             results['pts_pred'] = (results['pts_pred'] - torch.Tensor(self.vis_min[None]).\
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
             results['pts_exp']  = (results['pts_exp'] - torch.Tensor(self.vis_min[None]).\
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
             results['pts_pred'] = results['pts_pred'].clamp(0,1)
             results['pts_exp']  = results['pts_exp'].clamp(0,1)
-            
-            #pdb.set_trace()
-            ## visualization
-            #vis_viser(rts, results, self.masks, self.imgs, bs,img_size, ndepth)
+        del results['xyz_coarse_frame']
 
         if opts.debug:
             torch.cuda.synchronize()
@@ -880,8 +882,6 @@ class v2s_net(nn.Module):
         if self.use_fine:
             rendered_img_f = rendered['img_coarse_fine']
             rendered_sil_f = rendered['sil_coarse_fine']
-            if opts.use_corresp:
-                rendered_flo = rendered['flo_coarse_fine']
 
         img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3
         sil_at_samp = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1

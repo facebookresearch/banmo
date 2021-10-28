@@ -141,13 +141,16 @@ def render_rays(models,
     # [u] fine loss:   'feat_err', 'proj_err (not used)' 
     # [u] w/o  loss:   'depth_rnd', 'joint_render', 'pts_pred', 'pts_exp'
     
-    result, weights_coarse = inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
+    result, weights_coarse = inference_deform(xyz_coarse_sampled, rays, models, 
+                             chunk, N_samples,
                               N_rays, embedding_xyz, rays_d, noise_std,
                               obj_bound, dir_embedded, z_vals,
                               xys, img_size)
 
     # for fine model, change z_vals, models to fine, sampled points
     if use_fine: # sample points for fine model
+        #TODO reset N_importance
+        N_importance = N_samples
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
         z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
                              N_importance, det=(perturb==0)).detach()
@@ -159,7 +162,8 @@ def render_rays(models,
                            rays_d.unsqueeze(1) * z_vals.unsqueeze(2)
                            # (N_rays, N_samples+N_importance, 3)
 
-        result_fine,_ = inference_deform(xyz_fine_sampled, rays, models, chunk, N_samples,
+        result_fine,_ = inference_deform(xyz_fine_sampled, rays, models, 
+                              chunk, N_samples+N_importance,
                               N_rays, embedding_xyz, rays_d, noise_std,
                               obj_bound, dir_embedded, z_vals,
                               xys, img_size)
@@ -415,6 +419,9 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
     xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
         
+    result['xyz_coarse_frame']   = xyz_coarse_frame 
+
+
     if 'rtk_vec_dentrg' in rays.keys():
         if 'sim3_j2c_dentrg' in rays.keys():
             # similarity transform to the video canoical space

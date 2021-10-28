@@ -279,6 +279,7 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                          N_rays, embedding_xyz, rays_d, noise_std,
                          obj_bound, dir_embedded, z_vals,
                          img_size, progress,opts):
+    is_training = models['coarse'].training
     if 'sim3_j2c' in rays.keys():
         # similarity transform to the joint canoical space
         sim3_j2c = rays['sim3_j2c'][:,None]
@@ -468,7 +469,7 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
         #plt.plot(sigmas[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
         #plt.savefig('sigmas.png')
 
-    if 'nerf_vis' in models.keys():
+    if is_training and 'nerf_vis' in models.keys():
         result['vis_loss'] = visibility_loss(models['nerf_vis'], embedding_xyz,
                         xyz_coarse_sampled, vis_coarse, obj_bound, chunk)
 
@@ -494,7 +495,7 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             weights_coarse = weights_coarse.detach()
         pts_pred, pts_exp, feat_err = feat_match_loss(nerf_feat, embedding_xyz,
                    feats_at_samp, xyz_coarse_sampled, weights_coarse,
-                   obj_bound, is_training=nerf_feat.training)
+                   obj_bound, is_training=is_training)
 
 
         # 3d-2d projection

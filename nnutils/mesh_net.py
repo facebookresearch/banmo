@@ -109,6 +109,7 @@ flags.DEFINE_bool('cnnpp', False, 'cnn principle points')
 flags.DEFINE_bool('stop_csm', False, 'stop using csm loss')
 flags.DEFINE_bool('nothuman', False, 'using animal model')
 # nerf
+flags.DEFINE_integer('rnd_frame_chunk', 3, 'chunk size to render eval images')
 flags.DEFINE_integer('frame_chunk', 20, 'chunk size to split the input frames')
 flags.DEFINE_integer('chunk', 32*1024, 'chunk size to split the input to avoid OOM')
 flags.DEFINE_integer('N_importance', 0, 'number of additional fine samples')

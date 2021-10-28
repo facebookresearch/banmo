@@ -64,18 +64,23 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
         img_gt = rendered_seq['img'][i]
         flo_gt = rendered_seq['flo'][i]
         if save_flo: img_gt = cat_imgflo(img_gt, flo_gt)
+        else: img_gt*=255
         cv2.imwrite('%s-img-gt-%05d.jpg'%(save_prefix, idx), img_gt[...,::-1])
         flo_gt_vid.append(img_gt)
         
         img_p = rendered_seq['img_coarse'][i]
         flo_p = rendered_seq['flo_coarse'][i]
         if save_flo: img_p = cat_imgflo(img_p, flo_p)
+        else: img_p*=255
         cv2.imwrite('%s-img-p-%05d.jpg'%(save_prefix, idx), img_p[...,::-1])
         flo_p_vid.append(img_p)
 
+        mask_gt = rendered_seq['sil'][i][...,0]
+        mask_gt = cv2.resize(mask_gt, img_p.shape[:2][::-1]).astype(bool)
         flo_gt = cv2.resize(flo_gt, flo_p.shape[:2])
         flo_err = np.linalg.norm( flo_p - flo_gt ,2,-1)
-        flo_err_med = np.median(flo_err)
+        flo_err_med = np.median(flo_err[mask_gt])
+        flo_err[~mask_gt] = 0.
         cv2.imwrite('%s-flo-err-%05d.jpg'%(save_prefix, idx), 
                 128*flo_err/flo_err_med)
 
@@ -83,7 +88,8 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
         img_p = rendered_seq['img_coarse'][i]
         img_gt = cv2.resize(img_gt, img_p.shape[:2][::-1])
         img_err = np.power(img_gt - img_p,2).sum(-1)
-        img_err_med = np.median(img_err)
+        img_err_med = np.median(img_err[mask_gt])
+        img_err[~mask_gt] = 0.
         cv2.imwrite('%s-img-err-%05d.jpg'%(save_prefix, idx), 
                 128*img_err/img_err_med)
 
@@ -115,7 +121,7 @@ def main(_):
 
     dynamic_mesh = opts.flowbw or opts.lbs
     idx_render = str_to_frame(opts.test_frames, data_info)
-    #idx_render[0] += 100
+#    idx_render[0] += 100
 
     chunk = opts.frame_chunk
     for i in range(0, len(idx_render), chunk):

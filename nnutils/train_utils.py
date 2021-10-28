@@ -404,7 +404,7 @@ class v2s_trainer(Trainer):
                 idx_render = np.linspace(0,len(self.evalloader)-1, 9, dtype=int)
 
             # render
-            chunk=3
+            chunk=opts.rnd_frame_chunk
             rendered_seq = defaultdict(list)
             aux_seq = {'mesh_rest': mesh_dict_rest['mesh'],
                        'mesh':[],

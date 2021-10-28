@@ -519,7 +519,6 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
         xyt = torch.cat([xys, ts],-1)
         xyt_embedded = embedding_xyz(xyt)
         xyt_code = torch.cat([xyt_embedded, vid_code],-1)
-        
         unc_pred = nerf_unc(xyt_code)
         result['unc_pred'] = unc_pred
         

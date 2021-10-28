@@ -173,6 +173,7 @@ flags.DEFINE_float('fine_steps', 1.01, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',False, 'whether to use uncertainty sampling')
+flags.DEFINE_float('active_steps', 1.1, '% of steps to start active sampling')
 
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, data_info):
@@ -195,6 +196,7 @@ class v2s_net(nn.Module):
         # multi-video mode
         self.num_vid =  len(self.config.sections())-1
         self.data_offset = data_info['offset']
+        self.max_ts = (self.data_offset[1:] - self.data_offset[:-1]).max()
         self.impath      = data_info['impath']
         self.latest_vars = {}
         self.latest_vars['rtk'] = np.zeros((self.data_offset[-1], 4,4))
@@ -479,6 +481,31 @@ class v2s_net(nn.Module):
 
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
+        # TODO importance sampling
+        if self.training and opts.use_unc and self.progress > opts.active_steps:
+            nsample_a = 10000
+            rand_inds_a, xys_a = sample_xy(img_size, bs, nsample_a, self.device, 
+                                   return_all= not(self.training))
+            # run uncertainty estimation
+            ts = self.frameid_sub.to(self.device) / self.max_ts * 2 -1
+            ts = ts[:,None,None].repeat(1,nsample_a,1)
+            dataid = self.dataid.long().to(self.device)
+            vid_code = self.vid_code(dataid)[:,None].repeat(1,nsample_a,1)
+            
+            xyt = torch.cat([xys_a/img_size*2 - 1, ts],-1)
+            xyt_embedded = self.embedding_xyz(xyt)
+            xyt_code = torch.cat([xyt_embedded, vid_code],-1)
+            unc_pred = self.nerf_unc(xyt_code)[...,0]
+            
+            # merge top nsamples
+            topk_samp = unc_pred.topk(nsample,dim=-1)[1] # bs,nsamp
+            xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
+            rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
+            xys = torch.cat([xys,xys_a],1)
+            rand_inds = torch.cat([rand_inds,rand_inds_a],1)
+            nsample=nsample+nsample
+
+        
         near_far = self.near_far[self.frameid.long()]
         rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
 
@@ -531,8 +558,7 @@ class v2s_net(nn.Module):
             rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
 
         if opts.use_unc:
-            max_ts = (self.data_offset[1:] - self.data_offset[:-1]).max()
-            ts = self.frameid_sub.to(self.device) / max_ts * 2 -1
+            ts = self.frameid_sub.to(self.device) / self.max_ts * 2 -1
             ts = ts[:,None,None].repeat(1,rays['nsample'],1)
             rays['ts'] = ts
         
@@ -1090,10 +1116,11 @@ class v2s_net(nn.Module):
 
         # uncertainty MLP inference
         if opts.use_unc:
-            # add uncertainty MLP loss, 
+            # add uncertainty MLP loss, loss = | |img-img_r|*sil_r - unc_pred |
             unc_pred = rendered['unc_pred']
-            unc_loss = (img_loss_samp.detach().sum(-1) - unc_pred[...,0]).pow(2)
-            unc_loss = unc_loss[sil_at_samp[...,0]>0].mean()
+            unc_loss = ((rendered_sil[...,0]*img_loss_samp.sum(-1)).detach() -\
+                                unc_pred[...,0]).pow(2)
+            unc_loss = unc_loss.mean()
             aux_out['unc_loss'] = unc_loss
             total_loss = total_loss + unc_loss
 

@@ -25,7 +25,7 @@ import configparser
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, RTExplicit, Encoder,\
-                    ScoreHead, evaluate_mlp, Transhead
+                    ScoreHead, evaluate_mlp, Transhead, NeRFUnc
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
@@ -172,6 +172,7 @@ flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 flags.DEFINE_float('fine_steps', 1.01, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
+flags.DEFINE_bool('use_unc',False, 'whether to use uncertainty sampling')
 
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, data_info):
@@ -236,11 +237,11 @@ class v2s_net(nn.Module):
             if self.num_vid>1:
                 angle=opts.rot_angle*np.pi
                 init_rot = transforms.axis_angle_to_quaternion(torch.Tensor([0,angle,0]))
-                self.sim3_j2c.data[1,3:7] = init_rot.to(self.device) #TODO
+                self.sim3_j2c.data[1,3:7] = init_rot.to(self.device)
             self.sim3_j2c = nn.Parameter(self.sim3_j2c)
 
         if opts.env_code:
-            # add video-speficit environment lighting embedding TODO
+            # add video-speficit environment lighting embedding
             env_code_dim = 64
             self.env_code = nn.Embedding(self.num_vid, env_code_dim)
         else:
@@ -296,7 +297,6 @@ class v2s_net(nn.Module):
             self.nerf_models['skin_aux'] = self.skin_aux
 
             if opts.nerf_skin:
-                #TODO
                 self.nerf_skin = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
                                     D=5,W=128,
                      in_channels_dir=0, out_channels=self.num_bones, raw_feat=True)
@@ -419,12 +419,22 @@ class v2s_net(nn.Module):
             self.nerf_fine = NeRF()
             self.nerf_models['fine'] = self.nerf_fine
 
-        # TODO add densepose mlp
+        # add densepose mlp
         if opts.use_viser:
             self.num_feat = 16
+            # TODO change this to D-8
             self.nerf_feat = NeRF(in_channels_xyz=in_channels_xyz, D=5, W=128,
      out_channels=self.num_feat,in_channels_dir=0, raw_feat=True, init_beta=1.)
             self.nerf_models['nerf_feat'] = self.nerf_feat
+
+        # add uncertainty MLP
+        if opts.use_unc:
+            # input, (x,y,t)+code, output, (1)
+            vid_code_dim=32  # add video-specific code
+            self.vid_code = nn.Embedding(self.num_vid, vid_code_dim)
+            self.nerf_unc = NeRFUnc(in_channels_xyz=in_channels_xyz, D=5, W=128,
+         out_channels=1,in_channels_dir=vid_code_dim, raw_feat=True, init_beta=1.)
+            self.nerf_models['nerf_unc'] = self.nerf_unc
 
         # load densepose surface features
         if opts.warmup_pose_ep>0:
@@ -519,6 +529,16 @@ class v2s_net(nn.Module):
         if opts.env_code:
             rays['env_code'] = self.env_code(self.dataid.long().to(self.device))
             rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
+
+        if opts.use_unc:
+            max_ts = (self.data_offset[1:] - self.data_offset[:-1]).max()
+            ts = self.frameid_sub.to(self.device) / max_ts * 2 -1
+            ts = ts[:,None,None].repeat(1,rays['nsample'],1)
+            rays['ts'] = ts
+        
+            dataid = self.dataid.long().to(self.device)
+            vid_code = self.vid_code(dataid)[:,None].repeat(1,rays['nsample'],1)
+            rays['vid_code'] = vid_code
         
         if opts.use_viser:
             dp_feats_rsmp = resample_dp(self.dp_feats, 
@@ -736,7 +756,8 @@ class v2s_net(nn.Module):
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1).cpu()
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1).cpu()
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1).cpu()
-       
+      
+        self.frameid_sub = self.frameid.clone()
         self.embedid = self.frameid + self.data_offset[self.dataid.long()]
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]
 
@@ -894,8 +915,8 @@ class v2s_net(nn.Module):
             print('set input + render time:%.2f'%(time.time()-start_time))
            
         # image and silhouette loss
-        img_loss = (rendered_img - img_at_samp).pow(2)
-        img_loss = img_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
+        img_loss_samp = (rendered_img - img_at_samp).pow(2)
+        img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss = opts.sil_wt*F.mse_loss(rendered_sil, sil_at_samp)
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
@@ -1066,6 +1087,15 @@ class v2s_net(nn.Module):
             aux_out['visibility_loss'] = vis_loss
 
         #TODO regularize nerf-skin
+
+        # uncertainty MLP inference
+        if opts.use_unc:
+            # add uncertainty MLP loss, 
+            unc_pred = rendered['unc_pred']
+            unc_loss = (img_loss_samp.detach().sum(-1) - unc_pred[...,0]).pow(2)
+            unc_loss = unc_loss[sil_at_samp[...,0]>0].mean()
+            aux_out['unc_loss'] = unc_loss
+            total_loss = total_loss + unc_loss
 
         # save some variables
         if opts.lbs:

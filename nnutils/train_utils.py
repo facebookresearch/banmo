@@ -137,6 +137,7 @@ class v2s_trainer(Trainer):
         params_nerf_feat=[]
         params_nerf_beta_feat=[]
         params_nerf_fine=[]
+        params_nerf_unc=[]
         params_nerf_flowbw=[]
         params_nerf_skin=[]
         params_nerf_vis=[]
@@ -145,6 +146,7 @@ class v2s_trainer(Trainer):
         params_root_code=[]
         params_pose_code=[]
         params_env_code=[]
+        params_vid_code=[]
         params_bones=[]
         params_skin_aux=[]
         params_ks=[]
@@ -162,6 +164,8 @@ class v2s_trainer(Trainer):
                 params_nerf_beta_feat.append(p)
             elif 'nerf_fine' in name:
                 params_nerf_fine.append(p)
+            elif 'nerf_unc' in name:
+                params_nerf_unc.append(p)
             elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
                 params_nerf_flowbw.append(p)
             elif 'nerf_skin' in name:
@@ -178,6 +182,8 @@ class v2s_trainer(Trainer):
                 params_pose_code.append(p)
             elif 'env_code' in name:
                 params_env_code.append(p)
+            elif 'vid_code' in name:
+                params_vid_code.append(p)
             elif 'module.bones' == name:
                 params_bones.append(p)
             elif 'module.skin_aux' == name:
@@ -199,6 +205,7 @@ class v2s_trainer(Trainer):
              {'params': params_nerf_feat},
              {'params': params_nerf_beta_feat},
              {'params': params_nerf_fine},
+             {'params': params_nerf_unc},
              {'params': params_nerf_flowbw},
              {'params': params_nerf_skin},
              {'params': params_nerf_vis},
@@ -207,6 +214,7 @@ class v2s_trainer(Trainer):
              {'params': params_root_code},
              {'params': params_pose_code},
              {'params': params_env_code},
+             {'params': params_vid_code},
              {'params': params_bones},
              {'params': params_skin_aux},
              {'params': params_ks},
@@ -229,6 +237,7 @@ class v2s_trainer(Trainer):
                          opts.learning_rate, # params_nerf_feat
                       10*opts.learning_rate, # params_nerf_beta_feat
                          opts.learning_rate, # params_nerf_fine
+                         opts.learning_rate, # params_nerf_unc
                          opts.learning_rate, # params_nerf_flowbw
                          opts.learning_rate, # params_nerf_skin
                          opts.learning_rate, # params_nerf_vis
@@ -237,6 +246,7 @@ class v2s_trainer(Trainer):
         lr_nerf_root_rts*opts.learning_rate, # params_root_code
                          0.5*opts.learning_rate, # params_pose_code
                          opts.learning_rate, # params_env_code
+                         opts.learning_rate, # params_vid_code
                          opts.learning_rate, # params_bones
                       10*opts.learning_rate, # params_skin_aux
                          opts.learning_rate, # params_ks
@@ -297,6 +307,8 @@ class v2s_trainer(Trainer):
 
             self.model.env_code.weight.data = \
                 states['env_code.weight']
+            self.model['vid_code.weight'].data = \
+                states['vid_code.weight']
 
             if 'ks_param' in states.keys():
                 self.model.ks_param.data = states['ks_param']
@@ -311,6 +323,7 @@ class v2s_trainer(Trainer):
         self.del_key( states, 'nerf_bone_rts.0.weight')
         self.del_key( states, 'nerf_root_rts.0.weight')
         self.del_key( states, 'env_code.weight')
+        self.del_key( states, 'vid_code.weight')
         if 'ks_param' in states.keys():
             self.del_key( states, 'ks_param')
 
@@ -322,7 +335,7 @@ class v2s_trainer(Trainer):
         #self.model.nerf_coarse.beta.data = states['nerf_coarse.beta'].exp()
         #self.del_key( states, 'nerf_coarse.beta')
 
-        # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat
+        # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat, nerf_unc
         self.model.load_state_dict(states, strict=False)
     
         return
@@ -876,6 +889,7 @@ class v2s_trainer(Trainer):
         grad_nerf_feat=[]
         grad_nerf_beta_feat=[]
         grad_nerf_fine=[]
+        grad_nerf_unc=[]
         grad_nerf_flowbw=[]
         grad_nerf_skin=[]
         grad_nerf_vis=[]
@@ -884,6 +898,7 @@ class v2s_trainer(Trainer):
         grad_root_code=[]
         grad_pose_code=[]
         grad_env_code=[]
+        grad_vid_code=[]
         grad_bones=[]
         grad_skin_aux=[]
         grad_ks=[]
@@ -907,6 +922,8 @@ class v2s_trainer(Trainer):
                 grad_nerf_beta_feat.append(p)
             elif 'nerf_fine' in name:
                 grad_nerf_fine.append(p)
+            elif 'nerf_unc' in name:
+                grad_nerf_unc.append(p)
             elif 'nerf_flowbw' in name or 'nerf_flowfw' in name:
                 grad_nerf_flowbw.append(p)
             elif 'nerf_skin' in name:
@@ -923,6 +940,8 @@ class v2s_trainer(Trainer):
                 grad_pose_code.append(p)
             elif 'env_code' in name:
                 grad_env_code.append(p)
+            elif 'vid_code' in name:
+                grad_vid_code.append(p)
             elif 'module.bones' == name:
                 grad_bones.append(p)
             elif 'module.skin_aux' == name:
@@ -957,6 +976,7 @@ class v2s_trainer(Trainer):
         aux_out['nerf_feat_g']     = clip_grad_norm_(grad_nerf_feat,     .1)
         aux_out['nerf_beta_feat_g']= clip_grad_norm_(grad_nerf_beta_feat,.1)
         aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,     .1)
+        aux_out['nerf_unc_g']     = clip_grad_norm_(grad_nerf_unc,     .1)
         aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,   .1)
         aux_out['nerf_skin_g']     = clip_grad_norm_(grad_nerf_skin,     .1)
         aux_out['nerf_vis_g']      = clip_grad_norm_(grad_nerf_vis,      .1)
@@ -965,6 +985,7 @@ class v2s_trainer(Trainer):
         aux_out['root_code_g']= clip_grad_norm_(grad_root_code,          .1)
         aux_out['pose_code_g']= clip_grad_norm_(grad_pose_code,          .1)
         aux_out['env_code_g']      = clip_grad_norm_(grad_env_code,      .1)
+        aux_out['vid_code_g']      = clip_grad_norm_(grad_vid_code,      .1)
         aux_out['bones_g']         = clip_grad_norm_(grad_bones,         .1)
         aux_out['skin_aux_g']   = clip_grad_norm_(grad_skin_aux,         .1)
         aux_out['ks_g']            = clip_grad_norm_(grad_ks,            .1)
@@ -1100,6 +1121,7 @@ class v2s_trainer(Trainer):
             grid_img = image_grid(rendered_seq[k],3,3)
             if k=='depth_rnd':scale=True
             if k=='occ':scale=True
+            if k=='unc_pred':scale=True
             else: scale=False
             self.add_image(log, k, grid_img, epoch, scale=scale)
 

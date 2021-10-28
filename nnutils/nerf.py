@@ -334,6 +334,17 @@ class ScoreHead(NeRF):
             rts = rts.view(bs,self.num_scores,-1)
             return rts
 
+class NeRFUnc(NeRF):
+    """
+    nerf uncertainty
+    """
+    def __init__(self, **kwargs):
+        super(NeRFUnc, self).__init__(**kwargs)
+
+    def forward(self, x, xyz=None,sigma_only=False):
+        unc = super(NeRFUnc, self).forward(x, sigma_only=sigma_only)
+        return unc
+
 class ResNetConv(nn.Module):
     def __init__(self, in_channels):
         super(ResNetConv, self).__init__()

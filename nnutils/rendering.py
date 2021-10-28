@@ -508,5 +508,20 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
         result['feat_err'] = feat_err # will be used as loss
         result['proj_err'] = proj_err # will be used as loss
 
+    if 'nerf_unc' in models.keys():
+        # xys: bs,nsample,2
+        # t: bs
+        nerf_unc = models['nerf_unc']
+        ts = rays['ts']
+        vid_code = rays['vid_code']
+
+        xys = xys/img_size*2 - 1
+        xyt = torch.cat([xys, ts],-1)
+        xyt_embedded = embedding_xyz(xyt)
+        xyt_code = torch.cat([xyt_embedded, vid_code],-1)
+        
+        unc_pred = nerf_unc(xyt_code)
+        result['unc_pred'] = unc_pred
+        
 
     return result, weights_coarse

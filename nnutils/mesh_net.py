@@ -169,6 +169,8 @@ flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
 flags.DEFINE_bool('freeze_root',False, 'whether to freeze root pose')
 flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 flags.DEFINE_float('fine_steps', 1.01, 'by default, not using fine samples')
+flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
+flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, data_info):
@@ -551,6 +553,8 @@ class v2s_net(nn.Module):
                         use_fine=self.use_fine,
                         xys=xys,
                         img_size=img_size,
+                        progress=self.progress,
+                        opts=opts,
                         )
             for k, v in rendered_chunks.items():
                 results[k] += [v]
@@ -977,7 +981,8 @@ class v2s_net(nn.Module):
         
         # viser loss
         if opts.use_viser:
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
+            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]

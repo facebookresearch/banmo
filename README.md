@@ -53,6 +53,7 @@ python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 cat_601-lbs-correspd-r
 bash scripts/template-mgpu.sh 0 test-sfm cat_905 10010 --num_epochs 30 --use_corresp --root_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --lbs
 python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats4-lbsn-correspdv-ropt3 sfm-mcats4 10002 --num_epochs 30 --lbs --use_corresp --flow_dp --use_viser --root_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth
 python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats10-lbsn-correspdv-rkopt-ft-100ep-stage3 sfm-mcats10 10001 --num_epochs 100 --lbs --use_corresp --use_viser --flow_dp --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --model_path logdir/sfm-mcats10-lbsn-correspdv-rkopt-ft-100ep2/params_100.pth --use_proj --warmup_init_steps 0 --reinit_bone_steps 0 --noanneal_freq --warmup_steps 0 --freeze_proj --noflow_dp
+python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats4-lbsn-correspdv-rkopt-100ep-from-807 sfm-mcats4 10001 --num_epochs 100 --lbs --use_corresp --use_viser --flow_dp --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --model_path logdir/nerfies_cat_807-lbsn-correspdv-ropt-100ep-005noise/params_100.pth --use_proj --warmup_init_steps 0 --reinit_bone_steps 0 --noanneal_freq --warmup_steps 0 --freeze_proj --noflow_dp --dskin_steps 0.5 --nf_reset 0 --nouse_resize
 ```
 
 To draw root pose trajectory

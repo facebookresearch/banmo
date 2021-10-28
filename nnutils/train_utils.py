@@ -541,7 +541,8 @@ class v2s_trainer(Trainer):
             self.model.epoch = epoch
             
             # moidfy cropping factor on the fly TODO
-            if self.model.module.progress > opts.warmup_init_steps:
+            if opts.use_resize and \
+                    self.model.module.progress > opts.warmup_init_steps:
                 self.reset_dataset_crop_factor(float(epoch)/opts.num_epochs)
             else:
                 self.reset_dataset_crop_factor(1.)
@@ -768,7 +769,7 @@ class v2s_trainer(Trainer):
 
         # during kp reprojection optimization
         if (opts.freeze_proj and self.model.module.progress > opts.proj_start and \
-               self.model.module.progress < (opts.proj_start+opts.proj_end)/2):
+               self.model.module.progress < (opts.proj_start+opts.proj_end)):
             self.model.module.cvf_update = 1
         else:
             self.model.module.cvf_update = 0
@@ -788,7 +789,7 @@ class v2s_trainer(Trainer):
         if (opts.model_path!='' and \
         self.model.module.progress < opts.warmup_init_steps + opts.warmup_steps)\
          or (opts.freeze_proj and self.model.module.progress > opts.proj_start and \
-               self.model.module.progress <(opts.proj_start + opts.proj_end)/2):
+               self.model.module.progress <(opts.proj_start + opts.proj_end)):
             self.model.module.shape_update = 1
         else:
             self.model.module.shape_update = 0
@@ -834,7 +835,7 @@ class v2s_trainer(Trainer):
             self.init_training() # add new params to optimizer
 
         # change near-far plane after half epochs
-        if epoch>=int(self.num_epochs*0.5):
+        if epoch>=int(self.num_epochs*opts.nf_reset):
             self.model.near_far.data = get_near_far(mesh_rest.vertices,
                                          self.model.near_far.data,
                                          self.model.latest_vars)

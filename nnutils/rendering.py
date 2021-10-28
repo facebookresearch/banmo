@@ -78,6 +78,8 @@ def render_rays(models,
                 use_fine=False,
                 xys=None,
                 img_size=None,
+                progress=None,
+                opts=None,
                 ):
     """
     Render rays by computing the output of @model applied on @rays
@@ -145,7 +147,7 @@ def render_rays(models,
                              chunk, N_samples,
                               N_rays, embedding_xyz, rays_d, noise_std,
                               obj_bound, dir_embedded, z_vals,
-                              xys, img_size)
+                              xys, img_size, progress,opts)
 
     # for fine model, change z_vals, models to fine, sampled points
     if use_fine: # sample points for fine model
@@ -166,7 +168,7 @@ def render_rays(models,
                               chunk, N_samples+N_importance,
                               N_rays, embedding_xyz, rays_d, noise_std,
                               obj_bound, dir_embedded, z_vals,
-                              xys, img_size)
+                              xys, img_size, progress,opts)
         update_keys = ['feat_err', 'proj_err', 'depth_rnd', 'joint_render', 
                        'pts_pred', 'pts_exp']
         for k in update_keys: result[k] = result_fine[k]
@@ -277,7 +279,7 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
 def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                          N_rays, embedding_xyz, rays_d, noise_std,
                          obj_bound, dir_embedded, z_vals,
-                         xys, img_size):
+                         xys, img_size, progress,opts):
     if 'sim3_j2c' in rays.keys():
         # similarity transform to the joint canoical space
         sim3_j2c = rays['sim3_j2c'][:,None]
@@ -487,6 +489,9 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     if 'feats_at_samp' in rays.keys():
         feats_at_samp = rays['feats_at_samp']
         nerf_feat = models['nerf_feat']
+        if progress<opts.warmup_init_steps+opts.warmup_steps:
+            xyz_coarse_sampled = xyz_coarse_sampled.detach()
+            weights_coarse = weights_coarse.detach()
         pts_pred, pts_exp, feat_err = feat_match_loss(nerf_feat, embedding_xyz,
                    feats_at_samp, xyz_coarse_sampled, weights_coarse,
                    obj_bound, is_training=nerf_feat.training)

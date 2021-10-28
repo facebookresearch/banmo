@@ -69,6 +69,8 @@ def vis_viser(results, masks, imgs, bs,img_size,ndepth):
     color_plane = torch.stack([img_rszd, torch.ones_like(img_rszd)],0).view(-1,3)
     color_plane = color_plane.cpu().numpy()
     near_plane= xyz_coarse_frame.view(bs,-1,ndepth,3)[0,:,0]
+    d_near = near_plane[:,2].mean()
+    near_plane[...,-1] -= d_near*0.01
     far_plane = xyz_coarse_frame.view(bs,-1,ndepth,3)[0,:,-1]
     nf_plane = torch.cat([near_plane, far_plane],0)
     trimesh.Trimesh(nf_plane.cpu().numpy(), vertex_colors=color_plane).\

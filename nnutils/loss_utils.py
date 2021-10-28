@@ -197,18 +197,17 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
 def kp_reproj_loss(pts_pred, xys, models, embedding_xyz, rays):
     """
     pts_pred,   ...,3
-    xys,        bs,n,2
+    xys,        ...,2
     proj_err,   ...,1 same as pts_pred
     kp reprojection loss is only used to update root/body pose 
     and skinning weights
     """
-    bs,ns,_ = xys.shape
-    N = bs*ns
+    xys = xys.view(-1,1,2)
+    N = xys.shape[0]
     xyz_coarse_sampled = pts_pred.view(-1,1,3)
     # detach grad since reproj-loss would not benefit feature learning 
     # (due to ambiguity)
     xyz_coarse_sampled = xyz_coarse_sampled.detach() 
-    xys = xys.view(-1,1,2)
 
     # TODO wrap flowbw and lbs into the same module
     # TODO include loss for flowbw

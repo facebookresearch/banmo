@@ -64,13 +64,13 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
         img_gt = rendered_seq['img'][i]
         flo_gt = rendered_seq['flo'][i]
         if save_flo: img_gt = cat_imgflo(img_gt, flo_gt)
-        cv2.imwrite('%s-img-gt-%05d.jpg'%(save_prefix, idx), img_gt)
+        cv2.imwrite('%s-img-gt-%05d.jpg'%(save_prefix, idx), img_gt[...,::-1])
         flo_gt_vid.append(img_gt)
         
         img_p = rendered_seq['img_coarse'][i]
         flo_p = rendered_seq['flo_coarse'][i]
         if save_flo: img_p = cat_imgflo(img_p, flo_p)
-        cv2.imwrite('%s-img-p-%05d.jpg'%(save_prefix, idx), img_p)
+        cv2.imwrite('%s-img-p-%05d.jpg'%(save_prefix, idx), img_p[...,::-1])
         flo_p_vid.append(img_p)
 
         flo_gt = cv2.resize(flo_gt, flo_p.shape[:2])

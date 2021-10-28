@@ -551,7 +551,6 @@ class v2s_net(nn.Module):
                         chunk=opts.chunk, # chunk size is effective in val mode
                         obj_bound=self.latest_vars['obj_bound'],
                         use_fine=self.use_fine,
-                        xys=xys,
                         img_size=img_size,
                         progress=self.progress,
                         opts=opts,
@@ -575,10 +574,10 @@ class v2s_net(nn.Module):
         
         # viser feature matching
         if opts.use_viser:
-            #pdb.set_trace()
-            ## visualization
+            # visualization
             #vis_viser(results, self.masks, self.imgs, 
             #            bs,img_size, ndepth)
+            #pdb.set_trace()
             
             results['pts_pred'] = (results['pts_pred'] - torch.Tensor(self.vis_min[None]).\
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)

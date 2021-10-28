@@ -443,6 +443,7 @@ def raycast(xys, Rmat, Tmat, Kinv, near_far):
           'near': znear,
           'far': zfar,
           'rtk_vec': rtk_vec,
+          'xys': xys,
           'nsample': nsample,
           'bs': bs,
           }

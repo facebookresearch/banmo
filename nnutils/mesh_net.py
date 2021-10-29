@@ -961,10 +961,6 @@ class v2s_net(nn.Module):
         if opts.use_corresp:
             rendered_flo = rendered['flo_coarse']
 
-        if self.use_fine:
-            rendered_img_f = rendered['img_coarse_fine']
-            rendered_sil_f = rendered['sil_coarse_fine']
-
         img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3
         sil_at_samp = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
         if opts.debug:
@@ -984,16 +980,6 @@ class v2s_net(nn.Module):
         total_loss = img_loss
         if not opts.bg: total_loss = total_loss + sil_loss 
 
-        if self.use_fine:
-            img_loss_f = (rendered_img_f - img_at_samp).pow(2)
-            img_loss_f = img_loss_f[sil_at_samp[...,0]>0].mean() # eval on valid pts
-            sil_loss_f = (rendered_sil_f - sil_at_samp).pow(2) * sil_balance_wt
-            sil_loss_f = opts.sil_wt*sil_loss_f.mean()
-            aux_out['sil_loss_f'] = sil_loss_f
-            aux_out['img_loss_f'] = img_loss_f
-            total_loss = total_loss + img_loss_f
-            if not opts.bg: total_loss = total_loss + sil_loss_f
-        
         if opts.use_dp:
             rendered_dp = rendered['joint_render']
             dp_at_samp = torch.stack([self.dps[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1

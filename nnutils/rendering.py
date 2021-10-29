@@ -137,11 +137,9 @@ def render_rays(models,
 
     #TODO
     # output: 
-    # [a] c+f loss:   'img_coarse', 'sil_coarse',
-    # [s] coarse-loss: 'vis_loss', 'flo/fdp_coarse', 'flo/fdp_valid',
-    # [u] fine loss:   'feat_err', 'proj_err (not used)' 
-    # [u] w/o  loss:   'depth_rnd', 'joint_render', 'pts_pred', 'pts_exp'
-    
+    #  loss:   'img_coarse', 'sil_coarse', 'feat_err', 'proj_err' 
+    #               'vis_loss', 'flo/fdp_coarse', 'flo/fdp_valid',  
+    #  not loss:   'depth_rnd', 'joint_render', 'pts_pred', 'pts_exp'
     result, weights_coarse = inference_deform(xyz_coarse_sampled, rays, models, 
                              chunk, N_samples,
                               N_rays, embedding_xyz, rays_d, noise_std,
@@ -163,17 +161,16 @@ def render_rays(models,
                            rays_d.unsqueeze(1) * z_vals.unsqueeze(2)
                            # (N_rays, N_samples+N_importance, 3)
 
-        result_fine,_ = inference_deform(xyz_fine_sampled, rays, models, 
+        result,_ = inference_deform(xyz_fine_sampled, rays, models, 
                               chunk, N_samples+N_importance,
                               N_rays, embedding_xyz, rays_d, noise_std,
                               obj_bound, dir_embedded, z_vals,
                               img_size, progress,opts)
-        update_keys = ['feat_err', 'proj_err', 'depth_rnd', 'joint_render', 
-                       'pts_pred', 'pts_exp']
-        for k in update_keys: result[k] = result_fine[k]
+        #update_keys = ['img_coarse', 'sil_coarse', 'feat_err', 'proj_err',
+        #               'flo_coarse', 'flo_valid', 'fdp_coarse', 'fdp_valid','vis_loss',
+        #               'depth_rnd', 'joint_render', 'pts_pred', 'pts_exp']
+        #for k in update_keys: result[k] = result_fine[k]
 
-        append_keys = ['img_coarse', 'sil_coarse']
-        for k in append_keys: result[k+'_fine'] = result_fine[k]
     return result
     
 def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 

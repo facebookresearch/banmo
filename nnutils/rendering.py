@@ -490,7 +490,7 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     if 'feats_at_samp' in rays.keys():
         feats_at_samp = rays['feats_at_samp']
         nerf_feat = models['nerf_feat']
-        if progress<opts.warmup_init_steps+opts.warmup_steps:
+        if progress<opts.warmup_init_steps:
             xyz_coarse_sampled = xyz_coarse_sampled.detach()
             weights_coarse = weights_coarse.detach()
         pts_pred, pts_exp, feat_err = feat_match_loss(nerf_feat, embedding_xyz,
@@ -515,8 +515,9 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
         ts = rays['ts']
         vid_code = rays['vid_code']
 
-        xys = xys/img_size*2 - 1
-        xyt = torch.cat([xys, ts],-1)
+        # change according to K
+        xysn = rays['xysn']
+        xyt = torch.cat([xysn, ts],-1)
         xyt_embedded = embedding_xyz(xyt)
         xyt_code = torch.cat([xyt_embedded, vid_code],-1)
         unc_pred = nerf_unc(xyt_code)

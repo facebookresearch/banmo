@@ -307,8 +307,9 @@ class v2s_trainer(Trainer):
 
             self.model.env_code.weight.data = \
                 states['env_code.weight']
-            self.model['vid_code.weight'].data = \
-                states['vid_code.weight']
+            if 'vid_code.weight' in states.keys():
+                self.model['vid_code.weight'].data = \
+                    states['vid_code.weight']
 
             if 'ks_param' in states.keys():
                 self.model.ks_param.data = states['ks_param']
@@ -323,7 +324,8 @@ class v2s_trainer(Trainer):
         self.del_key( states, 'nerf_bone_rts.0.weight')
         self.del_key( states, 'nerf_root_rts.0.weight')
         self.del_key( states, 'env_code.weight')
-        self.del_key( states, 'vid_code.weight')
+        if 'vid_code.weight' in states.keys():
+            self.del_key( states, 'vid_code.weight')
         if 'ks_param' in states.keys():
             self.del_key( states, 'ks_param')
 

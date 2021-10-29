@@ -172,8 +172,8 @@ flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 flags.DEFINE_float('fine_steps', 1.01, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
-flags.DEFINE_bool('use_unc',False, 'whether to use uncertainty sampling')
-flags.DEFINE_float('active_steps', 1.1, '% of steps to start active sampling')
+flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
+flags.DEFINE_float('active_steps', 0., '% of steps to start active sampling')
 
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, data_info):
@@ -482,8 +482,10 @@ class v2s_net(nn.Module):
         rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                    return_all= not(self.training))
         # TODO importance sampling
-        if self.training and opts.use_unc and self.progress > opts.active_steps:
+        if self.training and opts.use_unc and self.progress > opts.warmup_init_steps + opts.warmup_steps:
+        #if self.training and opts.use_unc and self.progress > opts.active_steps:
             nsample_a = 10000
+            #nsample_a = 4*nsample
             rand_inds_a, xys_a = sample_xy(img_size, bs, nsample_a, self.device, 
                                    return_all= not(self.training))
             # run uncertainty estimation
@@ -492,7 +494,11 @@ class v2s_net(nn.Module):
             dataid = self.dataid.long().to(self.device)
             vid_code = self.vid_code(dataid)[:,None].repeat(1,nsample_a,1)
             
-            xyt = torch.cat([xys_a/img_size*2 - 1, ts],-1)
+            # convert to normalized coords
+            xysn = torch.cat([xys_a, torch.ones_like(xys_a[...,:1])],2)
+            xysn = xysn.matmul(Kinv.permute(0,2,1))[...,:2]
+
+            xyt = torch.cat([xysn, ts],-1)
             xyt_embedded = self.embedding_xyz(xyt)
             xyt_code = torch.cat([xyt_embedded, vid_code],-1)
             unc_pred = self.nerf_unc(xyt_code)[...,0]
@@ -504,6 +510,25 @@ class v2s_net(nn.Module):
             xys = torch.cat([xys,xys_a],1)
             rand_inds = torch.cat([rand_inds,rand_inds_a],1)
             nsample=nsample+nsample
+
+            # TODO visualize samples
+            def draw_pts(img, xys):
+                device = img.device
+                img = img.permute(1,2,0).cpu().numpy()*255
+                img = img.astype(np.uint8)[:,:,::-1].copy()
+                for point in xys:
+                    point = point.detach().cpu().numpy()
+                    cv2.circle(img,tuple(point),1,(0,0,255))
+                #pdb.set_trace()
+                #cv2.imwrite('tmp/0.png', img)
+                img = torch.Tensor(img).to(device).permute(2,0,1)[None]
+                return img
+
+            #pdb.set_trace()
+            #self.imgs_samp = []
+            #for i in range(bs):
+            #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
+            #self.imgs_samp = torch.stack(self.imgs_samp,0)
 
         
         near_far = self.near_far[self.frameid.long()]
@@ -565,6 +590,10 @@ class v2s_net(nn.Module):
             dataid = self.dataid.long().to(self.device)
             vid_code = self.vid_code(dataid)[:,None].repeat(1,rays['nsample'],1)
             rays['vid_code'] = vid_code
+            
+            xysn = torch.cat([xys, torch.ones_like(xys[...,:1])],2)
+            xysn = xysn.matmul(Kinv.permute(0,2,1))[...,:2]
+            rays['xysn'] = xysn
         
         if opts.use_viser:
             dp_feats_rsmp = resample_dp(self.dp_feats, 
@@ -1028,8 +1057,8 @@ class v2s_net(nn.Module):
         
         # viser loss
         if opts.use_viser:
-            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
+            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
@@ -1116,9 +1145,9 @@ class v2s_net(nn.Module):
 
         # uncertainty MLP inference
         if opts.use_unc:
-            # add uncertainty MLP loss, loss = | |img-img_r|*sil_r - unc_pred |
+            # add uncertainty MLP loss, loss = | |img-img_r|*sil - unc_pred |
             unc_pred = rendered['unc_pred']
-            unc_loss = ((rendered_sil[...,0]*img_loss_samp.sum(-1)).detach() -\
+            unc_loss = ((sil_at_samp[...,0]*img_loss_samp.sum(-1)).detach() -\
                                 unc_pred[...,0]).pow(2)
             unc_loss = unc_loss.mean()
             aux_out['unc_loss'] = unc_loss

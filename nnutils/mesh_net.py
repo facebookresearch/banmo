@@ -173,7 +173,6 @@ flags.DEFINE_float('fine_steps', 1.01, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
-flags.DEFINE_float('active_steps', 0., '% of steps to start active sampling')
 
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, data_info):
@@ -479,13 +478,13 @@ class v2s_net(nn.Module):
             sim3_j2c = torch.cat([self.sim3_j2c[:1].detach(),  
                                   self.sim3_j2c[1:]],0)
 
-        rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
-                                   return_all= not(self.training))
         # TODO importance sampling
         if self.training and opts.use_unc and self.progress > opts.warmup_init_steps + opts.warmup_steps:
-        #if self.training and opts.use_unc and self.progress > opts.active_steps:
-            nsample_a = 10000
-            #nsample_a = 4*nsample
+            # sample n/2 points
+            rand_inds, xys = sample_xy(img_size, bs, nsample//2, self.device, 
+                                   return_all= not(self.training))
+            #nsample_a = 10000
+            nsample_a = 4*nsample
             rand_inds_a, xys_a = sample_xy(img_size, bs, nsample_a, self.device, 
                                    return_all= not(self.training))
             # run uncertainty estimation
@@ -504,12 +503,11 @@ class v2s_net(nn.Module):
             unc_pred = self.nerf_unc(xyt_code)[...,0]
             
             # merge top nsamples
-            topk_samp = unc_pred.topk(nsample,dim=-1)[1] # bs,nsamp
+            topk_samp = unc_pred.topk(nsample//2,dim=-1)[1] # bs,nsamp
             xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
             rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
             xys = torch.cat([xys,xys_a],1)
             rand_inds = torch.cat([rand_inds,rand_inds_a],1)
-            nsample=nsample+nsample
 
             # TODO visualize samples
             def draw_pts(img, xys):
@@ -529,6 +527,10 @@ class v2s_net(nn.Module):
             #for i in range(bs):
             #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
             #self.imgs_samp = torch.stack(self.imgs_samp,0)
+
+        else:
+            rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
+                                   return_all= not(self.training))
 
         
         near_far = self.near_far[self.frameid.long()]
@@ -972,7 +974,11 @@ class v2s_net(nn.Module):
         # image and silhouette loss
         img_loss_samp = (rendered_img - img_at_samp).pow(2)
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
-        sil_loss = opts.sil_wt*F.mse_loss(rendered_sil, sil_at_samp)
+        # weight sil loss based on # points
+        sil_balance_wt = 0.5*(sil_at_samp.numel()/sil_at_samp.sum())*sil_at_samp +\
+                     0.5*(sil_at_samp.numel()/(1-sil_at_samp).sum())*(1-sil_at_samp)
+        sil_loss = (rendered_sil - sil_at_samp).pow(2) * sil_balance_wt
+        sil_loss = opts.sil_wt*sil_loss.mean()
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
         total_loss = img_loss
@@ -981,7 +987,8 @@ class v2s_net(nn.Module):
         if self.use_fine:
             img_loss_f = (rendered_img_f - img_at_samp).pow(2)
             img_loss_f = img_loss_f[sil_at_samp[...,0]>0].mean() # eval on valid pts
-            sil_loss_f = opts.sil_wt*F.mse_loss(rendered_sil_f, sil_at_samp)
+            sil_loss_f = (rendered_sil_f - sil_at_samp).pow(2) * sil_balance_wt
+            sil_loss_f = opts.sil_wt*sil_loss_f.mean()
             aux_out['sil_loss_f'] = sil_loss_f
             aux_out['img_loss_f'] = img_loss_f
             total_loss = total_loss + img_loss_f
@@ -1057,7 +1064,7 @@ class v2s_net(nn.Module):
         
         # viser loss
         if opts.use_viser:
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.1
             #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss

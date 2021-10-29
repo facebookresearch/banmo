@@ -308,7 +308,7 @@ class v2s_trainer(Trainer):
             self.model.env_code.weight.data = \
                 states['env_code.weight']
             if 'vid_code.weight' in states.keys():
-                self.model['vid_code.weight'].data = \
+                self.model.vid_code.weight.data = \
                     states['vid_code.weight']
 
             if 'ks_param' in states.keys():

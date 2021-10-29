@@ -161,7 +161,15 @@ def main():
             maskR =cv2.imread(silhouettes[jnx],0)
             masko = mask.copy()
             maskRo = maskR.copy()
+
+            mask = mask/np.sort(np.unique(mask))[1]
+            occluder = mask==255
+            mask[occluder] = 0
             mask  =np.logical_and(mask>0, mask!=255)
+            
+            maskR = maskR/np.sort(np.unique(maskR))[1]
+            occluder = maskR==255
+            maskR[occluder] = 0
             maskR =np.logical_and(maskR>0,maskR!=255)
                 
             indices = np.where(mask>0); xid = indices[1]; yid = indices[0]

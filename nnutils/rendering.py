@@ -6,7 +6,7 @@ from pytorch3d import transforms
 
 from nnutils.geom_utils import lbs, Kmatinv, mat2K, pinhole_cam, obj_to_cam,\
                                vec_to_sim3, rtmat_invert, rot_angle, mlp_skinning,\
-                               bone_transform, skinning, vrender_flo
+                               bone_transform, skinning, vrender_flo, gauss_mlp_skinning
 from nnutils.nerf import evaluate_mlp
 from nnutils.loss_utils import elastic_loss, visibility_loss, feat_match_loss,\
                                 kp_reproj_loss
@@ -333,12 +333,9 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
         else:
             nerf_skin = None
         time_embedded = rays['time_embedded'][:,None]
-        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-        dskin_bwd = mlp_skinning(nerf_skin, time_embedded, xyz_coarse_embedded)
-        
         bones_dfm = bone_transform(bones, bone_rts_fw) # coords after deform
-        skin_backward = skinning(bones_dfm, xyz_coarse_sampled, 
-                                 dskin_bwd, skin_aux=skin_aux) # bs, N, B
+        skin_backward = gauss_mlp_skinning(xyz_coarse_sampled, embedding_xyz, bones_dfm,
+                            time_embedded,  nerf_skin, skin_aux=skin_aux)
 
         # backward skinning
         xyz_coarse_sampled, bones_dfm = lbs(bones, 
@@ -349,11 +346,8 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
 
         rest_pose_code =  models['rest_pose_code']
         rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
-        rest_pose_code = rest_pose_code[None].repeat(N_rays, 1,1)
-        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-        dskin_fwd = mlp_skinning(nerf_skin, rest_pose_code, xyz_coarse_embedded)
-        skin_forward = skinning(bones, xyz_coarse_sampled, 
-                            dskin_fwd, skin_aux=skin_aux)
+        skin_forward = gauss_mlp_skinning(xyz_coarse_sampled, embedding_xyz, bones,
+                            rest_pose_code,  nerf_skin, skin_aux=skin_aux)
 
         # cycle loss (in the joint canonical space)
         xyz_coarse_frame_cyc,_ = lbs(bones, bone_rts_fw,

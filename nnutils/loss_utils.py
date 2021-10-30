@@ -5,7 +5,7 @@ import numpy as np
 import torch
 from nnutils.nerf import evaluate_mlp
 from nnutils.geom_utils import rot_angle, mat2K, Kmatinv, obj_to_cam, \
-                                pinhole_cam, lbs, skinning, mlp_skinning
+                                pinhole_cam, lbs, gauss_mlp_skinning
 import torch.nn.functional as F
 
 def nerf_gradient(mlp, embed, pts, use_xyz=False,code=None, sigma_only=False):
@@ -223,13 +223,10 @@ def kp_reproj_loss(pts_pred, xys, models, embedding_xyz, rays):
         bones = models['bones']
         skin_aux = models['skin_aux']
         rest_pose_code = models['rest_pose_code']
-
         rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
-        rest_pose_code = rest_pose_code[None].repeat(N, 1,1)
-        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-        dskin_fwd = mlp_skinning(nerf_skin, rest_pose_code, xyz_coarse_embedded)
-        skin_forward = skinning(bones, xyz_coarse_sampled, 
-                            dskin_fwd, skin_aux=skin_aux)
+        skin_forward = gauss_mlp_skinning(xyz_coarse_sampled, embedding_xyz, bones,
+                                  rest_pose_code, nerf_skin, skin_aux=skin_aux)
+        
         xyz_coarse_sampled,_ = lbs(bones, bone_rts_fw,
                           skin_forward, xyz_coarse_sampled, backward=False)
 

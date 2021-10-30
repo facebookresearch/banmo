@@ -79,6 +79,23 @@ def vec_to_sim3(vec):
     scale =  vec[...,7:10].exp()
     return center, orient, scale
 
+
+def gauss_mlp_skinning(xyz, embedding_xyz, bones, 
+                    pose_code,  nerf_skin, skin_aux=None):
+    """
+    xyz:        N_rays, ndepth, 3
+    bones:      ... nbones, 10
+    pose_code:  ...,1, nchannel
+    """
+    N_rays = xyz.shape[0]
+    if pose_code.dim() == 2:
+        pose_code = pose_code[None].repeat(N_rays, 1,1)
+
+    xyz_embedded = embedding_xyz(xyz)
+    dskin = mlp_skinning(nerf_skin, pose_code, xyz_embedded)
+    skin = skinning(bones, xyz, dskin, skin_aux=skin_aux) # bs, N, B
+    return skin
+
 def mlp_skinning(mlp, code, pts_embed):
     """
     code: bs, D          - N D-dimensional pose code
@@ -563,12 +580,11 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, embedid):
             nerf_skin = model.nerf_skin
         else:
             nerf_skin = None
-        xyz_embedded = model.embedding_xyz(query_xyz_chunk)
         time_embedded = model.pose_code(query_time)[:,0]
-        dskin_bwd = mlp_skinning(nerf_skin, time_embedded, xyz_embedded)
         bones_dfm = bone_transform(bones, bone_rts_fw)
-        skin_backward = skinning(bones_dfm, query_xyz_chunk, 
-                dskin_bwd, skin_aux=model.skin_aux)
+
+        skin_backward = gauss_mlp_skinning(query_xyz_chunk, model.embedding_xyz,
+                   bones_dfm, time_embedded, nerf_skin, skin_aux=model.skin_aux )
 
         query_xyz_chunk,bones_dfm = lbs(bones, 
                                       bone_rts_fw,
@@ -606,10 +622,8 @@ def warp_fw(opts, model, rt_dict, vertices, embedid):
             nerf_skin = None
         rest_pose_code =  model.rest_pose_code
         rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
-        rest_pose_code = rest_pose_code[None].repeat(num_pts, 1,1)
-        pts_can_embedded = model.embedding_xyz(pts_can)
-        dskin_fwd = mlp_skinning(nerf_skin, rest_pose_code, pts_can_embedded)
-        skin_forward = skinning(bones, pts_can, dskin_fwd,skin_aux=model.skin_aux)
+        skin_forward = gauss_mlp_skinning(pts_can, model.embedding_xyz, bones, 
+                            rest_pose_code, nerf_skin, skin_aux=model.skin_aux)
 
         pts_dfm,bones_dfm = lbs(bones, bone_rts_fw, skin_forward, 
                 pts_can,backward=False)

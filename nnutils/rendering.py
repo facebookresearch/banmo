@@ -144,7 +144,8 @@ def render_rays(models,
         #  loss:   'img_coarse', 'sil_coarse', 'feat_err', 'proj_err' 
         #               'vis_loss', 'flo/fdp_coarse', 'flo/fdp_valid',  
         #  not loss:   'depth_rnd', 'joint_render', 'pts_pred', 'pts_exp'
-        result, weights_coarse = inference_deform(xyz_sampled, rays, models, 
+        with torch.no_grad():
+            _, weights_coarse = inference_deform(xyz_sampled, rays, models, 
                               chunk, N_samples,
                               N_rays, embedding_xyz, rays_d, noise_std,
                               obj_bound, dir_embedded, z_vals,
@@ -300,26 +301,27 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
         flow_bw = evaluate_mlp(model_flowbw, xyz_coarse_embedded, 
                              chunk=chunk//N_samples, xyz=xyz_coarse_sampled, code=time_embedded)
         xyz_coarse_sampled=xyz_coarse_sampled + flow_bw
-        
-        # cycle loss (in the joint canonical space)
-        xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
-        flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
-                              chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded)
-        frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
-        # rigidity loss
-        frame_disp3d = flow_fw.norm(2,-1)
+       
+        if fine_iter:
+            # cycle loss (in the joint canonical space)
+            xyz_coarse_embedded = embedding_xyz(xyz_coarse_sampled)
+            flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
+                                  chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded)
+            frame_cyc_dis = (flow_bw+flow_fw).norm(2,-1)
+            # rigidity loss
+            frame_disp3d = flow_fw.norm(2,-1)
 
-        if "time_embedded_target" in rays.keys():
-            time_embedded_target = rays['time_embedded_target'][:,None]
-            flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
-                      chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded_target)
-            xyz_coarse_target=xyz_coarse_sampled + flow_fw
-        
-        if "time_embedded_dentrg" in rays.keys():
-            time_embedded_dentrg = rays['time_embedded_dentrg'][:,None]
-            flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
-                      chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded_dentrg)
-            xyz_coarse_dentrg=xyz_coarse_sampled + flow_fw
+            if "time_embedded_target" in rays.keys():
+                time_embedded_target = rays['time_embedded_target'][:,None]
+                flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
+                          chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded_target)
+                xyz_coarse_target=xyz_coarse_sampled + flow_fw
+            
+            if "time_embedded_dentrg" in rays.keys():
+                time_embedded_dentrg = rays['time_embedded_dentrg'][:,None]
+                flow_fw = evaluate_mlp(model_flowfw, xyz_coarse_embedded, 
+                          chunk=chunk//N_samples, xyz=xyz_coarse_sampled,code=time_embedded_dentrg)
+                xyz_coarse_dentrg=xyz_coarse_sampled + flow_fw
 
 
     elif 'bones' in models.keys():
@@ -344,31 +346,32 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                                                   xyz_coarse_sampled,
                                                   )
 
-        rest_pose_code =  models['rest_pose_code']
-        rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
-        skin_forward = gauss_mlp_skinning(xyz_coarse_sampled, embedding_xyz, bones,
-                            rest_pose_code,  nerf_skin, skin_aux=skin_aux)
+        if fine_iter:
+            rest_pose_code =  models['rest_pose_code']
+            rest_pose_code = rest_pose_code(torch.Tensor([0]).long().to(bones.device))
+            skin_forward = gauss_mlp_skinning(xyz_coarse_sampled, embedding_xyz, bones,
+                                rest_pose_code,  nerf_skin, skin_aux=skin_aux)
 
-        # cycle loss (in the joint canonical space)
-        xyz_coarse_frame_cyc,_ = lbs(bones, bone_rts_fw,
-                          skin_forward, xyz_coarse_sampled, backward=False)
-        frame_cyc_dis = (xyz_coarse_frame - xyz_coarse_frame_cyc).norm(2,-1)
-        
-        # rigidity loss
-        num_bone = bones.shape[0] 
-        bone_fw_reshape = bone_rts_fw.view(-1,num_bone,12)
-        bone_trn = bone_fw_reshape[:,:,9:12]
-        bone_rot = bone_fw_reshape[:,:,0:9].view(-1,num_bone,3,3)
-        frame_rigloss = bone_trn.pow(2).sum(-1)+rot_angle(bone_rot)
-        
-        if 'bone_rts_target' in rays.keys():
-            bone_rts_target = rays['bone_rts_target']
-            xyz_coarse_target,_ = lbs(bones, bone_rts_target, 
-                               skin_forward, xyz_coarse_sampled,backward=False)
-        if 'bone_rts_dentrg' in rays.keys():
-            bone_rts_dentrg = rays['bone_rts_dentrg']
-            xyz_coarse_dentrg,_ = lbs(bones, bone_rts_dentrg, 
-                               skin_forward, xyz_coarse_sampled,backward=False)
+            # cycle loss (in the joint canonical space)
+            xyz_coarse_frame_cyc,_ = lbs(bones, bone_rts_fw,
+                              skin_forward, xyz_coarse_sampled, backward=False)
+            frame_cyc_dis = (xyz_coarse_frame - xyz_coarse_frame_cyc).norm(2,-1)
+            
+            # rigidity loss
+            num_bone = bones.shape[0] 
+            bone_fw_reshape = bone_rts_fw.view(-1,num_bone,12)
+            bone_trn = bone_fw_reshape[:,:,9:12]
+            bone_rot = bone_fw_reshape[:,:,0:9].view(-1,num_bone,3,3)
+            frame_rigloss = bone_trn.pow(2).sum(-1)+rot_angle(bone_rot)
+            
+            if 'bone_rts_target' in rays.keys():
+                bone_rts_target = rays['bone_rts_target']
+                xyz_coarse_target,_ = lbs(bones, bone_rts_target, 
+                                   skin_forward, xyz_coarse_sampled,backward=False)
+            if 'bone_rts_dentrg' in rays.keys():
+                bone_rts_dentrg = rays['bone_rts_dentrg']
+                xyz_coarse_dentrg,_ = lbs(bones, bone_rts_dentrg, 
+                                   skin_forward, xyz_coarse_sampled,backward=False)
 
     # nerf shape/rgb
     model_coarse = models['coarse']

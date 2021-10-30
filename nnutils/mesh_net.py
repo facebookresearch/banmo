@@ -169,7 +169,7 @@ flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
 flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
 flags.DEFINE_bool('freeze_root',False, 'whether to freeze root pose')
 flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
-flags.DEFINE_float('fine_steps', 1.01, 'by default, not using fine samples')
+flags.DEFINE_float('fine_steps', 0.8, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
@@ -479,35 +479,38 @@ class v2s_net(nn.Module):
                                   self.sim3_j2c[1:]],0)
 
         # TODO importance sampling
-        if self.training and opts.use_unc and self.progress > opts.warmup_init_steps + opts.warmup_steps:
-            # sample n/2 points
-            rand_inds, xys = sample_xy(img_size, bs, nsample//2, self.device, 
-                                   return_all= not(self.training))
-            #nsample_a = 10000
-            nsample_a = 4*nsample
-            rand_inds_a, xys_a = sample_xy(img_size, bs, nsample_a, self.device, 
-                                   return_all= not(self.training))
-            # run uncertainty estimation
-            ts = self.frameid_sub.to(self.device) / self.max_ts * 2 -1
-            ts = ts[:,None,None].repeat(1,nsample_a,1)
-            dataid = self.dataid.long().to(self.device)
-            vid_code = self.vid_code(dataid)[:,None].repeat(1,nsample_a,1)
-            
-            # convert to normalized coords
-            xysn = torch.cat([xys_a, torch.ones_like(xys_a[...,:1])],2)
-            xysn = xysn.matmul(Kinv.permute(0,2,1))[...,:2]
+        if self.training and opts.use_unc and \
+                self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+            # sample 1.5x points
+            with torch.no_grad():
+                rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
+                                       return_all= not(self.training))
+                nsample_a = 4*nsample
+                nsample_s = nsample//2
+                rand_inds_a, xys_a = sample_xy(img_size, bs, nsample_a, self.device, 
+                                       return_all= not(self.training))
+                # run uncertainty estimation
+                ts = self.frameid_sub.to(self.device) / self.max_ts * 2 -1
+                ts = ts[:,None,None].repeat(1,nsample_a,1)
+                dataid = self.dataid.long().to(self.device)
+                vid_code = self.vid_code(dataid)[:,None].repeat(1,nsample_a,1)
+                
+                # convert to normalized coords
+                xysn = torch.cat([xys_a, torch.ones_like(xys_a[...,:1])],2)
+                xysn = xysn.matmul(Kinv.permute(0,2,1))[...,:2]
 
-            xyt = torch.cat([xysn, ts],-1)
-            xyt_embedded = self.embedding_xyz(xyt)
-            xyt_code = torch.cat([xyt_embedded, vid_code],-1)
-            unc_pred = self.nerf_unc(xyt_code)[...,0]
+                xyt = torch.cat([xysn, ts],-1)
+                xyt_embedded = self.embedding_xyz(xyt)
+                xyt_code = torch.cat([xyt_embedded, vid_code],-1)
+                unc_pred = self.nerf_unc(xyt_code)[...,0]
             
-            # merge top nsamples
-            topk_samp = unc_pred.topk(nsample//2,dim=-1)[1] # bs,nsamp
-            xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
-            rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
-            xys = torch.cat([xys,xys_a],1)
-            rand_inds = torch.cat([rand_inds,rand_inds_a],1)
+                # merge top nsamples
+                topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
+                xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
+                rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
+                xys = torch.cat([xys,xys_a],1)
+                rand_inds = torch.cat([rand_inds,rand_inds_a],1)
+                nsample = nsample + nsample_s
 
             # TODO visualize samples
             def draw_pts(img, xys):
@@ -1098,7 +1101,7 @@ class v2s_net(nn.Module):
                 total_loss = total_loss + elastic_loss
                 aux_out['elastic_loss'] = elastic_loss
 
-        if opts.eikonal_loss and self.progress>0.8:
+        if opts.eikonal_loss and self.progress> opts.fine_steps:
             ekl_loss = 1e-6*eikonal_loss(self.nerf_coarse, self.embedding_xyz, 
                                          self.latest_vars['obj_bound'])
             total_loss = total_loss + ekl_loss

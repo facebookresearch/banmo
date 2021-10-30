@@ -97,6 +97,8 @@ def render_rays(models,
     Outputs:
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
+    #if use_fine: N_samples = N_samples//2 # use half samples to importance sample
+
     # Extract models from lists
     embedding_xyz = embeddings['xyz']
     embedding_dir = embeddings['dir']
@@ -132,44 +134,41 @@ def render_rays(models,
 
     # zvals are not optimized
     # produce points in the root body space
-    xyz_coarse_sampled = rays_o.unsqueeze(1) + \
+    xyz_sampled = rays_o.unsqueeze(1) + \
                          rays_d.unsqueeze(1) * z_vals.unsqueeze(2) # (N_rays, N_samples, 3)
 
     #TODO
-    # output: 
-    #  loss:   'img_coarse', 'sil_coarse', 'feat_err', 'proj_err' 
-    #               'vis_loss', 'flo/fdp_coarse', 'flo/fdp_valid',  
-    #  not loss:   'depth_rnd', 'joint_render', 'pts_pred', 'pts_exp'
-    result, weights_coarse = inference_deform(xyz_coarse_sampled, rays, models, 
-                             chunk, N_samples,
-                              N_rays, embedding_xyz, rays_d, noise_std,
-                              obj_bound, dir_embedded, z_vals,
-                              img_size, progress,opts)
-
     # for fine model, change z_vals, models to fine, sampled points
     if use_fine: # sample points for fine model
+        # output: 
+        #  loss:   'img_coarse', 'sil_coarse', 'feat_err', 'proj_err' 
+        #               'vis_loss', 'flo/fdp_coarse', 'flo/fdp_valid',  
+        #  not loss:   'depth_rnd', 'joint_render', 'pts_pred', 'pts_exp'
+        result, weights_coarse = inference_deform(xyz_sampled, rays, models, 
+                              chunk, N_samples,
+                              N_rays, embedding_xyz, rays_d, noise_std,
+                              obj_bound, dir_embedded, z_vals,
+                              img_size, progress,opts,fine_iter=False)
+
         #TODO reset N_importance
         N_importance = N_samples
-        z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) # (N_rays, N_samples-1) interval mid points
+        z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) 
         z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
                              N_importance, det=(perturb==0)).detach()
                   # detach so that grad doesn't propogate to weights_coarse from here
 
         z_vals, _ = torch.sort(torch.cat([z_vals, z_vals_], -1), -1)
 
-        xyz_fine_sampled = rays_o.unsqueeze(1) + \
+        xyz_sampled = rays_o.unsqueeze(1) + \
                            rays_d.unsqueeze(1) * z_vals.unsqueeze(2)
-                           # (N_rays, N_samples+N_importance, 3)
 
-        result,_ = inference_deform(xyz_fine_sampled, rays, models, 
-                              chunk, N_samples+N_importance,
-                              N_rays, embedding_xyz, rays_d, noise_std,
-                              obj_bound, dir_embedded, z_vals,
-                              img_size, progress,opts)
-        #update_keys = ['img_coarse', 'sil_coarse', 'feat_err', 'proj_err',
-        #               'flo_coarse', 'flo_valid', 'fdp_coarse', 'fdp_valid','vis_loss',
-        #               'depth_rnd', 'joint_render', 'pts_pred', 'pts_exp']
-        #for k in update_keys: result[k] = result_fine[k]
+        N_samples = N_samples * 2 # get back to original # of samples
+    
+    result, _ = inference_deform(xyz_sampled, rays, models, 
+                          chunk, N_samples,
+                          N_rays, embedding_xyz, rays_d, noise_std,
+                          obj_bound, dir_embedded, z_vals,
+                          img_size, progress,opts)
 
     return result
     
@@ -275,7 +274,7 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
 def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                          N_rays, embedding_xyz, rays_d, noise_std,
                          obj_bound, dir_embedded, z_vals,
-                         img_size, progress,opts):
+                         img_size, progress,opts, fine_iter=True):
     is_training = models['coarse'].training
     if 'sim3_j2c' in rays.keys():
         # similarity transform to the joint canoical space
@@ -392,133 +391,134 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
               'depth_rnd': depth_rnd,
               'sil_coarse': weights_coarse[:,:-1].sum(1),
              }
-    
-    xyz_joint = xyz_coarse_sampled
-    if 'nerf_dp' in models.keys():
-        # render densepose surface
-        nerf_dp = models['nerf_dp']
-        xyz_joint_embedded = embedding_xyz(xyz_joint)
-        flow_dp = evaluate_mlp(nerf_dp, xyz_joint_embedded, chunk=chunk//N_samples)
-        xyz_joint= xyz_joint + flow_dp
-    result['joint_render'] = torch.sum(weights_coarse.unsqueeze(-1)*xyz_joint, -2)
    
-    if 'sim3_j2c' in rays.keys():
-        # similarity transform to the video canoical space
-        xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat_j2c, Tmat_j2c)
-        xyz_coarse_target = xyz_coarse_target * Smat_j2c
-
-    # compute correspondence: root space to target view space
-    # RT: root space to camera space
-    rtk_vec_target =  rays['rtk_vec_target']
-    Rmat = rtk_vec_target[:,0:9].view(N_rays,1,3,3)
-    Tmat = rtk_vec_target[:,9:12].view(N_rays,1,3)
-    Kinv = rtk_vec_target[:,12:21].view(N_rays,1,3,3)
-    K = mat2K(Kmatinv(Kinv))
-
-    xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
-    xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
-        
-    result['xyz_coarse_frame']   = xyz_coarse_frame 
-
-
-    if 'rtk_vec_dentrg' in rays.keys():
-        if 'sim3_j2c_dentrg' in rays.keys():
+    if fine_iter:
+        xyz_joint = xyz_coarse_sampled
+        if 'nerf_dp' in models.keys():
+            # render densepose surface
+            nerf_dp = models['nerf_dp']
+            xyz_joint_embedded = embedding_xyz(xyz_joint)
+            flow_dp = evaluate_mlp(nerf_dp, xyz_joint_embedded, chunk=chunk//N_samples)
+            xyz_joint= xyz_joint + flow_dp
+        result['joint_render'] = torch.sum(weights_coarse.unsqueeze(-1)*xyz_joint, -2)
+   
+        if 'sim3_j2c' in rays.keys():
             # similarity transform to the video canoical space
-            sim3_j2c_dt = rays['sim3_j2c_dentrg'][:,None]
-            Tmat_j2c_dt, Rmat_j2c_dt, Smat_j2c_dt = vec_to_sim3(sim3_j2c_dt)
-            Smat_j2c_dt = Smat_j2c_dt.mean(-1)[...,None]
-            xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat_j2c_dt, Tmat_j2c_dt)
-            xyz_coarse_dentrg = xyz_coarse_dentrg * Smat_j2c_dt
+            xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat_j2c, Tmat_j2c)
+            xyz_coarse_target = xyz_coarse_target * Smat_j2c
 
-        # compute correspondence: root space to dentrg view space
+        # compute correspondence: root space to target view space
         # RT: root space to camera space
-        rtk_vec_dentrg =  rays['rtk_vec_dentrg']
-        Rmat = rtk_vec_dentrg[:,0:9].view(N_rays,1,3,3)
-        Tmat = rtk_vec_dentrg[:,9:12].view(N_rays,1,3)
-        Kinv = rtk_vec_dentrg[:,12:21].view(N_rays,1,3,3)
+        rtk_vec_target =  rays['rtk_vec_target']
+        Rmat = rtk_vec_target[:,0:9].view(N_rays,1,3,3)
+        Tmat = rtk_vec_target[:,9:12].view(N_rays,1,3)
+        Kinv = rtk_vec_target[:,12:21].view(N_rays,1,3,3)
         K = mat2K(Kmatinv(Kinv))
 
-        xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat, Tmat) 
-        xyz_coarse_dentrg = pinhole_cam(xyz_coarse_dentrg,K)
+        xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
+        xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
+            
+        result['xyz_coarse_frame']   = xyz_coarse_frame 
+
+
+        if 'rtk_vec_dentrg' in rays.keys():
+            if 'sim3_j2c_dentrg' in rays.keys():
+                # similarity transform to the video canoical space
+                sim3_j2c_dt = rays['sim3_j2c_dentrg'][:,None]
+                Tmat_j2c_dt, Rmat_j2c_dt, Smat_j2c_dt = vec_to_sim3(sim3_j2c_dt)
+                Smat_j2c_dt = Smat_j2c_dt.mean(-1)[...,None]
+                xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat_j2c_dt, Tmat_j2c_dt)
+                xyz_coarse_dentrg = xyz_coarse_dentrg * Smat_j2c_dt
+
+            # compute correspondence: root space to dentrg view space
+            # RT: root space to camera space
+            rtk_vec_dentrg =  rays['rtk_vec_dentrg']
+            Rmat = rtk_vec_dentrg[:,0:9].view(N_rays,1,3,3)
+            Tmat = rtk_vec_dentrg[:,9:12].view(N_rays,1,3)
+            Kinv = rtk_vec_dentrg[:,12:21].view(N_rays,1,3,3)
+            K = mat2K(Kmatinv(Kinv))
+
+            xyz_coarse_dentrg = obj_to_cam(xyz_coarse_dentrg, Rmat, Tmat) 
+            xyz_coarse_dentrg = pinhole_cam(xyz_coarse_dentrg,K)
+            
+            
+            
+        if 'flowbw' in models.keys() or  'bones' in models.keys():
+            result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
+            if 'flowbw' in models.keys():
+                result['frame_rigloss'] =  (frame_disp3d  * weights_coarse.detach()).sum(-1)
+                #TODO enable elastic energy?
+                # only evaluate at with_grad mode
+                if xyz_coarse_frame.requires_grad:
+                    # elastic energy
+                    result['elastic_loss'] = elastic_loss(model_flowbw, embedding_xyz, 
+                                      xyz_coarse_frame, time_embedded)
+            else:
+                result['frame_rigloss'] =  (frame_rigloss).mean(-1)
+
+            
+            ### script to plot sigmas/weights
+            #from matplotlib import pyplot as plt
+            #plt.ioff()
+            #plt.plot(weights_coarse[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
+            #plt.savefig('weights.png')
+            #plt.cla()
+            #plt.plot(sigmas[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
+            #plt.savefig('sigmas.png')
+
+        if is_training and 'nerf_vis' in models.keys():
+            result['vis_loss'] = visibility_loss(models['nerf_vis'], embedding_xyz,
+                            xyz_coarse_sampled, vis_coarse, obj_bound, chunk)
+
+        # render flow 
+        xys = rays['xys']
+        flo_coarse, flo_valid = vrender_flo(weights_coarse, xyz_coarse_target,
+                                            xys, img_size)
+        result['flo_coarse'] = flo_coarse
+        result['flo_valid'] = flo_valid
+
+        if 'rtk_vec_dentrg' in rays.keys():
+            fdp_coarse, fdp_valid = vrender_flo(weights_coarse, 
+                                                xyz_coarse_dentrg, xys, img_size)
+            result['fdp_coarse'] = fdp_coarse
+            result['fdp_valid'] = fdp_valid
         
-        
-        
-    if 'flowbw' in models.keys() or  'bones' in models.keys():
-        result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
-        if 'flowbw' in models.keys():
-            result['frame_rigloss'] =  (frame_disp3d  * weights_coarse.detach()).sum(-1)
-            #TODO enable elastic energy?
-            # only evaluate at with_grad mode
-            if xyz_coarse_frame.requires_grad:
-                # elastic energy
-                result['elastic_loss'] = elastic_loss(model_flowbw, embedding_xyz, 
-                                  xyz_coarse_frame, time_embedded)
-        else:
-            result['frame_rigloss'] =  (frame_rigloss).mean(-1)
-
-        
-        ### script to plot sigmas/weights
-        #from matplotlib import pyplot as plt
-        #plt.ioff()
-        #plt.plot(weights_coarse[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
-        #plt.savefig('weights.png')
-        #plt.cla()
-        #plt.plot(sigmas[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
-        #plt.savefig('sigmas.png')
-
-    if is_training and 'nerf_vis' in models.keys():
-        result['vis_loss'] = visibility_loss(models['nerf_vis'], embedding_xyz,
-                        xyz_coarse_sampled, vis_coarse, obj_bound, chunk)
-
-    # render flow 
-    xys = rays['xys']
-    flo_coarse, flo_valid = vrender_flo(weights_coarse, xyz_coarse_target,
-                                        xys, img_size)
-    result['flo_coarse'] = flo_coarse
-    result['flo_valid'] = flo_valid
-
-    if 'rtk_vec_dentrg' in rays.keys():
-        fdp_coarse, fdp_valid = vrender_flo(weights_coarse, 
-                                            xyz_coarse_dentrg, xys, img_size)
-        result['fdp_coarse'] = fdp_coarse
-        result['fdp_valid'] = fdp_valid
-    
-    # viser feature matching
-    if 'feats_at_samp' in rays.keys():
-        feats_at_samp = rays['feats_at_samp']
-        nerf_feat = models['nerf_feat']
-        if progress<opts.warmup_init_steps:
-            xyz_coarse_sampled = xyz_coarse_sampled.detach()
-            weights_coarse = weights_coarse.detach()
-        pts_pred, pts_exp, feat_err = feat_match_loss(nerf_feat, embedding_xyz,
-                   feats_at_samp, xyz_coarse_sampled, weights_coarse,
-                   obj_bound, is_training=is_training)
+        # viser feature matching
+        if 'feats_at_samp' in rays.keys():
+            feats_at_samp = rays['feats_at_samp']
+            nerf_feat = models['nerf_feat']
+            if progress<opts.warmup_init_steps:
+                xyz_coarse_sampled = xyz_coarse_sampled.detach()
+                weights_coarse = weights_coarse.detach()
+            pts_pred, pts_exp, feat_err = feat_match_loss(nerf_feat, embedding_xyz,
+                       feats_at_samp, xyz_coarse_sampled, weights_coarse,
+                       obj_bound, is_training=is_training)
 
 
-        # 3d-2d projection
-        proj_err = kp_reproj_loss(pts_pred, xys, models, 
-                embedding_xyz, rays)
-        proj_err = proj_err/img_size * 2
-        
-        result['pts_pred'] = pts_pred
-        result['pts_exp']  = pts_exp
-        result['feat_err'] = feat_err # will be used as loss
-        result['proj_err'] = proj_err # will be used as loss
+            # 3d-2d projection
+            proj_err = kp_reproj_loss(pts_pred, xys, models, 
+                    embedding_xyz, rays)
+            proj_err = proj_err/img_size * 2
+            
+            result['pts_pred'] = pts_pred
+            result['pts_exp']  = pts_exp
+            result['feat_err'] = feat_err # will be used as loss
+            result['proj_err'] = proj_err # will be used as loss
 
-    if 'nerf_unc' in models.keys():
-        # xys: bs,nsample,2
-        # t: bs
-        nerf_unc = models['nerf_unc']
-        ts = rays['ts']
-        vid_code = rays['vid_code']
+        if 'nerf_unc' in models.keys():
+            # xys: bs,nsample,2
+            # t: bs
+            nerf_unc = models['nerf_unc']
+            ts = rays['ts']
+            vid_code = rays['vid_code']
 
-        # change according to K
-        xysn = rays['xysn']
-        xyt = torch.cat([xysn, ts],-1)
-        xyt_embedded = embedding_xyz(xyt)
-        xyt_code = torch.cat([xyt_embedded, vid_code],-1)
-        unc_pred = nerf_unc(xyt_code)
-        result['unc_pred'] = unc_pred
+            # change according to K
+            xysn = rays['xysn']
+            xyt = torch.cat([xysn, ts],-1)
+            xyt_embedded = embedding_xyz(xyt)
+            xyt_code = torch.cat([xyt_embedded, vid_code],-1)
+            unc_pred = nerf_unc(xyt_code)
+            result['unc_pred'] = unc_pred
         
 
     return result, weights_coarse

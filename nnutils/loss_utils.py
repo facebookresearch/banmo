@@ -43,7 +43,10 @@ def eikonal_loss(mlp, embed, bound, nsample=1000):
 
     g = nerf_gradient(mlp, embed, pts, sigma_only=True)
     g = g[...,0]
-    eikonal_loss = ((g.norm(2, dim=-1) - 1) ** 2).mean()
+    gnorm = g.norm(2, dim=-1)
+    gnorm_mean = gnorm.mean()
+
+    eikonal_loss = ((gnorm - gnorm_mean.detach()) ** 2).mean()
     return eikonal_loss
 
 def elastic_loss(mlp, embed, xyz, time_embedded):

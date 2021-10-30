@@ -130,7 +130,7 @@ flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
 flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
 flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
-flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
+flags.DEFINE_bool('eikonal_loss', True, 'whether to use eikonal loss')
 flags.DEFINE_bool('use_sim3', False, 'whether to use sim3 transformation')
 flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 25, 'maximum number of bones')
@@ -1098,8 +1098,8 @@ class v2s_net(nn.Module):
                 total_loss = total_loss + elastic_loss
                 aux_out['elastic_loss'] = elastic_loss
 
-        if opts.eikonal_loss:
-            ekl_loss = 0.01*eikonal_loss(self.nerf_coarse, self.embedding_xyz, 
+        if opts.eikonal_loss and self.progress>0.8:
+            ekl_loss = 1e-6*eikonal_loss(self.nerf_coarse, self.embedding_xyz, 
                                          self.latest_vars['obj_bound'])
             total_loss = total_loss + ekl_loss
             aux_out['ekl_loss'] = ekl_loss

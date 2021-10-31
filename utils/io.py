@@ -20,14 +20,17 @@ from utils.colors import label_colormap
 
 def draw_lines(img, xy1s, xy2s):
     device = img.device
+    colormap = label_colormap()
+    len_colormap = colormap.shape[0]
     img = img.permute(1,2,0).cpu().numpy()*255
     img = img.astype(np.uint8)[:,:,::-1].copy()
     for i in range(len(xy1s)):
+        color = tuple([int(x) for x in colormap[i%len_colormap]])
         p1 = tuple(xy1s[i].detach().cpu().numpy())
         p2 = tuple(xy2s[i].detach().cpu().numpy())
-        cv2.circle(img,p1,3,(0,0,255))
-        cv2.circle(img,p2,3,(255,0,0))
-        cv2.line(img, p1, p2, (0,255,0), thickness=1)
+        cv2.circle(img,p1,3,  color)
+        cv2.circle(img,p2,3,  color)
+        cv2.line(img, p1, p2, color, thickness=1)
     #pdb.set_trace()
     #cv2.imwrite('tmp/0.png', img)
     #img = torch.Tensor(img).to(device).permute(2,0,1)[None]

@@ -24,7 +24,7 @@ opts = flags.FLAGS
                 
 
 
-def match_frames(trainer, idxs, nsample=50):
+def match_frames(trainer, idxs, nsample=200):
     idxs = [int(i) for i in idxs.split(' ')]
     opts = trainer.opts
     bs = len(idxs)
@@ -73,6 +73,9 @@ def match_frames(trainer, idxs, nsample=50):
     # TODO rearrange inputs
     feats_at_samp = feats_at_samp.view(-1, model.num_feat)
     xys = xys.view(-1,1,2)
+    rtk_vec = rtk_vec.view(bs//2,2,-1).flip(1).view(rtk_vec.shape)
+    bone_rts = bone_rts.view(bs//2,2,-1).flip(1).view(bone_rts.shape)
+    imgs_trg = model.imgs.view(bs//2,2,-1).flip(1).view(model.imgs.shape)
     rays = {'rtk_vec':  rtk_vec,
             'bone_rts': bone_rts}
 
@@ -85,15 +88,17 @@ def match_frames(trainer, idxs, nsample=50):
         xy_reproj = kp_reproj(pts_pred, xys, model.nerf_models, model.embedding_xyz, rays)
 
     # draw
-    pdb.set_trace() 
     xy_reproj = xy_reproj.view(bs,nsample,2)
     xys = xys.view(bs,nsample, 2)
     sil_at_samp = torch.stack([model.masks[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
     for i in range(bs):
-        img = model.imgs[i]
+        img1 = model.imgs[i]
+        img2 = imgs_trg[i]
+        img = torch.cat([img1, img2],2)
         valid_idx = sil_at_samp[i].bool()[...,0]
         p1s = xys[i][valid_idx]
         p2s = xy_reproj[i][valid_idx]
+        p2s[...,0] = p2s[...,0] + img1.shape[2]
         img = draw_lines(img, p1s,p2s)
         cv2.imwrite('tmp/%04d.png'%i, img)
 

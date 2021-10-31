@@ -340,14 +340,14 @@ class BaseDataset(Dataset):
             is_canonical= np.stack([is_canonical, is_canonicaln])
 
         elem = {}
-        elem['img']           =  img
-        elem['mask']          =  mask
-        elem['flow']          =  flow
-        elem['occ']           =  occ
-        elem['dp']            =  dp
-        elem['dp_feat']       =  dp_feat
-        elem['dp_bbox']       =  dp_bbox
-        elem['vis2d']         =  vis2d
+        elem['img']           =  img        # y
+        elem['mask']          =  mask       # y
+        elem['flow']          =  flow       # y
+        elem['occ']           =  occ        # x     
+        elem['dp']            =  dp         # x
+        elem['dp_feat']       =  dp_feat    # y
+        elem['dp_bbox']       =  dp_bbox    
+        elem['vis2d']         =  vis2d      # y
         elem['rtk']           =  rtk
         elem['kaug']          =  kaug
         elem['dataid']        =  dataid

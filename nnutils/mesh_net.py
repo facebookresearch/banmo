@@ -126,7 +126,6 @@ flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspon
 flags.DEFINE_string('root_basis', 'mlp', 'which root pose basis to use {mlp, cnn, exp}')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
 flags.DEFINE_string('test_frames', '9', 'a list of video index or num of frames, {0,1,2}, 30')
-flags.DEFINE_bool('use_dp', False, 'whether to use densepose')
 flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
 flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
@@ -411,14 +410,6 @@ class v2s_net(nn.Module):
                                                             weight_path)
             self.dp_embed = mesh_vertex_embeddings['sheep_5004']
 
-        if opts.use_dp:
-            self.dp_verts = nn.Parameter(self.dp_verts)
-
-            # deformation from joint canonincal space to dp space
-            self.nerf_dp = NeRF(in_channels_xyz=in_channels_xyz,
-                                in_channels_dir=0, raw_feat=True)
-            self.nerf_models['nerf_dp'] = self.nerf_dp
-
         if opts.N_importance>0:
             self.nerf_fine = NeRF()
             self.nerf_models['fine'] = self.nerf_fine
@@ -489,7 +480,7 @@ class v2s_net(nn.Module):
                 rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
                                        return_all= not(self.training))
                 nsample_a = 4*nsample
-                nsample_s = nsample//2
+                nsample_s = nsample//5
                 rand_inds_a, xys_a = sample_xy(img_size, bs, nsample_a, self.device, 
                                        return_all= not(self.training))
                 # run uncertainty estimation
@@ -663,15 +654,6 @@ class v2s_net(nn.Module):
             torch.cuda.synchronize()
             print('feature mtaching time: %.2f'%(time.time()-start_time))
 
-        if opts.use_dp:
-            # visualize cse predictions
-            dp_pts = results['joint_render']
-            dp_vis_gt = self.dp_vis[self.dps.long()] # bs, h, w, 3
-            dp_vis_pred = (dp_pts - self.dp_vmin)/self.dp_vmax
-            dp_vis_pred = dp_vis_pred.clamp(0,1)
-            results['dp_vis_gt'] = dp_vis_gt
-            results['dp_vis_pred'] = dp_vis_pred
-    
         results['joint_render_vis'] = (results['joint_render']-\
                        torch.Tensor(self.vis_min[None,None]).to(self.device))/\
                        torch.Tensor(self.vis_len[None,None]).to(self.device)
@@ -974,15 +956,6 @@ class v2s_net(nn.Module):
         total_loss = img_loss
         if not opts.bg: total_loss = total_loss + sil_loss 
 
-        if opts.use_dp:
-            rendered_dp = rendered['joint_render']
-            dp_at_samp = torch.stack([self.dps[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
-            dp_at_samp = self.dp_verts[dp_at_samp[...,0].long()]
-            dp_loss = (rendered_dp - dp_at_samp).pow(2)
-            dp_loss = dp_loss[sil_at_samp[...,0]>0].mean() # eval on valid pts
-            total_loss = total_loss + dp_loss
-            aux_out['dp_loss'] = dp_loss
-            
         # flow loss
         if opts.use_corresp:
             flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2

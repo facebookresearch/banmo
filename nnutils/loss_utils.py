@@ -196,16 +196,26 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     pts_exp   = pts_exp .view(base_shape+(3,))
     feat_err = feat_err .view(base_shape+(1,))
     return pts_pred, pts_exp, feat_err
-    
+
 def kp_reproj_loss(pts_pred, xys, models, embedding_xyz, rays):
     """
     pts_pred,   ...,3
     xys,        ...,2
-    proj_err,   ...,1 same as pts_pred
-    kp reprojection loss is only used to update root/body pose 
-    and skinning weights
+    out,        ...,1 same as pts_pred
+    gcc loss is only used to update root/body pose and skinning weights
     """
     xys = xys.view(-1,1,2)
+    xy_reproj = kp_reproj(pts_pred, xys, models, embedding_xyz, rays) 
+    proj_err = (xys - xy_reproj[...,:2]).norm(2,-1)
+    proj_err = proj_err.view(pts_pred.shape[:-1]+(1,))
+    return proj_err
+
+def kp_reproj(pts_pred, xys, models, embedding_xyz, rays):
+    """
+    pts_pred,   ...,3
+    xys,        ...,2
+    out,        ...,1,3 same as pts_pred
+    """
     N = xys.shape[0]
     xyz_coarse_sampled = pts_pred.view(-1,1,3)
     # detach grad since reproj-loss would not benefit feature learning 
@@ -237,10 +247,9 @@ def kp_reproj_loss(pts_pred, xys, models, embedding_xyz, rays):
 
     xyz_coarse_sampled = obj_to_cam( xyz_coarse_sampled, Rmat, Tmat) 
     xyz_coarse_sampled = pinhole_cam(xyz_coarse_sampled,K)
-    
-    proj_err = (xys - xyz_coarse_sampled[...,:2]).norm(2,-1)
-    proj_err = proj_err.view(pts_pred.shape[:-1]+(1,))
-    return proj_err
+
+    xy_coarse_sampled = xyz_coarse_sampled[...,:2]
+    return xy_coarse_sampled
     
     
 def feat_match(nerf_feat, embedding_xyz, feats, bound, 

@@ -37,7 +37,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
                             feat_match_loss, kp_reproj_loss, grad_update_bone
-from utils.io import vis_viser
+from utils.io import vis_viser, draw_pts
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -173,6 +173,9 @@ flags.DEFINE_float('fine_steps', 0.8, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
+
+# for match
+flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
 
 class v2s_net(nn.Module):
     def __init__(self, input_shape, opts, data_info):
@@ -513,18 +516,6 @@ class v2s_net(nn.Module):
                 nsample = nsample + nsample_s
 
             # TODO visualize samples
-            def draw_pts(img, xys):
-                device = img.device
-                img = img.permute(1,2,0).cpu().numpy()*255
-                img = img.astype(np.uint8)[:,:,::-1].copy()
-                for point in xys:
-                    point = point.detach().cpu().numpy()
-                    cv2.circle(img,tuple(point),1,(0,0,255))
-                #pdb.set_trace()
-                #cv2.imwrite('tmp/0.png', img)
-                img = torch.Tensor(img).to(device).permute(2,0,1)[None]
-                return img
-
             #pdb.set_trace()
             #self.imgs_samp = []
             #for i in range(bs):

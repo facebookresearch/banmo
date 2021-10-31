@@ -18,6 +18,34 @@ import dataloader.vidbase as base_data
 from ext_utils.flowlib import flow_to_image
 from utils.colors import label_colormap
 
+def draw_lines(img, xy1s, xy2s):
+    device = img.device
+    img = img.permute(1,2,0).cpu().numpy()*255
+    img = img.astype(np.uint8)[:,:,::-1].copy()
+    for i in range(len(xy1s)):
+        p1 = tuple(xy1s[i].detach().cpu().numpy())
+        p2 = tuple(xy2s[i].detach().cpu().numpy())
+        cv2.circle(img,p1,3,(0,0,255))
+        cv2.circle(img,p2,3,(255,0,0))
+        cv2.line(img, p1, p2, (0,255,0), thickness=1)
+    #pdb.set_trace()
+    #cv2.imwrite('tmp/0.png', img)
+    #img = torch.Tensor(img).to(device).permute(2,0,1)[None]
+    return img
+
+def draw_pts(img, xys):
+    device = img.device
+    img = img.permute(1,2,0).cpu().numpy()*255
+    img = img.astype(np.uint8)[:,:,::-1].copy()
+    for point in xys:
+        point = point.detach().cpu().numpy()
+        cv2.circle(img,tuple(point),1,(0,0,255))
+    #pdb.set_trace()
+    #cv2.imwrite('tmp/0.png', img)
+    #img = torch.Tensor(img).to(device).permute(2,0,1)[None]
+    return img
+
+
 def save_bones(bones, len_max, path):
     B = len(bones)
     elips_list = []

@@ -472,17 +472,20 @@ class v2s_net(nn.Module):
             sim3_j2c = torch.cat([self.sim3_j2c[:1].detach(),  
                                   self.sim3_j2c[1:]],0)
 
-        # TODO importance sampling
+        # sample 1x points
+        rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
+                               return_all= not(self.training))
+        # sample 4x points for further selection
+        nsample_a = 4*nsample
+        rand_inds_a, xys_a = sample_xy(img_size, bs, nsample_a, self.device, 
+                               return_all= not(self.training))
+
+        # importance sampling
         if self.training and opts.use_unc and \
                 self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-            # sample 1.5x points
             with torch.no_grad():
-                rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
-                                       return_all= not(self.training))
-                nsample_a = 4*nsample
+                # select .2x points
                 nsample_s = nsample//5
-                rand_inds_a, xys_a = sample_xy(img_size, bs, nsample_a, self.device, 
-                                       return_all= not(self.training))
                 # run uncertainty estimation
                 ts = self.frameid_sub.to(self.device) / self.max_ts * 2 -1
                 ts = ts[:,None,None].repeat(1,nsample_a,1)
@@ -512,11 +515,6 @@ class v2s_net(nn.Module):
             #for i in range(bs):
             #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
             #self.imgs_samp = torch.stack(self.imgs_samp,0)
-
-        else:
-            rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
-                                   return_all= not(self.training))
-
         
         near_far = self.near_far[self.frameid.long()]
         rays = raycast(xys, Rmat, Tmat, Kinv, near_far)

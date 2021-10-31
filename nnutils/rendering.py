@@ -97,7 +97,7 @@ def render_rays(models,
     Outputs:
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
-    #if use_fine: N_samples = N_samples//2 # use half samples to importance sample
+    if use_fine: N_samples = N_samples//2 # use half samples to importance sample
 
     # Extract models from lists
     embedding_xyz = embeddings['xyz']

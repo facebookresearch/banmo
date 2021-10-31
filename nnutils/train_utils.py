@@ -37,7 +37,7 @@ from matplotlib.pyplot import cm
 from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,\
                                obj_to_cam, get_near_far, near_far_to_bound, \
                                compute_point_visibility, process_so3_seq, \
-                               ood_check_cse, align_sfm_sim3
+                               ood_check_cse, align_sfm_sim3, gauss_mlp_skinning
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from ext_utils.io import mkdir_p
@@ -45,6 +45,7 @@ from nnutils.vis_utils import image_grid
 from dataloader import frameloader
 from utils.io import save_vid, draw_cams, extract_data_info, merge_dict,\
         render_root_txt, save_bones
+from utils.colors import label_colormap
 
 class DataParallelPassthrough(torch.nn.parallel.DistributedDataParallel):
     """
@@ -410,7 +411,7 @@ class v2s_trainer(Trainer):
         with torch.no_grad():
             self.model.eval()
 
-            # run marching cubes
+            # run marching cubes on canonical shape
             mesh_dict_rest = self.extract_mesh(self.model, opts.chunk, \
                                                     opts.sample_grid3d)
 
@@ -495,10 +496,30 @@ class v2s_trainer(Trainer):
                     impath = self.model.impath[frameid]
                     aux_seq['impath'].append(impath)
 
-            # save canonical mesh
-            if opts.lbs: aux_seq['bone_rest'] = self.model.bones.cpu().numpy()
+            # save canonical mesh and extract skinning weights
             mesh_rest = aux_seq['mesh'][0]
             self.model.latest_vars['mesh_rest'] = mesh_rest
+            if opts.lbs: 
+                if mesh_rest.vertices.shape[0]>100:
+                    rest_verts = torch.Tensor(mesh_rest.vertices).to(self.device)
+                    nerf_skin = self.model.nerf_skin if opts.nerf_skin else None
+                    rest_pose_code = self.model.rest_pose_code(torch.Tensor([0])\
+                                            .long().to(self.device))
+                    skins = gauss_mlp_skinning(rest_verts[None], 
+                            self.model.embedding_xyz,
+                            self.model.bones, rest_pose_code, 
+                            nerf_skin, skin_aux=self.model.skin_aux)[0]
+                    skins = skins.cpu().numpy()
+   
+                    num_bones = skins.shape[-1]
+                    colormap = label_colormap()[:num_bones]
+                    colormap = (colormap[None] * skins[...,None]).sum(1)
+
+                    mesh_rest_skin = mesh_rest.copy()
+                    mesh_rest_skin.visual.vertex_colors = colormap
+                    aux_seq['mesh_rest_skin'] = mesh_rest_skin
+
+                aux_seq['bone_rest'] = self.model.bones.cpu().numpy()
         
             # draw camera trajectory
             suffix_id=0

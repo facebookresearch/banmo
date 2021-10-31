@@ -45,6 +45,7 @@ flags.DEFINE_integer('ngpu', 1, 'number of gpus to use')
 flags.DEFINE_float('random_geo', 1, 'Random geometric augmentation')
 flags.DEFINE_string('seqname', 'syn-spot-40', 'name of the sequence')
 flags.DEFINE_integer('img_size', 512, 'image size')
+flags.DEFINE_integer('render_size', 64, 'size used for eval visualizations')
 flags.DEFINE_enum('split', 'train', ['train', 'val', 'all', 'test'], 'eval split')
 flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
 flags.DEFINE_string('logname', 'exp_name', 'Experiment Name')
@@ -176,7 +177,7 @@ flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
 flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
 
 class v2s_net(nn.Module):
-    def __init__(self, input_shape, opts, data_info):
+    def __init__(self, opts, data_info):
         super(v2s_net, self).__init__()
         self.opts = opts
         self.cnn_shape = (opts.cnn_shape,opts.cnn_shape)
@@ -192,6 +193,9 @@ class v2s_net(nn.Module):
         self.use_fine = False # by default not using fine samples
         self.root_basis = opts.root_basis
         self.use_cam = opts.use_cam
+        self.img_size = opts.img_size # current rendering size, 
+                                      # have to be consistent with dataloader, 
+                                      # eval/train has different size
         
         # multi-video mode
         self.num_vid =  len(self.config.sections())-1
@@ -204,7 +208,7 @@ class v2s_net(nn.Module):
             self.latest_vars['j2c'] = np.zeros((self.data_offset[-1], 10))
         self.latest_vars['idk'] = np.zeros((self.data_offset[-1],))
         self.latest_vars['vis'] = np.zeros((self.data_offset[-1],
-                                 opts.img_size,opts.img_size)).astype(bool)
+                                 self.img_size,self.img_size)).astype(bool)
         self.latest_vars['mesh_rest'] = trimesh.Trimesh()
 
         # get near-far plane
@@ -453,7 +457,7 @@ class v2s_net(nn.Module):
             [float(i) for i in config.get('data_%d'%nvid, 'near_far').split(',')]
         return near_far
 
-    def nerf_render(self, rtk, kaug, embedid, img_size, nsample=256, ndepth=128):
+    def nerf_render(self, rtk, kaug, embedid, nsample=256, ndepth=128):
         opts=self.opts
         # render rays
         if opts.debug:
@@ -473,7 +477,7 @@ class v2s_net(nn.Module):
 
         # sample 1x points, sample 4x points for further selection
         nsample_a = 4*nsample
-        rand_inds, xys = sample_xy(img_size, bs, nsample+nsample_a, self.device, 
+        rand_inds, xys = sample_xy(self.img_size, bs, nsample+nsample_a, self.device, 
                                return_all= not(self.training))
         if self.training:
             rand_inds_a, xys_a = rand_inds[:,nsample:].clone(), xys[:,nsample:].clone()
@@ -530,7 +534,7 @@ class v2s_net(nn.Module):
                                 for i in range(bs)],0) # bs,ns,1
         if opts.use_viser:
             dp_feats_rsmp = resample_dp(self.dp_feats, 
-                    self.dp_bbox, kaug, img_size)
+                    self.dp_bbox, kaug, self.img_size)
             feats_at_samp = [dp_feats_rsmp[i].view(self.num_feat,-1).T\
                              [rand_inds[i].long()] for i in range(bs)]
             feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
@@ -621,7 +625,7 @@ class v2s_net(nn.Module):
                         chunk=opts.chunk, # chunk size is effective in val mode
                         obj_bound=self.latest_vars['obj_bound'],
                         use_fine=self.use_fine,
-                        img_size=img_size,
+                        img_size=self.img_size,
                         progress=self.progress,
                         opts=opts,
                         )
@@ -636,7 +640,7 @@ class v2s_net(nn.Module):
                 if self.training:
                     v = v.view(bs,nsample,-1)
                 else:
-                    v = v.view(bs,img_size, img_size, -1)
+                    v = v.view(bs,self.img_size, self.img_size, -1)
             results[k] = v
         if opts.debug:
             torch.cuda.synchronize()
@@ -646,7 +650,7 @@ class v2s_net(nn.Module):
         if opts.use_viser:
             # visualization
             #vis_viser(results, self.masks, self.imgs, 
-            #            bs,img_size, ndepth)
+            #            bs,self.img_size, ndepth)
             #pdb.set_trace()
             
             results['pts_pred'] = (results['pts_pred'] - torch.Tensor(self.vis_min[None]).\
@@ -687,8 +691,8 @@ class v2s_net(nn.Module):
         """
         device = self.device
         opts = self.opts
-        h = opts.img_size
-        w = opts.img_size
+        h = self.img_size
+        w = self.img_size
         # choose a forward-backward consistent pair
         is_degenerate_pair = len(set((self.frameid.numpy())))==2
         if is_degenerate_pair:
@@ -740,7 +744,7 @@ class v2s_net(nn.Module):
                 flo_refr, flo_targ = compute_flow_cse(self.dp_feats[idx],
                                             self.dp_feats[jdx],
                                             cropa2b[idx], cropa2b[jdx], 
-                                            opts.img_size)
+                                            self.img_size)
             self.dp_flow[idx] = flo_refr
             self.dp_flow[jdx] = flo_targ
         if opts.debug:
@@ -895,7 +899,8 @@ class v2s_net(nn.Module):
             self.latest_vars['j2c'][self.frameid.long()] = \
                     self.sim3_j2c.detach().cpu().numpy()[self.dataid.long()]
         self.latest_vars['idk'][self.frameid.long()] = 1
-        self.latest_vars['vis'][self.frameid.long()] = self.vis2d.cpu().numpy()
+        if self.training:
+            self.latest_vars['vis'][self.frameid.long()] = self.vis2d.cpu().numpy()
 
     def set_input(self, batch):
         device = self.device
@@ -937,7 +942,7 @@ class v2s_net(nn.Module):
         aux_out={}
         
         # Render
-        rendered, rand_inds = self.nerf_render(rtk, kaug, embedid, opts.img_size, 
+        rendered, rand_inds = self.nerf_render(rtk, kaug, embedid, 
                 nsample=opts.nsample, ndepth=opts.ndepth)
         
         if opts.debug:
@@ -976,9 +981,9 @@ class v2s_net(nn.Module):
             for i in range(bs):
                 # upsample to same resolution
                 dp_flow = F.interpolate(self.dp_flow[i][None], 
-                             (opts.img_size,opts.img_size), mode='bilinear')[0]
+                             (self.img_size,self.img_size), mode='bilinear')[0]
                 dp_conf = F.interpolate(self.dp_conf[i][None,None], 
-                             (opts.img_size,opts.img_size), mode='bilinear')[0]
+                             (self.img_size,self.img_size), mode='bilinear')[0]
                 fdp_at_samp.append(dp_flow.view(2,-1).T[rand_inds[i]])
                 dcf_at_samp.append(dp_conf.view(-1,1)[rand_inds[i]])
             fdp_at_samp = torch.stack(fdp_at_samp,0)

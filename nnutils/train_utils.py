@@ -78,9 +78,8 @@ class v2s_trainer(Trainer):
 
     def define_model(self, data_info):
         opts = self.opts
-        img_size = (opts.img_size, opts.img_size)
         self.device = torch.device('cuda:{}'.format(opts.local_rank))
-        self.model = mesh_net.v2s_net(img_size, opts, data_info)
+        self.model = mesh_net.v2s_net(opts, data_info)
         self.model.forward = self.model.forward_default
         self.num_epochs = opts.num_epochs
 
@@ -122,6 +121,7 @@ class v2s_trainer(Trainer):
                 opts_dict['rtk_path'] = cam_dir
 
         self.dataloader = frameloader.data_loader(opts_dict)
+        opts_dict['img_size'] = opts.render_size
         self.evalloader = frameloader.eval_loader(opts_dict)
 
         # compute data offset
@@ -585,7 +585,9 @@ class v2s_trainer(Trainer):
 
             # evaluation
             torch.cuda.empty_cache()
+            self.model.module.img_size = opts.render_size
             rendered_seq, aux_seq = self.eval()                
+            self.model.module.img_size = opts.img_size
             torch.cuda.empty_cache()
             if epoch==0: self.save_network('0') # to save some cameras
             if opts.local_rank==0: self.add_image_grid(rendered_seq, log, epoch)
@@ -1026,11 +1028,8 @@ class v2s_trainer(Trainer):
         rtk = model.rtk
         kaug=model.kaug.clone()
         embedid=model.embedid
-        render_size=opts.render_size
-        kaug[:,:2] *= opts.img_size/render_size
 
-        rendered, _ = model.nerf_render(rtk, kaug, embedid, render_size,
-                ndepth=opts.ndepth)
+        rendered, _ = model.nerf_render(rtk, kaug, embedid, ndepth=opts.ndepth)
         rendered_first = {}
         for k,v in rendered.items():
             if v.dim()>0: 

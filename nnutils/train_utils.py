@@ -1183,7 +1183,7 @@ class v2s_trainer(Trainer):
     
     @staticmethod
     def isflow(tag):
-        flolist = ['flo_coarse', 'fdp_coarse', 'flo', 'fdp']
+        flolist = ['flo_coarse', 'fdp_coarse', 'flo', 'fdp', 'flo_at_samp']
         if tag in flolist:
            return True
         else:

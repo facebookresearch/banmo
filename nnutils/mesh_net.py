@@ -45,7 +45,6 @@ flags.DEFINE_integer('ngpu', 1, 'number of gpus to use')
 flags.DEFINE_float('random_geo', 1, 'Random geometric augmentation')
 flags.DEFINE_string('seqname', 'syn-spot-40', 'name of the sequence')
 flags.DEFINE_integer('img_size', 512, 'image size')
-flags.DEFINE_integer('render_size', 64, 'size used for rendering visualizations')
 flags.DEFINE_enum('split', 'train', ['train', 'val', 'all', 'test'], 'eval split')
 flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
 flags.DEFINE_string('logname', 'exp_name', 'Experiment Name')
@@ -477,8 +476,8 @@ class v2s_net(nn.Module):
         rand_inds, xys = sample_xy(img_size, bs, nsample+nsample_a, self.device, 
                                return_all= not(self.training))
         if self.training:
-            rand_inds, xys     = rand_inds[:nsample], xys[:nsample]
-            rand_inds_a, xys_a = rand_inds[nsample:], xys[nsample:]
+            rand_inds_a, xys_a = rand_inds[:,nsample:].clone(), xys[:,nsample:].clone()
+            rand_inds, xys     = rand_inds[:,:nsample].clone(), xys[:,:nsample].clone()
 
         # importance sampling
         if self.training and opts.use_unc and \
@@ -519,16 +518,16 @@ class v2s_net(nn.Module):
         near_far = self.near_far[self.frameid.long()]
         rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
        
-        ## update rays
-        ## rays: input to renderer
-        #rays['img_at_samp'] = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]]\
-        #                        for i in range(bs)],0) # bs,ns,3
-        #rays['sil_at_samp'] = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]]\
-        #                        for i in range(bs)],0) # bs,ns,1
-        #rays['flo_at_samp'] = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]]\
-        #                        for i in range(bs)],0) # bs,ns,2
-        #rays['cfd_at_samp'] = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]]\
-        #                        for i in range(bs)],0) # bs,ns,1
+        # update rays
+        # rays: input to renderer
+        rays['img_at_samp'] = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]]\
+                                for i in range(bs)],0) # bs,ns,3
+        rays['sil_at_samp'] = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]]\
+                                for i in range(bs)],0) # bs,ns,1
+        rays['flo_at_samp'] = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]]\
+                                for i in range(bs)],0) # bs,ns,2
+        rays['cfd_at_samp'] = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]]\
+                                for i in range(bs)],0) # bs,ns,1
         if opts.use_viser:
             dp_feats_rsmp = resample_dp(self.dp_feats, 
                     self.dp_bbox, kaug, img_size)
@@ -940,27 +939,18 @@ class v2s_net(nn.Module):
         # Render
         rendered, rand_inds = self.nerf_render(rtk, kaug, embedid, opts.img_size, 
                 nsample=opts.nsample, ndepth=opts.ndepth)
-        rendered_img = rendered['img_coarse']
-        rendered_sil = rendered['sil_coarse']
-        if opts.use_corresp:
-            rendered_flo = rendered['flo_coarse']
-
-        img_at_samp = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,3
-        sil_at_samp = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]] for i in range(bs)],0) # bs,ns,1
+        
         if opts.debug:
             torch.cuda.synchronize()
             print('set input + render time:%.2f'%(time.time()-start_time))
            
         # image and silhouette loss
-        img_loss_samp = (rendered_img - img_at_samp).pow(2)
-
+        sil_at_samp = rendered['sil_at_samp']
+        sil_at_samp_flo = rendered['sil_at_samp_flo']
+        img_loss_samp = rendered['img_loss_samp']
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
-        # weight sil loss based on # points
-        sil_balance_wt = 0.5*(sil_at_samp.numel()/sil_at_samp.sum())*sil_at_samp +\
-                     0.5*(sil_at_samp.numel()/(1-sil_at_samp).sum())*(1-sil_at_samp)
-        sil_loss = (rendered_sil - sil_at_samp).pow(2) * sil_balance_wt
-
-        sil_loss = opts.sil_wt*sil_loss.mean()
+        sil_loss_samp = rendered['sil_loss_samp']
+        sil_loss = opts.sil_wt*sil_loss_samp.mean()
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
         total_loss = img_loss
@@ -968,25 +958,8 @@ class v2s_net(nn.Module):
 
         # flow loss
         if opts.use_corresp:
-            flo_at_samp = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]] for i in range(bs)],0) # bs,ns,2
-            flo_loss = (rendered_flo - flo_at_samp).pow(2).sum(-1)
-            sil_at_samp_flo = (sil_at_samp>0)\
-                    # & (rendered['flo_valid']==1)
-
-            # confidence weighting: 30x normalized distance
-            # 0.1x pixel error
-            cfd_at_samp = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]] \
-                    for i in range(bs)],0) # bs,ns,1
-            #cfd_at_samp = (-cfd_at_samp).sigmoid()
-            # convert to unit space
-            #cfd_at_samp = cfd_at_samp*10 / opts.img_size*2
-            #cfd_at_samp = (-25*cfd_at_samp).exp()
-            sil_at_samp_flo[cfd_at_samp==0] = False 
-            cfd_at_samp = cfd_at_samp / cfd_at_samp[sil_at_samp_flo].mean()
-            # hard-threshold cycle error
-            flo_loss = flo_loss * cfd_at_samp[...,0]
-            
-            flo_loss = flo_loss[sil_at_samp_flo[...,0]].mean() # eval on valid pts
+            flo_loss_samp = rendered['flo_loss_samp']
+            flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() # eval on valid pts
     
             # warm up by only using flow loss to optimize root pose
             if self.pose_update == 0:

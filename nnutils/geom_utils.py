@@ -467,6 +467,10 @@ def raycast(xys, Rmat, Tmat, Kinv, near_far):
     return rays
 
 def sample_xy(img_size, bs, nsample, device, return_all=False):
+    """
+    rand_inds:  bs, ns
+    xys:        bs, ns, 2
+    """
     xygrid = np.meshgrid(range(img_size), range(img_size))  # w,h->hxw
     xygrid = torch.Tensor(xygrid).to(device)  # (x,y)
     xygrid = xygrid.permute(1,2,0).reshape(1,-1,2).repeat(bs,1,1) # bs,..., 2
@@ -481,7 +485,8 @@ def sample_xy(img_size, bs, nsample, device, return_all=False):
                      for i in range(bs)]
         rand_inds = torch.LongTensor(rand_inds).to(device) # bs, ns
         xys = torch.stack([xygrid[i][rand_inds[i]] for i in range(bs)],0) # bs,ns,2
-    
+   
+    rand_inds = rand_inds.long()
     return rand_inds, xys
 
 def chunk_rays(rays,start,delta):

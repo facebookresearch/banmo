@@ -472,13 +472,13 @@ class v2s_net(nn.Module):
             sim3_j2c = torch.cat([self.sim3_j2c[:1].detach(),  
                                   self.sim3_j2c[1:]],0)
 
-        # sample 1x points
-        rand_inds, xys = sample_xy(img_size, bs, nsample, self.device, 
-                               return_all= not(self.training))
-        # sample 4x points for further selection
+        # sample 1x points, sample 4x points for further selection
         nsample_a = 4*nsample
-        rand_inds_a, xys_a = sample_xy(img_size, bs, nsample_a, self.device, 
+        rand_inds, xys = sample_xy(img_size, bs, nsample+nsample_a, self.device, 
                                return_all= not(self.training))
+        if self.training:
+            rand_inds, xys     = rand_inds[:nsample], xys[:nsample]
+            rand_inds_a, xys_a = rand_inds[nsample:], xys[nsample:]
 
         # importance sampling
         if self.training and opts.use_unc and \
@@ -518,6 +518,24 @@ class v2s_net(nn.Module):
         
         near_far = self.near_far[self.frameid.long()]
         rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
+       
+        ## update rays
+        ## rays: input to renderer
+        #rays['img_at_samp'] = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]]\
+        #                        for i in range(bs)],0) # bs,ns,3
+        #rays['sil_at_samp'] = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]]\
+        #                        for i in range(bs)],0) # bs,ns,1
+        #rays['flo_at_samp'] = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]]\
+        #                        for i in range(bs)],0) # bs,ns,2
+        #rays['cfd_at_samp'] = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]]\
+        #                        for i in range(bs)],0) # bs,ns,1
+        if opts.use_viser:
+            dp_feats_rsmp = resample_dp(self.dp_feats, 
+                    self.dp_bbox, kaug, img_size)
+            feats_at_samp = [dp_feats_rsmp[i].view(self.num_feat,-1).T\
+                             [rand_inds[i].long()] for i in range(bs)]
+            feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
+            rays['feats_at_samp'] = feats_at_samp
 
         # update rays
         if bs>1:
@@ -579,14 +597,6 @@ class v2s_net(nn.Module):
             xysn = torch.cat([xys, torch.ones_like(xys[...,:1])],2)
             xysn = xysn.matmul(Kinv.permute(0,2,1))[...,:2]
             rays['xysn'] = xysn
-        
-        if opts.use_viser:
-            dp_feats_rsmp = resample_dp(self.dp_feats, 
-                    self.dp_bbox, kaug, img_size)
-            feats_at_samp = [dp_feats_rsmp[i].view(self.num_feat,-1).T\
-                             [rand_inds[i].long()] for i in range(bs)]
-            feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
-            rays['feats_at_samp'] = feats_at_samp
         
         if opts.debug:
             torch.cuda.synchronize()
@@ -943,11 +953,13 @@ class v2s_net(nn.Module):
            
         # image and silhouette loss
         img_loss_samp = (rendered_img - img_at_samp).pow(2)
+
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
         # weight sil loss based on # points
         sil_balance_wt = 0.5*(sil_at_samp.numel()/sil_at_samp.sum())*sil_at_samp +\
                      0.5*(sil_at_samp.numel()/(1-sil_at_samp).sum())*(1-sil_at_samp)
         sil_loss = (rendered_sil - sil_at_samp).pow(2) * sil_balance_wt
+
         sil_loss = opts.sil_wt*sil_loss.mean()
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss

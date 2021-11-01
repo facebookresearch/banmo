@@ -124,6 +124,7 @@ def main(_):
     idx_render = str_to_frame(opts.test_frames, data_info)
 #    idx_render[0] += 100
 
+    trainer.model.img_size = opts.render_size
     chunk = opts.frame_chunk
     for i in range(0, len(idx_render), chunk):
         rendered_seq, aux_seq = trainer.eval(idx_render=idx_render[i:i+chunk],

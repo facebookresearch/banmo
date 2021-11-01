@@ -1115,6 +1115,9 @@ class v2s_net(nn.Module):
             aux_out['skin_const'] = self.skin_aux[1].clone().detach()
         aux_out['total_loss'] = total_loss
         aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('set input + render + loss time:%.2f'%(time.time()-start_time))
         return total_loss, aux_out
 
     def forward_warmup(self, batch):

@@ -53,7 +53,9 @@ def data_loader(opts_dict, shuffle=True):
     )
 
     data_inuse = DataLoader(data_inuse,
-         batch_size= opts_dict['batch_size'], num_workers=num_workers, drop_last=True, worker_init_fn=_init_fn, pin_memory=True,sampler=sampler)
+         batch_size= opts_dict['batch_size'], num_workers=num_workers, 
+         drop_last=True, worker_init_fn=_init_fn, pin_memory=True,
+         sampler=sampler)
     return data_inuse
 
 #----------- Eval Data Loader ----------#

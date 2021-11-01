@@ -101,6 +101,7 @@ class BaseDataset(Dataset):
         return self.num_imgs
     
     def read_raw(self, im0idx, flowfw,dframe):
+        #ss = time.time()
         img_path = self.imglist[im0idx]
         img = cv2.imread(img_path)[:,:,::-1] / 255.0
         shape = img.shape
@@ -108,6 +109,7 @@ class BaseDataset(Dataset):
             img = np.repeat(np.expand_dims(img, 2), 3, axis=2)
 
         mask = cv2.imread(self.masklist[im0idx],0)
+        #print('mask+img:%f'%(time.time()-ss))
         mask = mask/np.sort(np.unique(mask))[1]
         occluder = mask==255
         mask[occluder] = 0
@@ -115,6 +117,8 @@ class BaseDataset(Dataset):
             mask = cv2.resize(mask, img.shape[:2][::-1],interpolation=cv2.INTER_NEAREST)
             mask = binary_erosion(mask,iterations=2)
         mask = np.expand_dims(mask, 2)
+        
+        #print('mask sort:%f'%(time.time()-ss))
 
         # flow
         if flowfw:
@@ -140,6 +144,8 @@ class BaseDataset(Dataset):
             occ = np.zeros_like(mask)
         flow = flow[...,:2]
         occ[occluder] = 0
+        
+        #print('flo:%f'%(time.time()-ss))
 
         try:
             dp = readPFM(self.dplist[im0idx])[0]
@@ -155,6 +161,8 @@ class BaseDataset(Dataset):
             dp_bbox =  np.zeros((4))
         dp= (dp *50).astype(np.int32)
         dp_feat = dp_feat.reshape((16,112,112)).copy()
+        
+        #print('dp:%f'%(time.time()-ss))
 
         # add RTK: [R_3x3|T_3x1]
         #          [fx,fy,px,py], to the ndc space
@@ -172,8 +180,11 @@ class BaseDataset(Dataset):
         # create mask for visible vs unkonwn
         vis2d = np.ones_like(mask)
         
+        #print('rtk:%f'%(time.time()-ss))
+        
         # crop the image according to mask
         kaug, hp0, A, B= self.compute_crop_params(mask)
+        #print('crop params:%f'%(time.time()-ss))
         x0 = hp0[:,:,0].astype(np.float32)
         y0 = hp0[:,:,1].astype(np.float32)
         img = cv2.remap(img,x0,y0,interpolation=cv2.INTER_LINEAR)
@@ -182,6 +193,8 @@ class BaseDataset(Dataset):
         occ = cv2.remap(occ,x0,y0,interpolation=cv2.INTER_LINEAR)
         dp   =cv2.remap(dp,   x0,y0,interpolation=cv2.INTER_NEAREST)
         vis2d=cv2.remap(vis2d.astype(int),x0,y0,interpolation=cv2.INTER_NEAREST)
+        
+        #print('crop:%f'%(time.time()-ss))
 
         # Finally transpose the image to 3xHxW
         img = np.transpose(img, (2, 0, 1))
@@ -200,10 +213,13 @@ class BaseDataset(Dataset):
         return rt_dict, kaug, hp0, A,B
     
     def compute_crop_params(self, mask):
+        #ss=time.time()
         indices = np.where(mask>0); xid = indices[1]; yid = indices[0]
         center = ( (xid.max()+xid.min())//2, (yid.max()+yid.min())//2)
         length = ( (xid.max()-xid.min())//2, (yid.max()-yid.min())//2)
         length = (int(self.crop_factor*length[0]), int(self.crop_factor*length[1]))
+        
+        #print('center:%f'%(time.time()-ss))
 
         maxw=self.img_size;maxh=self.img_size
         orisize = (2*length[0], 2*length[1])
@@ -217,14 +233,19 @@ class BaseDataset(Dataset):
             pps  = np.asarray([-float( center[0] - length[0] ), float( center[1] - length[1]  )])
         kaug = np.asarray([alp[0], alp[1], pps[0], pps[1]])
 
+        #print('before geo:%f'%(time.time()-ss))
         # geometric augmentation for img, mask, flow, occ
         x0,y0  =np.meshgrid(range(maxw),range(maxh))
-        A = self.geo_augment(x0)
+        #A = self.geo_augment(x0)
+        A = np.eye(3)
         B = np.asarray([[alp[0],0,(center[0]-length[0])],
                         [0,alp[1],(center[1]-length[1])],
                         [0,0,1]]).T
         hp0 = np.stack([x0,y0,np.ones_like(x0)],-1)  # screen coord
-        hp0 = np.dot(hp0,A).dot(B)                   # image coord
+        #print('before dot:%f'%(time.time()-ss))
+        #hp0 = np.dot(hp0,A).dot(B)                   # image coord
+        hp0 = np.dot(hp0,A.dot(B))                   # image coord
+        #print('after geo:%f'%(time.time()-ss))
         return kaug, hp0, A,B
 
     def flow_process(self,flow, flown, occ, occn, hp0, hp1, A,B,Ap,Bp):
@@ -306,6 +327,8 @@ class BaseDataset(Dataset):
         rtk     = rt_dict['rtk'] 
         frameid = im0idx
         is_canonical = self.can_frame == im0idx
+            
+        #print('before 2nd read-raw:%f'%(time.time()-ss))
 
         if self.load_pair:
             rt_dictn,kaugn,hp1,Ap,Bp = self.read_raw(im1idx, flowfw=(not flowfw),
@@ -320,9 +343,12 @@ class BaseDataset(Dataset):
             dp_bboxn = rt_dictn['dp_bbox'] 
             rtkn     = rt_dictn['rtk'] 
             is_canonicaln = self.can_frame == im1idx
+
+            #print('before process:%f'%(time.time()-ss))
        
             flow, flown, occ, occn = self.flow_process(flow, flown, occ, occn,
                                         hp0, hp1, A,B,Ap,Bp)
+            #print('after process:%f'%(time.time()-ss))
             
             # stack data
             img = np.stack([img, imgn])

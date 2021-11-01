@@ -482,6 +482,10 @@ class v2s_net(nn.Module):
         if self.training:
             rand_inds_a, xys_a = rand_inds[:,nsample:].clone(), xys[:,nsample:].clone()
             rand_inds, xys     = rand_inds[:,:nsample].clone(), xys[:,:nsample].clone()
+        
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('initial xy sample time: %.2f'%(time.time()-start_time))
 
         # importance sampling
         if self.training and opts.use_unc and \
@@ -518,6 +522,10 @@ class v2s_net(nn.Module):
             #for i in range(bs):
             #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
             #self.imgs_samp = torch.stack(self.imgs_samp,0)
+        
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('importance sampling time: %.2f'%(time.time()-start_time))
         
         near_far = self.near_far[self.frameid.long()]
         rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
@@ -603,7 +611,7 @@ class v2s_net(nn.Module):
         
         if opts.debug:
             torch.cuda.synchronize()
-            print('prepare rendering time: %.2f'%(time.time()-start_time))
+            print('prepare rays time: %.2f'%(time.time()-start_time))
 
         bs_rays = rays['bs'] * rays['nsample'] # over pixels
         results=defaultdict(list)

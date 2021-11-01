@@ -473,18 +473,22 @@ def sample_xy(img_size, bs, nsample, device, return_all=False):
     """
     xygrid = np.meshgrid(range(img_size), range(img_size))  # w,h->hxw
     xygrid = torch.Tensor(xygrid).to(device)  # (x,y)
-    xygrid = xygrid.permute(1,2,0).reshape(1,-1,2).repeat(bs,1,1) # bs,..., 2
+    xygrid = xygrid.permute(1,2,0).reshape(1,-1,2)  # 1,..., 2
     
     if return_all:
+        xygrid = xygrid.repeat(bs,1,1)                  # bs,..., 2
         nsample = xygrid.shape[1]
         rand_inds=torch.Tensor(range(nsample))
         rand_inds=rand_inds[None].repeat(bs,1)
         xys = xygrid
     else:
-        rand_inds = [np.random.choice(img_size**2, size=nsample, replace=False)\
-                     for i in range(bs)]
-        rand_inds = torch.LongTensor(rand_inds).to(device) # bs, ns
-        xys = torch.stack([xygrid[i][rand_inds[i]] for i in range(bs)],0) # bs,ns,2
+        probs = torch.ones(img_size**2).to(device) # 512*512 vs 128*64
+        rand_inds = torch.multinomial(probs, bs*nsample, replacement=False)
+        rand_inds = rand_inds.view(bs,nsample)
+        #rand_inds = [np.random.choice(img_size**2, size=nsample, replace=False)\
+        #             for i in range(bs)]
+        #rand_inds = torch.LongTensor(rand_inds).to(device) # bs, ns
+        xys = torch.stack([xygrid[0][rand_inds[i]] for i in range(bs)],0) # bs,ns,2
    
     rand_inds = rand_inds.long()
     return rand_inds, xys

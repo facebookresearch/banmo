@@ -29,7 +29,9 @@ opts = flags.FLAGS
 def main(_):
     seqname=opts.seqname
     trainer = v2s_trainer(opts, is_eval=True)
-    impaths = data_info = trainer.init_dataset()['impath']
+    data_info = trainer.init_dataset()
+    impaths = data_info['impath']
+    data_offset = data_info['offset']
 
     opts_dict = {}
     opts_dict['seqname'] = opts.seqname
@@ -51,7 +53,9 @@ def main(_):
     base_path = 'database/DAVIS/Preload/Full-Resolution/'
     for i, batch in enumerate(dataset):
         frameid = batch['frameid']
+        dataid = batch['dataid']
         dt = frameid[0,1] - frameid[0,0]
+        frameid = frameid + data_offset[dataid[0,0].long()]
         if dt<0: continue # only save forward pair (bachward pair is equivalent)
         impath = impaths[frameid.long()[0,0]]
         seqname_sub = impath.split('/')[-2]

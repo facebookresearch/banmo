@@ -385,14 +385,62 @@ class BaseDataset(Dataset):
         return elem
 
     def preload_data(self, index):
-        #elem = 
+        #TODO combine to a single function with load_data
+        try:dataid = self.dataid
+        except: dataid=0
+
+        im0idx = self.baselist[index]
+        dir_fac = self.directlist[index]*2-1
+        dframe_list = [2,4,8,16,32]
+        max_id = max(self.baselist)
+        dframe_list = [1] + [i for i in dframe_list if (im0idx%i==0) and \
+                             int(im0idx+i*dir_fac) <= max_id]
+        dframe = np.random.choice(dframe_list)
+        if self.spec_dt>0:dframe=self.dframe
+
+        save_dir  = self.imglist[0].replace('JPEGImages', 'Preload').rsplit('/',1)[0]
+        data_path = '%s/%d_%05d.npy'%(save_dir, dframe, im0idx)
+        elem = np.load(data_path,allow_pickle=True).item()
+        elem['dataid'] = np.stack([dataid, dataid])[None]
+
+        for k in elem.keys():
+            elem[k] = elem[k][0]
+            if not self.load_pair:
+                elem[k] = elem[k][:1]
+        
+        #TODO combine to a single func
+        # add RTK: [R_3x3|T_3x1]
+        #          [fx,fy,px,py], to the ndc space
+        # always forward flow
+        im1idx = im0idx + dframe 
+        try:
+            rtk_path = self.rtklist[im0idx]
+            rtk = np.loadtxt(rtk_path)
+            if self.load_pair:
+                rtkn_path = self.rtklist[im1idx]
+                rtkn = np.loadtxt(rtkn_path)
+                rtk = np.stack([rtk, rtkn])         
+        except:
+            print('warning: loading empty camera')
+            print(rtk_path)
+            rtk = np.zeros((4,4))
+            rtk[:3,:3] = np.eye(3)
+            rtk[:3, 3] = np.asarray([0,0,10])
+            rtk[3, :]  = np.asarray([512,512,256,256]) 
+            if self.load_pair:
+                rtkn = rtk.copy()
+                rtk = np.stack([rtk, rtkn])         
+        elem['rtk']= rtk
         return elem
 
 
     def __getitem__(self, index):
-        print(self.preload)
         if self.preload:
-            elem = self.preload_data(index)
+            try:
+                elem = self.preload_data(index)
+            except:
+                print('loading from raw')
+                elem = self.load_data(index)    
         else:
             elem = self.load_data(index)    
         return elem

@@ -307,10 +307,12 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
     print('init:%d, end:%d'%(init_frame, end_frame))
     datasets = []
     for df in dframe:
-        dataset = VidDataset(opts, imglist = imglist, can_frame = can_frame, 
+        try:
+            dataset = VidDataset(opts, imglist = imglist, can_frame = can_frame, 
                           dframe=df, init_frame=init_frame, 
                           dataid=dataid, numvid=numvid, flip=flip, is_eval=is_eval,
                           rtk_path=rtk_path)
+        except: continue
         if rtk_path is None:
             dataset.has_prior_cam = False
         else:

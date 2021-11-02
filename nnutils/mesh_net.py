@@ -491,8 +491,7 @@ class v2s_net(nn.Module):
             print('initial xy sample time: %.2f'%(time.time()-start_time))
 
         # importance sampling
-        if self.training and opts.use_unc and \
-                self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+        if self.training and opts.use_unc and self.progress > opts.fine_steps:
             with torch.no_grad():
                 # select .2x points
                 nsample_s = nsample//5

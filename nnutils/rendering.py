@@ -97,8 +97,6 @@ def render_rays(models,
     Outputs:
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
-    if use_fine: N_samples = N_samples//2 # use half samples to importance sample
-
     # Extract models from lists
     embedding_xyz = embeddings['xyz']
     embedding_dir = embeddings['dir']
@@ -152,7 +150,7 @@ def render_rays(models,
                               img_size, progress,opts,fine_iter=False)
 
         #TODO reset N_importance
-        N_importance = N_samples
+        N_importance = int(N_samples*0.2)
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) 
         z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
                              N_importance, det=(perturb==0)).detach()
@@ -163,7 +161,7 @@ def render_rays(models,
         xyz_sampled = rays_o.unsqueeze(1) + \
                            rays_d.unsqueeze(1) * z_vals.unsqueeze(2)
 
-        N_samples = N_samples * 2 # get back to original # of samples
+        N_samples = N_samples + N_importance # get back to original # of samples
     
     result, _ = inference_deform(xyz_sampled, rays, models, 
                           chunk, N_samples,

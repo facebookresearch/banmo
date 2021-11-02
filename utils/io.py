@@ -279,7 +279,10 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
     load_attr(attrs, config, 'data')
     load_attr(attrs, config, name)
     datapath = attrs['datapath']
-    dframe =   attrs['dframe']
+    if 'dframe' in opts.keys():
+        dframe = opts['dframe'] # only in preload
+    else:
+        dframe = attrs['dframe']
     can_frame =attrs['can_frame']
     init_frame=attrs['init_frame']
     end_frame= attrs['end_frame']
@@ -312,6 +315,10 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
             dataset.has_prior_cam = False
         else:
             dataset.has_prior_cam = True
+        if 'preload' in opts.keys():
+            dataset.preload = opts['preload']
+        else:
+            dataset.preload = False
         datasets.append(dataset)
     return datasets
     
@@ -337,8 +344,8 @@ class VidDataset(base_data.BaseDataset):
             self.flowfwlist = [i.replace('JPEGImages', 'FlowFW').replace('.jpg', '.pfm').replace('.png', '.pfm').replace('%s/'%seqname, '%s/flo-'%seqname) for i in self.imglist]
             self.flowbwlist = [i.replace('JPEGImages', 'FlowBW').replace('.jpg', '.pfm').replace('.png', '.pfm').replace('%s/'%seqname, '%s/flo-'%seqname) for i in self.imglist]
         else:
-            self.flowfwlist = [i.replace('JPEGImages', 'FlowFW').replace('.jpg', '.pfm').replace('.png', '.pfm').replace('%s/'%seqname, '%s_%02d/flo-'%(seqname,self.dframe)) for i in self.imglist]
-            self.flowbwlist = [i.replace('JPEGImages', 'FlowBW').replace('.jpg', '.pfm').replace('.png', '.pfm').replace('%s/'%seqname, '%s_%02d/flo-'%(seqname,self.dframe)) for i in self.imglist]
+            self.flowfwlist = [i.replace('JPEGImages', 'FlowFW').replace('.jpg', '.pfm').replace('.png', '.pfm').replace('%s/'%seqname, '%s/flo-'%(seqname)) for i in self.imglist]
+            self.flowbwlist = [i.replace('JPEGImages', 'FlowBW').replace('.jpg', '.pfm').replace('.png', '.pfm').replace('%s/'%seqname, '%s/flo-'%(seqname)) for i in self.imglist]
         self.featlist = [i.replace('JPEGImages', 'Densepose').replace('.jpg', '.pfm').replace('.png', '.pfm').replace('%s/'%seqname, '%s/feat-'%seqname) for i in self.imglist]
         self.featlist = ['%s/feat-%05d.pfm'%(i.rsplit('/',1)[0], int(i.split('feat-')[-1].split('.pfm')[0])) for i in self.featlist]
         self.bboxlist = ['%s/bbox-%05d.txt'%(i.rsplit('/',1)[0], int(i.split('feat-')[-1].split('.pfm')[0])) for i in self.featlist]

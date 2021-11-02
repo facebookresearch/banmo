@@ -112,8 +112,9 @@ class v2s_trainer(Trainer):
         opts_dict['ngpu'] = opts.ngpu
         opts_dict['local_rank'] = opts.local_rank
         opts_dict['rtk_path'] = opts.rtk_path
+        opts_dict['preload']=opts.preload
 
-        if self.is_eval and opts.rtk_path=='':
+        if self.is_eval and opts.rtk_path=='' and opts.model_path!='':
             # automatically load cameras in the logdir
             model_dir = opts.model_path.rsplit('/',1)[0]
             cam_dir = '%s/init-cam/'%model_dir

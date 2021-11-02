@@ -173,6 +173,9 @@ flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane a
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
 
+# for preloading
+flags.DEFINE_bool('preload', False, 'whether to use pre-computed data')
+
 # for match
 flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
 

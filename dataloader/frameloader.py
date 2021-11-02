@@ -32,7 +32,6 @@ opts = flags.FLAGS
 def _init_fn(worker_id):
     np.random.seed()
     random.seed()
-    
 
 #----------- Data Loader ----------#
 #----------------------------------#
@@ -42,7 +41,7 @@ def data_loader(opts_dict, shuffle=True):
     #num_workers = 0
     print('# workers: %d'%num_workers)
     print('# pairs: %d'%opts_dict['batch_size'])
-   
+
     data_inuse = config_to_dataloader(opts_dict)
 
     sampler = torch.utils.data.distributed.DistributedSampler(

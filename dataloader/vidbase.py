@@ -60,6 +60,7 @@ class BaseDataset(Dataset):
         self.flip=0
         self.crop_factor = 1.2
         self.load_pair = True
+        self.spec_dt = 0 # whether to specify the dframe, only in preload
     
     def mirror_image(self, img, mask):
         if np.random.rand(1) > 0.5:
@@ -292,8 +293,8 @@ class BaseDataset(Dataset):
         flow = np.transpose(flow, (2, 0, 1))
         flown = np.transpose(flown, (2, 0, 1))
         return flow, flown, occ, occn
-
-    def __getitem__(self, index):
+    
+    def load_data(self, index):
         #pdb.set_trace()
         #ss = time.time()
         try:dataid = self.dataid
@@ -306,6 +307,8 @@ class BaseDataset(Dataset):
         dframe_list = [1] + [i for i in dframe_list if (im0idx%i==0) and \
                              int(im0idx+i*dir_fac) <= max_id]
         dframe = np.random.choice(dframe_list)
+        if self.spec_dt>0:dframe=self.dframe
+
         if self.directlist[index]==1:
             # forward flow
             im1idx = im0idx + dframe 
@@ -379,4 +382,17 @@ class BaseDataset(Dataset):
         elem['dataid']        =  dataid
         elem['frameid']       =  frameid
         elem['is_canonical']  =  is_canonical
+        return elem
+
+    def preload_data(self, index):
+        #elem = 
+        return elem
+
+
+    def __getitem__(self, index):
+        print(self.preload)
+        if self.preload:
+            elem = self.preload_data(index)
+        else:
+            elem = self.load_data(index)    
         return elem

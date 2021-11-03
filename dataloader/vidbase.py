@@ -434,11 +434,20 @@ class BaseDataset(Dataset):
         
         # deal with img_size (only for eval visualization purpose)
         current_size = elem['img'].shape[-1]
+        # how to make sure target_size is even
+        # target size (512?) + 2pad = image size (512)
+        target_size = int(self.img_size / self.crop_factor * 1.2 /2) * 2
+        pad = (self.img_size - target_size)//2 
         for k in ['img', 'mask', 'flow', 'occ', 'dp', 'vis2d']:
             tensor = torch.Tensor(elem[k]).view(1,-1,current_size, current_size)
-            elem[k] = F.interpolate(tensor, (self.img_size,self.img_size), 
-                        mode='bilinear').numpy()
-        elem['kaug'][:,:2] *= current_size/self.img_size
+            tensor = F.interpolate(tensor, (target_size, target_size), 
+                        mode='bilinear')
+            tensor = F.pad(tensor, (pad, pad, pad, pad))
+            elem[k] = tensor.numpy()
+        # deal with intrinsics change due to crop factor
+        length = elem['kaug'][:,:2] * 512 / 2 / 1.2
+        elem['kaug'][:,2:] += length*(1.2-self.crop_factor)
+        elem['kaug'][:,:2] *= current_size/float(target_size)
 
         return elem
 

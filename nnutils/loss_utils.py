@@ -220,7 +220,7 @@ def kp_reproj(pts_pred, xys, models, embedding_xyz, rays):
     xyz_coarse_sampled = pts_pred.view(-1,1,3)
     # detach grad since reproj-loss would not benefit feature learning 
     # (due to ambiguity)
-    xyz_coarse_sampled = xyz_coarse_sampled.detach() 
+    #xyz_coarse_sampled = xyz_coarse_sampled.detach() 
 
     # TODO wrap flowbw and lbs into the same module
     # TODO include loss for flowbw

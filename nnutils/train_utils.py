@@ -589,12 +589,12 @@ class v2s_trainer(Trainer):
             self.model.module.img_size = opts.render_size
             rendered_seq, aux_seq = self.eval()                
             self.model.module.img_size = opts.img_size
-            torch.cuda.empty_cache()
             if epoch==0: self.save_network('0') # to save some cameras
             if opts.local_rank==0: self.add_image_grid(rendered_seq, log, epoch)
 
             self.reset_hparams(epoch)
 
+            torch.cuda.empty_cache()
             self.train_one_epoch(epoch, log)
             
             if (epoch+1) % opts.save_epoch_freq == 0:
@@ -1210,7 +1210,7 @@ class v2s_trainer(Trainer):
         for i in range(len(self.dataloader.dataset.datasets)):
             if percent<0.2:   factor = 1.
             elif percent<0.5: factor = (percent-0.2)/0.3
-            elif percent<0.8: factor = (percent-0.5)/0.3
+            #elif percent<0.8: factor = (percent-0.5)/0.3 # remove the 2nd cycle
             else:             factor = 1.
             crop_factor = min(max(maxc-factor*(maxc-minc), minc), maxc)
             self.dataloader.dataset.datasets[i].crop_factor = crop_factor

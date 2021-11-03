@@ -307,7 +307,7 @@ class v2s_net(nn.Module):
 
             if opts.nerf_skin:
                 self.nerf_skin = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
-                                    D=5,W=128,
+                                    D=5,W=64,
                      in_channels_dir=0, out_channels=self.num_bones, raw_feat=True)
                 self.rest_pose_code = nn.Embedding(1, t_embed_dim)
                 self.nerf_models['nerf_skin'] = self.nerf_skin
@@ -1034,7 +1034,8 @@ class v2s_net(nn.Module):
                     total_loss = total_loss*warmup_weight + \
                                2*proj_loss*(1-warmup_weight)
             elif self.progress > (opts.warmup_init_steps + opts.warmup_steps) and\
-                 self.progress < 0.8: #TODO change this to a arg
+                 self.progress < 1.1: #TODO change this to a arg
+                 #self.progress < 0.8: #TODO change this to a arg
                 # only add it after feature volume is trained well
                 total_loss = total_loss + proj_loss
         

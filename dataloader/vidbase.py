@@ -21,6 +21,7 @@ import torch
 from torch.utils.data import Dataset
 from torch.utils.data import DataLoader
 from torch.utils.data.dataloader import default_collate
+import torch.nn.functional as F
 import cv2
 import time
 from scipy.ndimage import binary_erosion
@@ -401,14 +402,10 @@ class BaseDataset(Dataset):
         save_dir  = self.imglist[0].replace('JPEGImages', 'Preload').rsplit('/',1)[0]
         data_path = '%s/%d_%05d.npy'%(save_dir, dframe, im0idx)
         elem = np.load(data_path,allow_pickle=True).item()
+        # modify dataid according to training time ones
         elem['dataid'] = np.stack([dataid, dataid])[None]
 
-        for k in elem.keys():
-            elem[k] = elem[k][0]
-            if not self.load_pair:
-                elem[k] = elem[k][:1]
-        
-        #TODO combine to a single func
+        # reload rtk based on rtk predictions
         # add RTK: [R_3x3|T_3x1]
         #          [fx,fy,px,py], to the ndc space
         # always forward flow
@@ -416,10 +413,9 @@ class BaseDataset(Dataset):
         try:
             rtk_path = self.rtklist[im0idx]
             rtk = np.loadtxt(rtk_path)
-            if self.load_pair:
-                rtkn_path = self.rtklist[im1idx]
-                rtkn = np.loadtxt(rtkn_path)
-                rtk = np.stack([rtk, rtkn])         
+            rtkn_path = self.rtklist[im1idx]
+            rtkn = np.loadtxt(rtkn_path)
+            rtk = np.stack([rtk, rtkn])         
         except:
             print('warning: loading empty camera')
             print(rtk_path)
@@ -427,20 +423,38 @@ class BaseDataset(Dataset):
             rtk[:3,:3] = np.eye(3)
             rtk[:3, 3] = np.asarray([0,0,10])
             rtk[3, :]  = np.asarray([512,512,256,256]) 
-            if self.load_pair:
-                rtkn = rtk.copy()
-                rtk = np.stack([rtk, rtkn])         
-        elem['rtk']= rtk
+            rtkn = rtk.copy()
+            rtk = np.stack([rtk, rtkn])         
+        elem['rtk']= rtk[None]
+
+        for k in elem.keys():
+            elem[k] = elem[k][0]
+            if not self.load_pair:
+                elem[k] = elem[k][:1]
+        
+        # deal with img_size (only for eval visualization purpose)
+        current_size = elem['img'].shape[-1]
+        for k in ['img', 'mask', 'flow', 'occ', 'dp', 'vis2d']:
+            tensor = torch.Tensor(elem[k]).view(1,-1,current_size, current_size)
+            elem[k] = F.interpolate(tensor, (self.img_size,self.img_size), 
+                        mode='bilinear').numpy()
+        elem['kaug'][:,:2] *= current_size/self.img_size
+
         return elem
 
 
     def __getitem__(self, index):
         if self.preload:
+            # find the corresponding fw index in the dataset
+            if self.directlist[index] != 1:
+                same_idx = np.where(np.asarray(self.baselist)==self.baselist[index])[0]
+                index = sorted(same_idx)[0]
             try:
+                # fail loading the last index of the dataset
                 elem = self.preload_data(index)
             except:
-                print('loading from raw')
-                elem = self.load_data(index)    
+                print('loading %d failed'%index)
+                elem = self.preload_data(0)
         else:
             elem = self.load_data(index)    
         return elem

@@ -150,7 +150,7 @@ def render_rays(models,
                               img_size, progress,opts,fine_iter=False)
 
         #TODO reset N_importance
-        N_importance = int(N_samples*0.2)
+        N_importance = N_samples//2
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) 
         z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
                              N_importance, det=(perturb==0)).detach()

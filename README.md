@@ -83,3 +83,10 @@ wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_500
 ### for root body optimization: set --lbs_reinit_epochs 5
 
 ### need to set --perturb 0 at test
+
+### Usage of preload
+```
+python preload.py --seqname sfm-mcats10
+```
+this will generate records for forward pairs of seqs under sfm-mcats10
+at training time, add --preload to the script

@@ -56,6 +56,11 @@ python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats10-lbsn-corre
 python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats4-lbsn-correspdv-rkopt-100ep-from-807 sfm-mcats4 10001 --num_epochs 100 --lbs --use_corresp --use_viser --flow_dp --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --model_path logdir/nerfies_cat_807-lbsn-correspdv-ropt-100ep-005noise/params_100.pth --use_proj --warmup_init_steps 0 --reinit_bone_steps 0 --noanneal_freq --warmup_steps 0 --freeze_proj --noflow_dp --dskin_steps 0.5 --nf_reset 0 --nouse_resize
 ```
 
+Adaptation to another set of videos
+```
+python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 nerfies_cat_807-lbsn-correspv-rkopt-ft-noreinitb-fix nerfies_cat_807 10031 --num_epochs 30 --lbs --use_corresp --use_viser --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --model_path logdir/sfm-mcats10-lbsn-correspv-rkopt-100ep-b32-2/params_100.pth --use_proj --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.5 --noanneal_freq --freeze_proj --nouse_resize --preload
+```
+
 To visualize matchings
 ```
 CUDA_VISIBLE_DEVICES=1 bash scripts/render_match.sh sfm-mcats10 logdir/sfm-mcats10-lbsn-correspdv01d-rkopt-u-100ep/params_100.pth "0 200" "--queryfw --root_opt --lbs"

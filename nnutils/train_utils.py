@@ -335,10 +335,6 @@ class v2s_trainer(Trainer):
         # this is important for volume matching
         self.model.latest_vars['obj_bound'] = latest_vars['obj_bound'] 
 
-        ##TODO change beta 
-        #self.model.nerf_coarse.beta.data = states['nerf_coarse.beta'].exp()
-        #self.del_key( states, 'nerf_coarse.beta')
-
         # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat, nerf_unc
         self.model.load_state_dict(states, strict=False)
     
@@ -868,10 +864,16 @@ class v2s_trainer(Trainer):
             self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
         
         # reinit bones based on extracted surface
-        if opts.lbs and (epoch==int(self.num_epochs*opts.reinit_bone_steps) or\
+        # only reinit for the initialization phase
+        if opts.lbs and opts.model_path=='' and \
+                        (epoch==int(self.num_epochs*opts.reinit_bone_steps) or\
                          epoch==int(self.num_epochs*opts.warmup_init_steps)):
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
+
+        # need to add bones back at 2nd opt
+        if opts.model_path!='':
+            self.model.module.nerf_models['bones'] = self.model.module.bones
 
         # change near-far plane after half epochs
         if epoch>=int(self.num_epochs*opts.nf_reset):
@@ -993,6 +995,10 @@ class v2s_trainer(Trainer):
             self.zero_grad_list(grad_nerf_coarse)
             self.zero_grad_list(grad_nerf_beta)
             self.zero_grad_list(grad_nerf_vis)
+            #TODO add skinning 
+            self.zero_grad_list(grad_bones)
+            self.zero_grad_list(grad_nerf_skin)
+            self.zero_grad_list(grad_skin_aux)
         if self.model.module.cvf_update == 1:
             self.zero_grad_list(grad_nerf_feat)
             self.zero_grad_list(grad_nerf_beta_feat)
@@ -1074,23 +1080,24 @@ class v2s_trainer(Trainer):
             vol_o = vol_o.view(grid_size, grid_size, grid_size)
             #vol_o = F.softplus(vol_o)
 
-            #TODO set density of non-observable points to small value
-            if model.latest_vars['idk'].sum()>0:
-                vis_chunks = []
-                for i in range(0, bs_pts, chunk):
-                    query_xyz_chunk = query_xyz[i:i+chunk]
-                    if opts.nerf_vis:
-                        # this leave no room for halucination and is not what we want
-                        xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
-                        vis_chunk_nerf = model.nerf_vis(xyz_embedded)
-                        vis_chunk = vis_chunk_nerf[...,0].sigmoid()
-                    else:
-                        vis_chunk = compute_point_visibility(query_xyz_chunk.cpu(),
-                                         model.latest_vars, model.device)[None]
-                    vis_chunks += [vis_chunk]
-                vol_visi = torch.cat(vis_chunks, 0)
-                vol_visi = vol_visi.view(grid_size, grid_size, grid_size)
-                vol_o[vol_visi<0.5] = -1
+            if not opts.full_mesh:
+                #TODO set density of non-observable points to small value
+                if model.latest_vars['idk'].sum()>0:
+                    vis_chunks = []
+                    for i in range(0, bs_pts, chunk):
+                        query_xyz_chunk = query_xyz[i:i+chunk]
+                        if opts.nerf_vis:
+                            # this leave no room for halucination and is not what we want
+                            xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
+                            vis_chunk_nerf = model.nerf_vis(xyz_embedded)
+                            vis_chunk = vis_chunk_nerf[...,0].sigmoid()
+                        else:
+                            vis_chunk = compute_point_visibility(query_xyz_chunk.cpu(),
+                                             model.latest_vars, model.device)[None]
+                        vis_chunks += [vis_chunk]
+                    vol_visi = torch.cat(vis_chunks, 0)
+                    vol_visi = vol_visi.view(grid_size, grid_size, grid_size)
+                    vol_o[vol_visi<0.5] = -1
 
             ## save color of sampled points 
             #cmap = cm.get_cmap('cool')

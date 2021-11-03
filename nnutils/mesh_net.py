@@ -144,6 +144,7 @@ flags.DEFINE_float('dskin_steps', 0.8, 'steps to add delta skinning weights')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
+flags.DEFINE_bool('full_mesh', False, 'extract surface without visibility check')
 flags.DEFINE_bool('nerf_skin', True, 'use mlp skinning function')
 flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
@@ -307,6 +308,7 @@ class v2s_net(nn.Module):
 
             if opts.nerf_skin:
                 self.nerf_skin = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
+                    #                D=5,W=128,
                                     D=5,W=64,
                      in_channels_dir=0, out_channels=self.num_bones, raw_feat=True)
                 self.rest_pose_code = nn.Embedding(1, t_embed_dim)

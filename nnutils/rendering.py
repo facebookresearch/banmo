@@ -97,6 +97,8 @@ def render_rays(models,
     Outputs:
         result: dictionary containing final rgb and depth maps for coarse and fine models
     """
+    if use_fine: N_samples = N_samples//2 # use half samples to importance sample
+
     # Extract models from lists
     embedding_xyz = embeddings['xyz']
     embedding_dir = embeddings['dir']
@@ -150,7 +152,7 @@ def render_rays(models,
                               img_size, progress,opts,fine_iter=False)
 
         #TODO reset N_importance
-        N_importance = N_samples//5
+        N_importance = N_samples
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) 
         z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
                              N_importance, det=(perturb==0)).detach()

@@ -122,7 +122,7 @@ flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')
 flags.DEFINE_bool('root_opt', False, 'whether to optimize root body poses')
 flags.DEFINE_bool('ks_opt', False,   'whether to optimize camera intrinsics')
 flags.DEFINE_bool('bg', False, 'whether to optimize background')
-flags.DEFINE_bool('use_corresp', False, 'whether to render and compare correspondence')
+flags.DEFINE_bool('use_corresp', True, 'whether to render and compare correspondence')
 flags.DEFINE_string('root_basis', 'mlp', 'which root pose basis to use {mlp, cnn, exp}')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
 flags.DEFINE_string('test_frames', '9', 'a list of video index or num of frames, {0,1,2}, 30')
@@ -162,8 +162,8 @@ flags.DEFINE_bool('sfm_init', True, 'whether to maintain sfm relative trajectory
 flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value (0-6)')
 
 #viser
-flags.DEFINE_bool('use_viser', False, 'whether to use viser')
-flags.DEFINE_bool('use_proj', False, 'whether to use reprojection loss')
+flags.DEFINE_bool('use_viser', True, 'whether to use viser')
+flags.DEFINE_bool('use_proj', True, 'whether to use reprojection loss')
 flags.DEFINE_bool('freeze_proj', False, 'whether to freeze some params w/ proj loss')
 flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
 flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
@@ -175,7 +175,7 @@ flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
 
 # for preloading
-flags.DEFINE_bool('preload', False, 'whether to use pre-computed data')
+flags.DEFINE_bool('preload', True, 'whether to use pre-computed data')
 
 # for match
 flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
@@ -308,7 +308,7 @@ class v2s_net(nn.Module):
 
             if opts.nerf_skin:
                 self.nerf_skin = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
-                    #                D=5,W=128,
+#                                    D=5,W=128,
                                     D=5,W=64,
                      in_channels_dir=0, out_channels=self.num_bones, raw_feat=True)
                 self.rest_pose_code = nn.Embedding(1, t_embed_dim)
@@ -967,8 +967,8 @@ class v2s_net(nn.Module):
         sil_at_samp_flo = rendered['sil_at_samp_flo']
         img_loss_samp = rendered['img_loss_samp']
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
-        sil_loss_samp = rendered['sil_loss_samp']
-        sil_loss = opts.sil_wt*sil_loss_samp.mean()
+        sil_loss_samp = opts.sil_wt*rendered['sil_loss_samp']
+        sil_loss = sil_loss_samp.mean()
         aux_out['sil_loss'] = sil_loss
         aux_out['img_loss'] = img_loss
         total_loss = img_loss
@@ -1106,8 +1106,12 @@ class v2s_net(nn.Module):
         if opts.use_unc:
             # add uncertainty MLP loss, loss = | |img-img_r|*sil - unc_pred |
             unc_pred = rendered['unc_pred']
-            unc_loss = ((sil_at_samp[...,0]*img_loss_samp.sum(-1)).detach() -\
-                                unc_pred[...,0]).pow(2)
+            unc_rgb = sil_at_samp[...,0]*img_loss_samp.sum(-1)
+            unc_sil = sil_loss_samp[...,0]
+            unc_accumulated = unc_rgb
+#            unc_accumulated = unc_rgb + unc_sil
+
+            unc_loss = (unc_accumulated.detach() - unc_pred[...,0]).pow(2)
             unc_loss = unc_loss.mean()
             aux_out['unc_loss'] = unc_loss
             total_loss = total_loss + unc_loss

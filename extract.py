@@ -77,7 +77,7 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
         flo_p_vid.append(img_p)
 
         mask_gt = rendered_seq['sil'][i][...,0]
-        mask_gt = cv2.resize(mask_gt, img_p.shape[:2][::-1]).astype(bool)
+        mask_gt = cv2.resize(mask_gt, flo_p.shape[:2][::-1]).astype(bool)
         flo_gt = cv2.resize(flo_gt, flo_p.shape[:2])
         flo_err = np.linalg.norm( flo_p - flo_gt ,2,-1)
         flo_err_med = np.median(flo_err[mask_gt])

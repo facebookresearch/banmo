@@ -61,6 +61,12 @@ Adaptation to another set of videos
 python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 nerfies_cat_807-lbsn-correspv-rkopt-ft-noreinitb-fix nerfies_cat_807 10031 --num_epochs 30 --lbs --use_corresp --use_viser --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --model_path logdir/sfm-mcats10-lbsn-correspv-rkopt-100ep-b32-2/params_100.pth --use_proj --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize --preload
 ```
 
+Updated command
+```
+python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 nerfies_cat_807-lbs-rkopt nerfies_cat_807 10001 --num_epochs 30 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth
+python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats10-lbs-rkopt-ft4 sfm-mcats10 10010 --num_epochs 100 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --model_path logdir/sfm-mcats10-lbsn-correspdv-rkopt-ft-100ep-stage3/params_100.pth --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize
+```
+
 To visualize matchings
 ```
 CUDA_VISIBLE_DEVICES=1 bash scripts/render_match.sh sfm-mcats10 logdir/sfm-mcats10-lbsn-correspdv01d-rkopt-u-100ep/params_100.pth "0 200" "--queryfw --root_opt --lbs"

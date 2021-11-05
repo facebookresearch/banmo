@@ -49,6 +49,9 @@ def main(_):
     for dat in dataset.dataset.datasets:
         dat.spec_dt = 1
     
+    #TODO
+    overwrite=False
+
     # hardcoded path 
     base_path = 'database/DAVIS/Preload/Full-Resolution/'
     for i, batch in enumerate(dataset):
@@ -67,7 +70,12 @@ def main(_):
         print(save_path_frame)
 
         dict_array = tensor2array(batch)
-        np.save(save_path_frame, dict_array)
+
+        if (not overwrite) and os.path.exists(save_path_frame):
+            pass
+        else:
+            np.save(save_path_frame, dict_array)
+
 
 
 if __name__ == '__main__':

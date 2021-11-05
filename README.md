@@ -58,7 +58,7 @@ python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats4-lbsn-corres
 
 Adaptation to another set of videos
 ```
-python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 nerfies_cat_807-lbsn-correspv-rkopt-ft-noreinitb-fix nerfies_cat_807 10031 --num_epochs 30 --lbs --use_corresp --use_viser --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --model_path logdir/sfm-mcats10-lbsn-correspv-rkopt-100ep-b32-2/params_100.pth --use_proj --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.5 --noanneal_freq --freeze_proj --nouse_resize --preload
+python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 nerfies_cat_807-lbsn-correspv-rkopt-ft-noreinitb-fix nerfies_cat_807 10031 --num_epochs 30 --lbs --use_corresp --use_viser --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --model_path logdir/sfm-mcats10-lbsn-correspv-rkopt-100ep-b32-2/params_100.pth --use_proj --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize --preload
 ```
 
 To visualize matchings

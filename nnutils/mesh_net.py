@@ -139,7 +139,7 @@ flags.DEFINE_integer('lbs_reinit_epochs', -1, 'epochs to initialize bones')
 #flags.DEFINE_float('reinit_bone_steps', 0, 'steps to initialize bones')
 flags.DEFINE_float('reinit_bone_steps', 0.667, 'steps to initialize bones')
 flags.DEFINE_float('proj_start', 0.0, 'steps to strat projection opt')
-flags.DEFINE_float('proj_end', 0.5,  'steps to end projection opt')
+flags.DEFINE_float('proj_end', 0.2,  'steps to end projection opt')
 flags.DEFINE_float('dskin_steps', 0.8, 'steps to add delta skinning weights')
 flags.DEFINE_integer('lbs_all_epochs', 10, 'epochs used to add all bones')
 flags.DEFINE_bool('se3_flow', False, 'whether to use se3 field for 3d flow')
@@ -1019,13 +1019,12 @@ class v2s_net(nn.Module):
         # viser loss
         if opts.use_viser:
             feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.1
-            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.02
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
         
         if opts.use_proj:
-            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.1
+            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
             aux_out['proj_loss'] = proj_loss
             if opts.freeze_proj:
                 # warm up by only using projection loss to optimize bones
@@ -1035,10 +1034,8 @@ class v2s_net(nn.Module):
                 if (self.progress > opts.proj_start and \
                     self.progress < opts.proj_end):
                     total_loss = total_loss*warmup_weight + \
-                               2*proj_loss*(1-warmup_weight)
-            elif self.progress > (opts.warmup_init_steps + opts.warmup_steps) and\
-                 self.progress < 1.1: #TODO change this to a arg
-                 #self.progress < 0.8: #TODO change this to a arg
+                               20*proj_loss*(1-warmup_weight)
+            elif self.progress > (opts.warmup_init_steps + opts.warmup_steps):
                 # only add it after feature volume is trained well
                 total_loss = total_loss + proj_loss
         

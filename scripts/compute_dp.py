@@ -28,6 +28,7 @@ import point_rend
   
 
 seqname=sys.argv[1]
+ishuman=sys.argv[2] # 'y/n'
 odir='database/DAVIS/'
 imgdir= '%s/JPEGImages/Full-Resolution/%s'%(odir,seqname)
 maskdir='%s/Annotations/Full-Resolution/%s'%(odir,seqname)
@@ -35,8 +36,19 @@ dpdir='%s/Densepose/Full-Resolution/%s'%(odir,seqname)
 if os.path.exists(dpdir): shutil.rmtree(dpdir)
 os.mkdir(dpdir)
 
-config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k.yaml'%(detbase)
-weight_path = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k/253498611/model_final_6d69b7.pkl'
+if ishuman=='y':
+    #human
+    config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_101_FPN_DL_soft_s1x.yaml'%(detbase)
+    weight_path = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_101_FPN_DL_soft_s1x/250713061/model_final_1d3314.pkl'
+    mesh_name = 'smpl_27554'
+elif ishuman=='n':
+    #quadrupeds
+    config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k.yaml'%(detbase)
+    weight_path = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k/253498611/model_final_6d69b7.pkl'
+    mesh_name = 'sheep_5004'
+else:
+    print('y/n, exiting')
+    exit()
 predictor_dp, embedder, mesh_vertex_embeddings = create_cse(config_path,
                                                             weight_path)
    
@@ -64,7 +76,7 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%imgdir))):
                                                     predictor_dp, embedder, 
                                                     mesh_vertex_embeddings, 
                                                     img_rszd, msk_rszd, 
-                                                    mesh_name='sheep_5004')
+                                                    mesh_name=mesh_name)
     # resize to original size
     bbox[0] *= w / clst_verts.shape[1]
     bbox[2] *= w / clst_verts.shape[1]

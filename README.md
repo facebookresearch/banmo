@@ -85,15 +85,13 @@ CUDA_VISIBLE_DEVICES=1 bash scripts/render_result.sh mcats logdir/mcats5-lbs-cor
 CUDA_VISIBLE_DEVICES=1 bash scripts/render_result.sh mcats logdir/mcats-lbs-correspd-root-exp-8gpu/params_100.pth 50 --sample_grid3d 128 --queryfw --lbs --root_opt --nouse_cam --explicit_root
 ```
 ## Additional Notes
-wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl
+- wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl
 
-### don't use visibility filtering at extraction time --noner_vis
+- use --full_mesh at extraction time to extract a complete surface (disable visibility check)
 
-### use a surface-like mlp for mlp-based deformation field --init_beta 1./100 --sil_wt 1.
+- use a surface-like mlp for mlp-based deformation field --init_beta 1./100 --sil_wt 1.
 
-### for root body optimization: set --lbs_reinit_epochs 5
-
-### need to set --perturb 0 at test
+- need to set --perturb 0 at test
 
 ### Usage of preload
 ```

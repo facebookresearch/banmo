@@ -4,6 +4,7 @@ prefix=$2
 filedir=$rootdir/$prefix
 outdir=$rootdir/output
 suffix=$3
+ishuman=$4 # y/n
 fps=10
 
 if [ "$suffix" = ".MOV" ]; then
@@ -39,14 +40,19 @@ for infile in $filedir/*$suffix; do
     mkdir $todir/masks/
     cp $outdir/* $todir/images
     python scripts/densepose.py $seqname
-  else
+  elif [ "$suffix" = ".zip" ]; then
     seqname=$(basename "$infile")
     seqname=${seqname::-4}
     # process segmented data
     unzip -o $infile -d database/DAVIS/
+  else
+    echo 'directly processing sil/rgb'
+    seqname=`echo $infile | sed -e 's/\/.*\///g'`
+    seqname=${seqname::-4}
+    echo $seqname
   fi
 
-  python scripts/compute_dp.py $seqname
+  python scripts/compute_dp.py $seqname $ishuman
 
   # flow
   cd third_party/vcnplus

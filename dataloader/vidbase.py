@@ -441,7 +441,7 @@ class BaseDataset(Dataset):
         for k in ['img', 'mask', 'flow', 'occ', 'dp', 'vis2d']:
             tensor = torch.Tensor(elem[k]).view(1,-1,current_size, current_size)
             tensor = F.interpolate(tensor, (target_size, target_size), 
-                        mode='bilinear')
+                        mode='nearest')
             tensor = F.pad(tensor, (pad, pad, pad, pad))
             elem[k] = tensor.numpy()
         # deal with intrinsics change due to crop factor

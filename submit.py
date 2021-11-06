@@ -11,9 +11,11 @@ cmd_str = "bash"
 for arg in sys.argv[1:]:
     cmd_str = "%s %s"%(cmd_str, arg)
 #cmd_str = f'screen -dmS "viser" bash -c ". activate viser; %s"'%(cmd_str)
-with open(sys.argv[1]) as f:
-    lines = f.readlines()
+
+#with open(sys.argv[1]) as f:
+#    lines = f.readlines()
 #ngpu = [len(l.split(',')) for l in lines if 'dev=' in l][0]
+
 ngpu = len(sys.argv[2].split(','))
 
 # divide gpus

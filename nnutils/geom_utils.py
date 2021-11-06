@@ -1166,9 +1166,13 @@ def ood_check_cse(dp_feats, dp_embed, dp_idx):
     err_list = []
     err_threshold = 12
     for i in range(bs):
-        costmap = (dp_embed.view(N,16,1)*\
-                dp_feats[i].view(1,16,h*w)).sum(-2)
-        max_idx = costmap.argmax(-1)  #  N
+        # use chunk
+        chunk = 5000
+        max_idx = torch.zeros(N).to(device)
+        for j in range(0,N,chunk):
+            costmap = (dp_embed.view(N,16,1)[j:j+chunk]*\
+                    dp_feats[i].view(1,16,h*w)).sum(-2)
+            max_idx[j:j+chunk] = costmap.argmax(-1)  #  N
     
         rpj_idx = max_idx[dp_idx[i]]
         rpj_coord = torch.stack([rpj_idx % w, rpj_idx//w],-1)

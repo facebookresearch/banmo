@@ -163,6 +163,7 @@ flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value 
 
 #viser
 flags.DEFINE_bool('use_viser', True, 'whether to use viser')
+flags.DEFINE_bool('use_human', False, 'whether to use human cse model')
 flags.DEFINE_bool('use_proj', True, 'whether to use reprojection loss')
 flags.DEFINE_bool('freeze_proj', False, 'whether to freeze some params w/ proj loss')
 flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
@@ -379,8 +380,20 @@ class v2s_net(nn.Module):
             
 
         # densepose
+        detbase='../detectron2/'
+        if opts.use_human:
+            canonical_mesh_name = 'smpl_27554'
+            config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_101_FPN_DL_soft_s1x.yaml'%(detbase)
+            weight_path = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_101_FPN_DL_soft_s1x/250713061/model_final_1d3314.pkl'
+        else:
+            canonical_mesh_name = 'sheep_5004'
+            config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k.yaml'%(detbase)
+            weight_path = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k/253498611/model_final_6d69b7.pkl'
+        canonical_mesh_path = 'mesh_material/%s.pkl'%canonical_mesh_name
+        geodists_path = 'mesh_material/geodists_%s.pkl'%canonical_mesh_name
+        
         if opts.flow_dp:
-            with open('mesh_material/geodists_sheep_5004.pkl', 'rb') as f: 
+            with open(geodists_path, 'rb') as f: 
                 geodists=pickle.load(f)
                 geodists = torch.Tensor(geodists).cuda(self.device)
                 geodists[0,:] = np.inf
@@ -390,10 +403,10 @@ class v2s_net(nn.Module):
             self.is_flow_dp=True
         else: self.is_flow_dp=False
 
-        with open('mesh_material/sheep_5004.pkl', 'rb') as f:
+        with open(canonical_mesh_path, 'rb') as f:
             dp = pickle.load(f)
             self.dp_verts = dp['vertices']
-            self.dp_faces = dp['faces']
+            self.dp_faces = dp['faces'].astype(int)
             self.dp_verts = torch.Tensor(self.dp_verts).cuda(self.device)
             self.dp_faces = torch.Tensor(self.dp_faces).cuda(self.device).long()
             
@@ -403,20 +416,23 @@ class v2s_net(nn.Module):
             self.dp_verts *= (self.near_far[:,1] - self.near_far[:,0]).mean()/2
             
             # visualize
-            self.dp_vis = self.dp_verts
+            self.dp_vis = self.dp_verts.detach()
             self.dp_vmin = self.dp_vis.min(0)[0][None]
             self.dp_vis = self.dp_vis - self.dp_vmin
             self.dp_vmax = self.dp_vis.max(0)[0][None]
             self.dp_vis = self.dp_vis / self.dp_vmax
+
+            # save colorvis
+            trimesh.Trimesh(self.dp_verts_unit.cpu().numpy(), 
+                            dp['faces'], 
+                            vertex_colors = self.dp_vis.cpu().numpy())\
+                            .export('tmp/%s.obj'%canonical_mesh_name)
             
             # load surface embedding
             from utils.cselib import create_cse
-            detbase='../detectron2/'
-            config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k.yaml'%(detbase)
-            weight_path = 'https://dl.fbaipublicfiles.com/densepose/cse/densepose_rcnn_R_50_FPN_soft_animals_CA_finetune_4k/253498611/model_final_6d69b7.pkl'
             _, _, mesh_vertex_embeddings = create_cse(config_path,
                                                             weight_path)
-            self.dp_embed = mesh_vertex_embeddings['sheep_5004']
+            self.dp_embed = mesh_vertex_embeddings[canonical_mesh_name]
 
         if opts.N_importance>0:
             self.nerf_fine = NeRF()

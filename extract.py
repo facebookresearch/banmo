@@ -122,7 +122,7 @@ def main(_):
 
     dynamic_mesh = opts.flowbw or opts.lbs
     idx_render = str_to_frame(opts.test_frames, data_info)
-#    idx_render[0] += 100
+    #idx_render[0] += 100
 
     trainer.model.img_size = opts.render_size
     chunk = opts.frame_chunk

@@ -45,27 +45,16 @@ python scripts/render_synthetic.py --outdir syn-hands-20h --model hands --nframe
 To optimize
 ```
 bash scripts/template.sh logname dataname address --flowbw
-python submit.py scripts/template.sh syn-eagled-15h-lbs-corresp-can15 syn-eagled-15h 10034 --lbs --num_epochs 30 --use_corresp
+bash scripts/template.sh syn-eagled-15h-lbs-corresp-can15 syn-eagled-15h 10034 --lbs --num_epochs 30 --use_corresp
 bash scripts/template.sh syn-eagled-15h-lbs-corresp-root syn-eagled-15h 10045 --num_epochs 30 --use_corresp --root_opt --nouse_cam --lbs
-python submit.py scripts/template.sh ncat-509-correspdp-lbs-ropt-10f nerfies_cat_509 10170 --num_epochs 40 --use_corresp --lbs --flow_dp
-python submit.py scripts/template.sh redo-mcat-6-corresp-lbs-flowdp-rot1 mcat_6 10168 --num_epochs 40 --use_corresp --lbs --flow_dp --rot_angle 1
-python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 cat_601-lbs-correspd-root-cnn-8gpu cat_601 10041 --num_epochs 30 --use_corresp --lbs --root_opt --flow_dp --nouse_cam --cnn_root
-bash scripts/template-mgpu.sh 0 test-sfm cat_905 10010 --num_epochs 30 --use_corresp --root_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --lbs
-python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats4-lbsn-correspdv-ropt3 sfm-mcats4 10002 --num_epochs 30 --lbs --use_corresp --flow_dp --use_viser --root_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth
-python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats10-lbsn-correspdv-rkopt-ft-100ep-stage3 sfm-mcats10 10001 --num_epochs 100 --lbs --use_corresp --use_viser --flow_dp --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --model_path logdir/sfm-mcats10-lbsn-correspdv-rkopt-ft-100ep2/params_100.pth --use_proj --warmup_init_steps 0 --reinit_bone_steps 0 --noanneal_freq --warmup_steps 0 --freeze_proj --noflow_dp
-python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats4-lbsn-correspdv-rkopt-100ep-from-807 sfm-mcats4 10001 --num_epochs 100 --lbs --use_corresp --use_viser --flow_dp --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth  --model_path logdir/nerfies_cat_807-lbsn-correspdv-ropt-100ep-005noise/params_100.pth --use_proj --warmup_init_steps 0 --reinit_bone_steps 0 --noanneal_freq --warmup_steps 0 --freeze_proj --noflow_dp --dskin_steps 0.5 --nf_reset 0 --nouse_resize
+bash scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 cat_601-lbs-correspd-root-cnn-8gpu cat_601 10041 --num_epochs 30 --use_corresp --lbs --root_opt --flow_dp --nouse_cam --cnn_root
+bash scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 nerfies_cat_807-lbs-rkopt nerfies_cat_807 10001 --num_epochs 30 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth
+bash scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats10-lbs-rkopt-ft4 sfm-mcats10 10010 --num_epochs 100 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --model_path logdir/sfm-mcats10-lbsn-correspdv-rkopt-ft-100ep-stage3/params_100.pth --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize
 ```
 
 Adaptation to another set of videos
 ```
 python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 nerfies_cat_807-lbsn-correspv-rkopt-ft-noreinitb-fix nerfies_cat_807 10031 --num_epochs 30 --lbs --use_corresp --use_viser --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --model_path logdir/sfm-mcats10-lbsn-correspv-rkopt-100ep-b32-2/params_100.pth --use_proj --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize --preload
-```
-
-Updated command
-```
-python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 nerfies_cat_807-lbs-rkopt nerfies_cat_807 10001 --num_epochs 30 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth
-python submit.py scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats10-lbs-rkopt-ft4 sfm-mcats10 10010 --num_epochs 100 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --model_path logdir/sfm-mcats10-lbsn-correspdv-rkopt-ft-100ep-stage3/params_100.pth --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize
-CUDA_VISIBLE_DEVICES=1 bash scripts/render_vids.sh sfm-mcats10 logdir/sfm-mcats10-lbs-rkopt-ft4/params_30.pth "8 9" "--sample_grid3d 128 --queryfw --root_opt --lbs --render_size 16 --ndepth 16 --nouse_viser --nouse_corresp --nouse_proj"
 ```
 
 Stage-wise finetuning
@@ -90,10 +79,7 @@ python scripts/render_root.py --testdir logdir/syn-eagle-15h-hr-lbs-corresp-root
 
 To re-render meshes
 ```
-bash scripts/render_result.sh syn-eagled-15h logdir/syn-eagled-15h-test3/params_20.pth --lbs --sample_grid3d 128 --queryfw
-bash scripts/render_result.sh mcat_6 logdir/mcat-6-corresp-lbs-flowdp-lr10-rot1-rmdp/params_11.pth --sample_grid3d 128 --queryfw --lbs
-CUDA_VISIBLE_DEVICES=1 bash scripts/render_result.sh mcats logdir/mcats5-lbs-correspd-ropt-100ep/params_100.pth 9 --sample_grid3d 16 --queryfw --use_corresp --nonerf_vis
-CUDA_VISIBLE_DEVICES=1 bash scripts/render_result.sh mcats logdir/mcats-lbs-correspd-root-exp-8gpu/params_100.pth 50 --sample_grid3d 128 --queryfw --lbs --root_opt --nouse_cam --explicit_root
+CUDA_VISIBLE_DEVICES=1 bash scripts/render_vids.sh sfm-mcats10 logdir/sfm-mcats10-lbs-rkopt-ft4/params_30.pth "8 9" "--sample_grid3d 128 --queryfw --root_opt --lbs --render_size 16 --ndepth 16 --nouse_viser --nouse_corresp --nouse_proj"
 ```
 ## Additional Notes
 - wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl
@@ -110,3 +96,7 @@ python preload.py --seqname sfm-mcats10
 ```
 this will generate records for forward pairs of seqs under sfm-mcats10
 at training time, add --preload to the script
+
+
+### Human reconstruction
+use --use_human

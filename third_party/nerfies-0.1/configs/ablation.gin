@@ -100,16 +100,24 @@ TrainConfig.elastic_loss_weight_schedule = %DECAYING_ELASTIC_LOSS_SCHED
 TrainConfig.use_elastic_loss = True
 TrainConfig.use_background_loss = False
 
-max_steps = 500000
-lr_decay_steps = 1000000
+#max_steps = 500000 # 4gpu
+#lr_decay_steps = 1000000 # 4gpu
+
+max_steps = 250000
+lr_decay_steps = 500000
 
 image_scale = 4
-batch_size=1024
-eval_batch_size=1024
+#batch_size=1024 # 4gpu
+#eval_batch_size=1024 # 4gpu
 #batch_size = 3072
 #eval_batch_size = 4096
-init_lr = 0.0007
-final_lr = 0.00007
+#init_lr = 0.0007 # 4gpu
+#final_lr = 0.00007
+
+batch_size=6144
+eval_batch_size=8096 
+init_lr = 0.001
+final_lr = 0.0001
 
 ModelConfig.num_nerf_point_freqs = 8
 ModelConfig.nerf_trunk_width = 256

@@ -309,8 +309,8 @@ class v2s_net(nn.Module):
 
             if opts.nerf_skin:
                 self.nerf_skin = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
-                                    D=5,W=128,
-#                                    D=5,W=64,
+#                                    D=5,W=128,
+                                    D=5,W=64,
                      in_channels_dir=0, out_channels=self.num_bones, raw_feat=True)
                 self.rest_pose_code = nn.Embedding(1, t_embed_dim)
                 self.nerf_models['nerf_skin'] = self.nerf_skin

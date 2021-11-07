@@ -494,7 +494,7 @@ class v2s_trainer(Trainer):
                     aux_seq['impath'].append(impath)
 
             # save canonical mesh and extract skinning weights
-            mesh_rest = aux_seq['mesh'][0]
+            mesh_rest = aux_seq['mesh_rest']
             self.model.latest_vars['mesh_rest'] = mesh_rest
             if opts.lbs: 
                 if mesh_rest.vertices.shape[0]>100:

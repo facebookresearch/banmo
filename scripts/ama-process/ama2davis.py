@@ -32,6 +32,15 @@ for idx, rgb_path in enumerate(sorted(glob.glob(path))):
     outsil_path = '%s/%05d.png'%(outsil_dir, idx)
     sil = cv2.imread(sil_path,0)
     sil = (sil>0).astype(np.uint8)
+
+    # remove extra sils
+    nb_components, output, stats, centroids = \
+    cv2.connectedComponentsWithStats(sil, connectivity=8)
+    if nb_components>1:
+        max_label, max_size = max([(i, stats[i, cv2.CC_STAT_AREA]) for i in range(1, nb_components)], key=lambda x: x[1])
+        sil = output == max_label
+    sil = (sil>0).astype(np.uint8)*128
+
     cv2.imwrite(outsil_path, sil)
 
     outrgb_path = '%s/%05d.jpg'%(outrgb_dir, idx)

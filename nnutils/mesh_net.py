@@ -309,8 +309,8 @@ class v2s_net(nn.Module):
 
             if opts.nerf_skin:
                 self.nerf_skin = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
-#                                    D=5,W=128,
-                                    D=5,W=64,
+                                    D=5,W=128,
+#                                    D=5,W=64,
                      in_channels_dir=0, out_channels=self.num_bones, raw_feat=True)
                 self.rest_pose_code = nn.Embedding(1, t_embed_dim)
                 self.nerf_models['nerf_skin'] = self.nerf_skin
@@ -677,11 +677,10 @@ class v2s_net(nn.Module):
         
         # viser feature matching
         if opts.use_viser:
-            # visualization
-            #vis_viser(results, self.masks, self.imgs, 
+            ## visualization
+            #vis_viser(results, self.masks, self.imgs,
             #            bs,self.img_size, ndepth)
-            #pdb.set_trace()
-            
+            #pdb.set_trace() 
             results['pts_pred'] = (results['pts_pred'] - torch.Tensor(self.vis_min[None]).\
                     to(self.device)) / torch.Tensor(self.vis_len[None]).to(self.device)
             results['pts_exp']  = (results['pts_exp'] - torch.Tensor(self.vis_min[None]).\

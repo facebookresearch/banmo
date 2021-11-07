@@ -78,10 +78,7 @@ def save_bones(bones, len_max, path):
     elips.export(path)
 
 def vis_viser(results, masks, imgs, bs,img_size,ndepth):
-    xyz_coarse_frame = results['xyz_coarse_frame'] 
     feat_err = results['feat_err'] 
-    pts_pred = results['pts_pred'] 
-    pts_exp  = results['pts_exp'] 
 
     feat_err = feat_err[0].view(img_size,img_size)
     mask_rszd = F.interpolate(masks[None],(img_size,img_size))[0,0].bool()
@@ -91,29 +88,34 @@ def vis_viser(results, masks, imgs, bs,img_size,ndepth):
     med = feat_err[mask_rszd].median()
     cv2.imwrite('tmp/viser_err.png', (feat_err/med).cpu().numpy()*128)
 
-    pts_pred = pts_pred[0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
-    pts_exp  = pts_exp[0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
+    # draw lines
+    if 'xyz_coarse_frame' in results.keys() and 'pts_exp' in results.keys():
+        xyz_coarse_frame = results['xyz_coarse_frame'] 
+        color_plane = torch.stack([img_rszd, torch.ones_like(img_rszd)],0).view(-1,3)
+        color_plane = color_plane.cpu().numpy()
+        near_plane= xyz_coarse_frame.view(bs,-1,ndepth,3)[0,:,0]
+        d_near = near_plane[:,2].mean()
+        near_plane[...,-1] -= d_near*0.01
+        far_plane = xyz_coarse_frame.view(bs,-1,ndepth,3)[0,:,-1]
+        nf_plane = torch.cat([near_plane, far_plane],0)
+        trimesh.Trimesh(nf_plane.cpu().numpy(), vertex_colors=color_plane).\
+                export('tmp/viser_plane.obj')
+
+        near_plane_mskd = near_plane[mask_rszd.view(-1)].cpu()
+        pts_pred = results['pts_pred'] 
+        pts_pred = pts_pred[0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
+        draw_lines_ray_canonical(near_plane_mskd, pts_pred,img_mskd,
+                                     'tmp/viser_line_pred.obj')
+   
+        pts_exp  = results['pts_exp'] 
+        pts_exp  = pts_exp[0].view(img_size,img_size,3)[mask_rszd].cpu().numpy()
+        draw_lines_ray_canonical(pts_pred, pts_exp,img_mskd,
+                                 'tmp/viser_line_exp.obj')
+    
     #pts_pred_col=results['pts_pred'][0][mask_rszd].cpu().numpy()
     #pts_exp_col = results['pts_exp'][0][mask_rszd].cpu().numpy()
     #trimesh.Trimesh(pts_pred, vertex_colors=img_mskd).export('tmp/viser_pred.obj')
     #trimesh.Trimesh(pts_exp  ,vertex_colors=img_mskd).export('tmp/viser_exp.obj')
-
-    color_plane = torch.stack([img_rszd, torch.ones_like(img_rszd)],0).view(-1,3)
-    color_plane = color_plane.cpu().numpy()
-    near_plane= xyz_coarse_frame.view(bs,-1,ndepth,3)[0,:,0]
-    d_near = near_plane[:,2].mean()
-    near_plane[...,-1] -= d_near*0.01
-    far_plane = xyz_coarse_frame.view(bs,-1,ndepth,3)[0,:,-1]
-    nf_plane = torch.cat([near_plane, far_plane],0)
-    trimesh.Trimesh(nf_plane.cpu().numpy(), vertex_colors=color_plane).\
-            export('tmp/viser_plane.obj')
-
-    # draw lines
-    near_plane_mskd = near_plane[mask_rszd.view(-1)].cpu()
-    draw_lines_ray_canonical(near_plane_mskd, pts_pred,img_mskd,
-                                 'tmp/viser_line_pred.obj')
-    draw_lines_ray_canonical(pts_pred, pts_exp,img_mskd,
-                                 'tmp/viser_line_exp.obj')
 
 def draw_lines_ray_canonical(near_plane_mskd, pts_exp, img_mskd, path):
     colormap = label_colormap()

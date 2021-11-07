@@ -2,6 +2,7 @@ import pdb
 import time
 import cv2
 import numpy as np
+import trimesh
 from pytorch3d import transforms
 import torch
 import torch.nn as nn
@@ -671,7 +672,7 @@ def canonical2ndc(model, dp_canonical_pts, rtk, kaug, embedid):
     dp_px = pinhole_cam(dp_cam_pts,K)
     return dp_px 
 
-def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
+def get_near_far(near_far, vars_np, tol_fac=1.2, pts=None):
     """
     pts:        point coordinate N,3
     near_far:   near and far plane M,2
@@ -680,12 +681,16 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
     idk:        indicator of obsered or not M
     tol_fac     tolerance factor
     """
+    if pts is None:
+        #pts = vars_np['mesh_rest'].vertices
+        # turn points to bounding box
+        pts = trimesh.bounds.corners(vars_np['mesh_rest'].bounds)
+
     device = near_far.device
-    vars_tensor = array2tensor(vars_np, device=device)
-    rtk = vars_tensor['rtk']
-    idk = vars_tensor['idk']
-    if 'j2c' in vars_tensor.keys():
-        j2c = vars_tensor['j2c']
+    rtk = torch.Tensor(vars_np['rtk']).to(device)
+    idk = torch.Tensor(vars_np['idk']).to(device)
+    if 'j2c' in vars_np.keys():
+        j2c = torch.Tensor(vars_np['j2c']).to(device)
     else:
         j2c = None
 
@@ -698,9 +703,8 @@ def get_near_far(pts, near_far, vars_np, tol_fac=1.2):
     near= pmin-delta
     far = pmax+delta
 
-    max_far = near_far.max().item()
-    near_far[idk==1,0] = torch.clamp(near[idk==1], 1e-3, max_far)
-    near_far[idk==1,1] = torch.clamp( far[idk==1], 1e-3, max_far)
+    near_far[idk==1,0] = torch.clamp(near[idk==1], min=1e-3)
+    near_far[idk==1,1] = torch.clamp( far[idk==1], min=1e-3)
     return near_far
 
 
@@ -731,6 +735,7 @@ def compute_point_visibility(pts, vars_np, device):
     j2c:        joint to canonical transform M, 10
     rtk:        object to camera transform, M,4,4
     idk:        indicator of obsered or not M
+    **deprecated** due to K vars_tensor['rtk'] may not be consistent
     """
     vars_tensor = array2tensor(vars_np, device=device)
     rtk = vars_tensor['rtk']

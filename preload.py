@@ -50,7 +50,7 @@ def main(_):
         dat.spec_dt = 1
     
     #TODO
-    overwrite=False
+    overwrite=True
 
     # hardcoded path 
     base_path = 'database/DAVIS/Preload/Full-Resolution/'

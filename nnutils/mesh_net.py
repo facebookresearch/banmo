@@ -33,7 +33,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 near_far_to_bound, compute_flow_geodist, \
                                 compute_flow_cse, fb_flow_check, pinhole_cam, \
                                 render_color, mask_aug, bbox_dp2rnd, resample_dp, \
-                                vrender_flo
+                                vrender_flo, get_near_far, array2tensor
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
                             feat_match_loss, kp_reproj_loss, grad_update_bone
@@ -208,7 +208,10 @@ class v2s_net(nn.Module):
         self.max_ts = (self.data_offset[1:] - self.data_offset[:-1]).max()
         self.impath      = data_info['impath']
         self.latest_vars = {}
+        # only used in get_near_far: rtk, j2c, idk
+        # only used in visibility: rtk, j2c, vis, idx (deprecated)
         self.latest_vars['rtk'] = np.zeros((self.data_offset[-1], 4,4))
+        self.latest_vars['rt_raw'] = np.zeros((self.data_offset[-1], 3,4)) # from data
         if opts.use_sim3:
             self.latest_vars['j2c'] = np.zeros((self.data_offset[-1], 10))
         self.latest_vars['idk'] = np.zeros((self.data_offset[-1],))
@@ -832,6 +835,7 @@ class v2s_net(nn.Module):
         self.frameid_sub = self.frameid.clone()
         self.embedid = self.frameid + self.data_offset[self.dataid.long()]
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]
+        self.rt_raw  = self.rtk.clone()[:,:3]
 
         # process silhouette
         self.sils = self.masks.clone()
@@ -909,20 +913,60 @@ class v2s_net(nn.Module):
             self.rtk[:,:3,3] = tmat
 
         self.rtk[:,3,:] = self.ks_param[self.dataid.long()] #TODO kmat
-       
+      
+    def compute_rts(self):
+        """
+        Assumpions
+        - use_cam
+        - use mlp or exp root pose 
+        input:  rt_raw loaded from data
+        output: current estimate of rtks for all frames
+        """
+        #TODO merge this function with convert_root_pose
+        device = self.device
+        opts = self.opts
+        rt_raw = torch.Tensor(self.latest_vars['rt_raw']).to(device)
+        obj_scale = self.obj_scale
+        bs = rt_raw.shape[0]
+        frameid = torch.Tensor(range(bs)).to(device).long()
+
+        # read rts
+        rt_raw[:,:3,3] = rt_raw[:,:3,3] / obj_scale
+        if not self.use_cam:
+            print('error'); exit()
+
+        if self.opts.root_opt:
+            if self.root_basis == 'mlp' or self.root_basis == 'exp':
+                root_rts = self.nerf_root_rts(frameid)
+            else: print('error'); exit()
+            root_rmat = root_rts[:,0,:9].view(-1,3,3)
+            root_tmat = root_rts[:,0,9:12]
+    
+            rmat = rt_raw[:,:3,:3]
+            tmat = rt_raw[:,:3,3]
+            tmat = tmat + rmat.matmul(root_tmat[...,None])[...,0]
+            rmat = rmat.matmul(root_rmat)
+            rt_raw[:,:3,:3] = rmat
+            rt_raw[:,:3,3] = tmat
+        return rt_raw.cpu().numpy()
+
+
     def save_latest_vars(self):
         """
         in: self.
         {rtk, kaug, frameid, vis2d}
         out: self.
         {latest_vars}
+        these are only used in get_near_far_plane and compute_visibility
         """
         rtk = self.rtk.clone().detach()
         Kmat = K2mat(rtk[:,3])
         Kaug = K2inv(self.kaug) # p = Kaug Kmat P
         rtk[:,3] = mat2K(Kaug.matmul(Kmat))
 
+        # TODO don't want to save k at eval time (due to different intrinsics)
         self.latest_vars['rtk'][self.frameid.long()] = rtk.cpu().numpy()
+        self.latest_vars['rt_raw'][self.frameid.long()] = self.rt_raw.cpu().numpy()
         if self.opts.use_sim3:
             self.latest_vars['j2c'][self.frameid.long()] = \
                     self.sim3_j2c.detach().cpu().numpy()[self.dataid.long()]
@@ -941,7 +985,7 @@ class v2s_net(nn.Module):
             self.compute_dp_flow(bs)
  
         self.convert_root_pose()
-       
+      
         self.save_latest_vars()
         
         if self.training and self.opts.anneal_freq:
@@ -1286,6 +1330,7 @@ class v2s_net(nn.Module):
         """
         create a base se3 based on near-far plane
         """
+        #TODO use a fixed near-far
         rt = torch.zeros(bs,3,4).to(device)
         rt[:,:3,:3] = torch.eye(3)[None].repeat(bs,1,1).to(device)
         rt[:,:2,3] = 0.

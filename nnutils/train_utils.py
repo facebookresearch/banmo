@@ -683,9 +683,9 @@ class v2s_trainer(Trainer):
         # save near-far plane
         shape_verts = self.model.dp_verts_unit / 3 * self.model.near_far.mean()
         shape_verts = shape_verts * 1.2
-        self.model.near_far.data = get_near_far(shape_verts.detach().cpu().numpy(),
-                                         self.model.near_far.data,
-                                         self.model.latest_vars)
+        self.model.near_far.data = get_near_far(self.model.near_far.data,
+                                                self.model.latest_vars,
+                                         pts=shape_verts.detach().cpu().numpy())
         save_path = '%s/init-nf.txt'%(self.save_dir)
         save_nf = self.model.near_far.data.cpu().numpy() * self.model.obj_scale
         np.savetxt(save_path, save_nf)
@@ -753,11 +753,27 @@ class v2s_trainer(Trainer):
                 self.update_pose_indicator(i)
                 self.update_shape_indicator(i)
                 self.update_cvf_indicator(i)
-
+            
             if opts.debug:
                 if 'start_time' in locals().keys():
                     torch.cuda.synchronize()
                     print('load time:%.2f'%(time.time()-start_time))
+
+            # change near-far plane for views in the batch
+            if self.model.module.progress>=opts.nf_reset:
+                # recompute rts and set 1 to idk
+                with torch.no_grad():
+                    rtk_all = self.model.module.compute_rts()
+                self.model.module.latest_vars['rtk'][:,:3] = rtk_all
+                self.model.module.latest_vars['idk'][:] = 1
+                self.model.module.near_far.data = get_near_far(
+                                                    self.model.near_far.data,
+                                                      self.model.latest_vars)
+
+            if opts.debug:
+                if 'start_time' in locals().keys():
+                    torch.cuda.synchronize()
+                    print('update near-far plane time:%.2f'%(time.time()-start_time))
 
             self.optimizer.zero_grad()
             total_loss,aux_out = self.model(batch)
@@ -875,11 +891,10 @@ class v2s_trainer(Trainer):
         if opts.model_path!='':
             self.model.module.nerf_models['bones'] = self.model.module.bones
 
-        # change near-far plane after half epochs
-        if epoch>=int(self.num_epochs*opts.nf_reset):
-            self.model.near_far.data = get_near_far(mesh_rest.vertices,
-                                         self.model.near_far.data,
-                                         self.model.latest_vars)
+        ## change near-far plane after half epochs
+        #if epoch>=int(self.num_epochs*opts.nf_reset):
+        #    self.model.near_far.data = get_near_far(self.model.near_far.data,
+        #                                              self.model.latest_vars)
 
         # add nerf-skin when the shape is good
         if opts.lbs and opts.nerf_skin and \
@@ -1092,6 +1107,7 @@ class v2s_trainer(Trainer):
                             vis_chunk_nerf = model.nerf_vis(xyz_embedded)
                             vis_chunk = vis_chunk_nerf[...,0].sigmoid()
                         else:
+                            #TODO deprecated!
                             vis_chunk = compute_point_visibility(query_xyz_chunk.cpu(),
                                              model.latest_vars, model.device)[None]
                         vis_chunks += [vis_chunk]

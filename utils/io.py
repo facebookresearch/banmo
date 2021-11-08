@@ -78,15 +78,18 @@ def save_bones(bones, len_max, path):
     elips.export(path)
 
 def vis_viser(results, masks, imgs, bs,img_size,ndepth):
-    feat_err = results['feat_err'] 
+    feat_errs = results['feat_err'] 
 
-    feat_err = feat_err[0].view(img_size,img_size)
-    mask_rszd = F.interpolate(masks[None],(img_size,img_size))[0,0].bool()
-    img_rszd =  F.interpolate(imgs       ,(img_size,img_size))[0].permute(1,2,0)
-    img_mskd = img_rszd[mask_rszd].cpu().numpy()
-    feat_err[~mask_rszd] = 0.
-    med = feat_err[mask_rszd].median()
-    cv2.imwrite('tmp/viser_err.png', (feat_err/med).cpu().numpy()*128)
+    bs = feat_errs.shape[0]
+    for i in range(bs):
+        feat_err = feat_errs[i].view(img_size,img_size)
+        mask_rszd = F.interpolate(masks[None],(img_size,img_size))[0,i].bool()
+        img_rszd =  F.interpolate(imgs       ,(img_size,img_size))[i].permute(1,2,0)
+        img_mskd = img_rszd[mask_rszd].cpu().numpy()
+        feat_err[~mask_rszd] = 0.
+        med = feat_err[mask_rszd].median()
+        print('%d-median:%f' %(i,med))
+        cv2.imwrite('tmp/viser_err-%d.png'%i, (feat_err/med).cpu().numpy()*128)
 
     # draw lines
     if 'xyz_coarse_frame' in results.keys() and 'pts_exp' in results.keys():

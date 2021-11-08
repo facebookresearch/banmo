@@ -36,7 +36,8 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 vrender_flo, get_near_far, array2tensor
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
-                            feat_match_loss, kp_reproj_loss, grad_update_bone
+                            feat_match_loss, kp_reproj_loss, grad_update_bone, \
+                            loss_filter
 from utils.io import vis_viser, draw_pts
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
@@ -218,6 +219,8 @@ class v2s_net(nn.Module):
         self.latest_vars['vis'] = np.zeros((self.data_offset[-1],
                                  self.img_size,self.img_size)).astype(bool)
         self.latest_vars['mesh_rest'] = trimesh.Trimesh()
+        self.latest_vars['fp_err'] = np.zeros((self.data_offset[-1],2)) # feat, proj
+        self.latest_vars['flo_err'] = np.zeros((self.data_offset[-1],)) # feat, proj
 
         # get near-far plane
         if opts.unit_nf:
@@ -1032,9 +1035,18 @@ class v2s_net(nn.Module):
         aux_out['img_loss'] = img_loss
         total_loss = img_loss
         if not opts.bg: total_loss = total_loss + sil_loss 
-
+            
         # flow loss
         if opts.use_corresp:
+            flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'], 
+                                            rendered['flo_loss_samp'],
+                                            sil_at_samp_flo)
+            rendered['flo_loss_samp'][invalid_idx] *= 0.
+            self.latest_vars['flo_err'][self.frameid.long()] = flo_err
+            if invalid_idx.sum()>0:
+                print('removing invalid idx from flo')
+                print(self.frameid[invalid_idx])
+
             flo_loss_samp = rendered['flo_loss_samp']
             flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() # eval on valid pts
     
@@ -1077,10 +1089,20 @@ class v2s_net(nn.Module):
         
         # viser loss
         if opts.use_viser:
+            feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
+                                            rendered['feat_err']*0.1,
+                                            sil_at_samp>0)
+            self.latest_vars['fp_err'][self.frameid.long(),0] = feat_err
+            rendered['feat_err'][invalid_idx] *= 0.
+            if invalid_idx.sum()>0:
+                print('removing invalid idx from feat')
+                print(self.frameid[invalid_idx])
+
             feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.1
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
+
         
         if opts.use_proj:
             proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01

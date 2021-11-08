@@ -2,6 +2,7 @@ from absl import flags, app
 import sys
 sys.path.insert(0,'third_party')
 import numpy as np
+from matplotlib import pyplot as plt
 import torch
 import os
 import glob
@@ -133,6 +134,21 @@ def match_frames(trainer, idxs, nsample=200):
             results['feat_err']  =  proj_err
             vis_viser(results, model.masks, model.imgs, 
                         bs,opts.img_size, opts.ndepth)
+
+    # visualize current error stats
+    pdb.set_trace()
+    feat_err=model.latest_vars['fp_err'][:,0] 
+    proj_err=model.latest_vars['fp_err'][:,1] 
+    feat_err = feat_err[feat_err>0]
+    proj_err = proj_err[proj_err>0]
+    print('feat-med: %f'%(np.median(feat_err)))
+    print('proj-med: %f'%(np.median(proj_err)))
+    plt.hist(feat_err,bins=100)
+    plt.savefig('tmp/viser_feat_err.jpg')
+    plt.clf()
+    plt.hist(proj_err,bins=100)
+    plt.savefig('tmp/viser_proj_err.jpg')
+
 
 def main(_):
     trainer = v2s_trainer(opts, is_eval=True)

@@ -97,6 +97,10 @@ def main():
     imglist = [imglist[i] for i in idx_render]
 
     seqname_list = []
+    # subsumple frames
+    if len(imglist)>150:
+        imglist = imglist[::(len(imglist)//150)]
+
     for name in imglist:
         rgb_img = cv2.imread(name)
         # replace with densepose

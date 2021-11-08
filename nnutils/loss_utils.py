@@ -348,3 +348,25 @@ def grad_update_bone(bones,embedding_xyz, nerf_vis, learning_rate):
     bones.data = bones.data-gradient*learning_rate
 
     return bone_loc_loss
+
+def loss_filter(g_floerr, flo_loss_samp, sil_at_samp_flo):
+    scale_factor = 10
+    bs = sil_at_samp_flo.shape[0] 
+    # find history meidan
+    g_floerr = g_floerr[g_floerr>0]
+
+    # update history value
+    flo_err = []
+    for i in range(bs):
+        flo_err_sub =flo_loss_samp[i][sil_at_samp_flo[i]]
+        if len(flo_err_sub) >0:
+            flo_err_sub = flo_err_sub.median().detach().cpu().numpy()
+        else: 
+            flo_err_sub = 0
+        flo_err.append(flo_err_sub)
+    flo_err = np.stack(flo_err)
+
+    # find invalid idx
+    invalid_idx = flo_err > np.median(g_floerr)*scale_factor
+    return flo_err, invalid_idx
+

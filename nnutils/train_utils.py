@@ -375,7 +375,7 @@ class v2s_trainer(Trainer):
             kaug = self.model.kaug
 
             #TODO may need to recompute after removing the invalid predictions
-            self.model.save_latest_vars()
+            #self.model.save_latest_vars()
                 
             # extract mesh sequences
             aux_seq = {
@@ -759,16 +759,16 @@ class v2s_trainer(Trainer):
                     torch.cuda.synchronize()
                     print('load time:%.2f'%(time.time()-start_time))
 
-            # change near-far plane for views in the batch
-            if self.model.module.progress>=opts.nf_reset:
-                # recompute rts and set 1 to idk
-                with torch.no_grad():
-                    rtk_all = self.model.module.compute_rts()
-                self.model.module.latest_vars['rtk'][:,:3] = rtk_all
-                self.model.module.latest_vars['idk'][:] = 1
-                self.model.module.near_far.data = get_near_far(
-                                                    self.model.near_far.data,
-                                                      self.model.latest_vars)
+            ## change near-far plane for views in the batch
+            #if self.model.module.progress>=opts.nf_reset:
+            #    # recompute rts and set 1 to idk
+            #    with torch.no_grad():
+            #        rtk_all = self.model.module.compute_rts()
+            #    self.model.module.latest_vars['rtk'][:,:3] = rtk_all
+            #    self.model.module.latest_vars['idk'][:] = 1
+            #    self.model.module.near_far.data = get_near_far(
+            #                                        self.model.near_far.data,
+            #                                          self.model.latest_vars)
 
             if opts.debug:
                 if 'start_time' in locals().keys():
@@ -891,10 +891,15 @@ class v2s_trainer(Trainer):
         if opts.model_path!='':
             self.model.module.nerf_models['bones'] = self.model.module.bones
 
-        ## change near-far plane after half epochs
-        #if epoch>=int(self.num_epochs*opts.nf_reset):
-        #    self.model.near_far.data = get_near_far(self.model.near_far.data,
-        #                                              self.model.latest_vars)
+        # change near-far plane after half epochs
+        if epoch>=int(self.num_epochs*opts.nf_reset):
+            with torch.no_grad():
+                rtk_all = self.model.module.compute_rts()
+            valid_rts = self.model.module.latest_vars['idk'].astype(bool)
+            self.model.module.latest_vars['rtk'][valid_rts,:3] = rtk_all[valid_rts]
+            self.model.module.near_far.data = get_near_far(
+                                          self.model.module.near_far.data,
+                                          self.model.module.latest_vars)
 
         # add nerf-skin when the shape is good
         if opts.lbs and opts.nerf_skin and \

@@ -1094,6 +1094,8 @@ class v2s_net(nn.Module):
                     self.progress < opts.proj_end):
                     total_loss = total_loss*warmup_weight + \
                                20*proj_loss*(1-warmup_weight)
+                else:
+                    total_loss = total_loss + proj_loss
             elif self.progress > (opts.warmup_init_steps + opts.warmup_steps):
                 # only add it after feature volume is trained well
                 total_loss = total_loss + proj_loss

@@ -173,6 +173,8 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     pts_prob = pts_prob.detach()
     pts_prob = pts_prob/(1e-9+pts_prob.sum(1)[:,None])
     pts_exp = (pts * pts_prob).sum(1)
+    ## detach gradient to shape and rts
+    #pts_exp = pts_exp.detach()
 
     ## part2: matching
     pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 

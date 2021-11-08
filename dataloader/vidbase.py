@@ -456,7 +456,8 @@ class BaseDataset(Dataset):
         if self.preload:
             # find the corresponding fw index in the dataset
             if self.directlist[index] != 1:
-                same_idx = np.where(np.asarray(self.baselist)==self.baselist[index])[0]
+                refidx = self.baselist[index]-1
+                same_idx = np.where(np.asarray(self.baselist)==refidx)[0]
                 index = sorted(same_idx)[0]
             try:
                 # fail loading the last index of the dataset

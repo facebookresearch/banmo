@@ -220,7 +220,9 @@ class v2s_net(nn.Module):
                                  self.img_size,self.img_size)).astype(bool)
         self.latest_vars['mesh_rest'] = trimesh.Trimesh()
         self.latest_vars['fp_err'] = np.zeros((self.data_offset[-1],2)) # feat, proj
-        self.latest_vars['flo_err'] = np.zeros((self.data_offset[-1],)) # feat, proj
+        self.latest_vars['flo_err'] = np.zeros((self.data_offset[-1],)) 
+        self.latest_vars['sil_err'] = np.zeros((self.data_offset[-1],)) 
+        self.latest_vars['img_err'] = np.zeros((self.data_offset[-1],)) 
 
         # get near-far plane
         if opts.unit_nf:
@@ -1027,6 +1029,19 @@ class v2s_net(nn.Module):
         # image and silhouette loss
         sil_at_samp = rendered['sil_at_samp']
         sil_at_samp_flo = rendered['sil_at_samp_flo']
+
+        sil_err, invalid_idx = loss_filter(self.latest_vars['sil_err'], 
+                                        rendered['sil_loss_samp']*opts.sil_wt,
+                                        sil_at_samp>-1)
+        self.latest_vars['sil_err'][self.frameid.long()] = sil_err
+        rendered['sil_loss_samp'][invalid_idx] *= 0.
+        
+        img_err, invalid_idx = loss_filter(self.latest_vars['img_err'], 
+                                        rendered['img_loss_samp'],
+                                        sil_at_samp[...,0]>0)
+        self.latest_vars['img_err'][self.frameid.long()] = img_err
+        rendered['img_loss_samp'][invalid_idx] *= 0.
+
         img_loss_samp = rendered['img_loss_samp']
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss_samp = opts.sil_wt*rendered['sil_loss_samp']
@@ -1105,6 +1120,12 @@ class v2s_net(nn.Module):
 
         
         if opts.use_proj:
+            proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
+                                            rendered['proj_err']*0.01,
+                                            sil_at_samp>0)
+            self.latest_vars['fp_err'][self.frameid.long(),1] = proj_err
+            rendered['proj_err'][invalid_idx] *= 0.
+
             proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
             aux_out['proj_loss'] = proj_loss
             if opts.freeze_proj:

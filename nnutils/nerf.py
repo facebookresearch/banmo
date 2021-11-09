@@ -244,6 +244,7 @@ class RTHead(NeRF):
         rts = x.view(-1,self.num_output)  # bs B,x
         B = rts.shape[0]//bs
 
+        #tmat= rts[:,0:3] * 0.5
         tmat= rts[:,0:3] *0.1
 
         if self.use_quat:
@@ -260,6 +261,20 @@ class RTHead(NeRF):
         rts = torch.cat([rmat,tmat],-1)
         rts = rts.view(bs,1,-1)
         return rts
+            
+
+class ScaledEmbed(nn.Embedding):
+    """
+    modify the output to be rigid transforms
+    """
+    def __init__(self, num_embeddings, embedding_dim, **kwargs):
+        super(ScaledEmbed, self).__init__(num_embeddings, embedding_dim,**kwargs)
+        #nn.init.xavier_uniform_(self.weight)
+
+    def forward(self, x):
+        x = super(ScaledEmbed, self).forward(x)
+        x = x*0.02
+        return x
     
 class RTExplicit(nn.Module):
     """

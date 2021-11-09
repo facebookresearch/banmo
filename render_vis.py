@@ -4,6 +4,7 @@ os.environ["PYOPENGL_PLATFORM"] = "egl" #opengl seems to only work with TPU
 sys.path.insert(0,'third_party')
 
 import subprocess
+import pytorch3d.ops
 import imageio
 import glob
 from utils.io import save_vid
@@ -65,6 +66,9 @@ parser.add_argument('--gtdir', default='',
                     help='path to gt dir')
 parser.add_argument('--test_frames', default='9',
                     help='a list of video index or num of frames, {0,1,2}, 30')
+parser.add_argument('--ama_pmat', 
+ default='/private/home/gengshany/data/AMA/T_swing/calibration/Camera1.Pmat.cal',
+                    help='path to ama projection matrix, evaluation only')
 args = parser.parse_args()
 
 gt_meshes =   [trimesh.load(i, process=False) for i in sorted( glob.glob('%s/*.obj'%(args.gtdir)) )]
@@ -304,17 +308,30 @@ def main():
                 verts_gt = verts
                 refface_gt = refface
 
+            #  ama camera coord -> scale -> our camera coord
+            pmat = np.loadtxt(args.ama_pmat)
+            _,R,T,_,_,_,_=cv2.decomposeProjectionMatrix(pmat)
+            Rmat_gt = R
+            Tmat_gt = T[:3,0]/T[-1,0]
+            Tmat_gt = Rmat_gt.dot(-Tmat_gt[...,None])[...,0]
+            #Rmat_gt = Rmat_gt.T
+
             # render ground-truth to different viewpoint according to cam prediction
-            Rmat_gt = refcam[:3,:3].T
-            Tmat_gt = -refcam[:3,:3].T.dot(refcam[:3,3:4])[...,0]
-            Rmat_gt = refcam_vp[:3,:3].dot(Rmat_gt)
-            Tmat_gt = refcam_vp[:3,:3].dot(Tmat_gt[...,None])[...,0] + refcam_vp[:3,3]
+            #Rmat_gt = refcam[:3,:3].T
+            #Tmat_gt = -refcam[:3,:3].T.dot(refcam[:3,3:4])[...,0]
+            #Rmat_gt = refcam_vp[:3,:3].dot(Rmat_gt)
+            #Tmat_gt = refcam_vp[:3,:3].dot(Tmat_gt[...,None])[...,0] + refcam_vp[:3,3]
             Rmat_gt = torch.Tensor(Rmat_gt).cuda()[None]
             Tmat_gt = torch.Tensor(Tmat_gt).cuda()[None]
             verts_gt = obj_to_cam(verts_gt, Rmat_gt, Tmat_gt)
 
             import chamfer3D.dist_chamfer_3D
             chamLoss = chamfer3D.dist_chamfer_3D.chamfer_3DDist()
+            fitted_scale = verts_gt[...,-1].median() / verts[...,-1].median()
+            verts = verts*fitted_scale
+            frts = pytorch3d.ops.iterative_closest_point(verts,verts_gt, \
+                    estimate_scale=False,max_iterations=1000)
+            verts = ((frts.RTs.s*verts).matmul(frts.RTs.R)+frts.RTs.T[:,None])
             raw_cd,_,_,_ = chamLoss(verts_gt,verts)  # this returns distance squared
             raw_cd = np.asarray(raw_cd.cpu()[0])
             raw_cd = 100*raw_cd

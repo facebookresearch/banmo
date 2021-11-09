@@ -67,6 +67,11 @@ To traing pose predictor
 bash scripts/template-mgpu.sh 0 test T_samba_small 10001 --num_epochs 30 --lbs --root_opt --ks_opt --nopreload --use_human --warmup_pose_ep 10
 ```
 
+To evaluate
+```
+python render_vis.py --testdir logdir/T_swing1-lbs-rkopt-ft2/ --outpath logdir/T_swing1-lbs-rkopt-ft2/T_swing1-eval --seqname T_swing1 --test_frames "{0}" --vp 0 --gtdir ~/data/AMA/T_swing/meshes/
+```
+
 To visualize matchings
 ```
 CUDA_VISIBLE_DEVICES=1 bash scripts/render_match.sh sfm-mcats10 logdir/sfm-mcats10-lbsn-correspdv01d-rkopt-u-100ep/params_100.pth "0 200" "--queryfw --root_opt --lbs"

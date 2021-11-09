@@ -25,7 +25,7 @@ import configparser
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, RTExplicit, Encoder,\
-                    ScoreHead, evaluate_mlp, Transhead, NeRFUnc
+                    ScoreHead, evaluate_mlp, Transhead, NeRFUnc, ScaledEmbed
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
@@ -202,6 +202,8 @@ class v2s_net(nn.Module):
         self.img_size = opts.img_size # current rendering size, 
                                       # have to be consistent with dataloader, 
                                       # eval/train has different size
+        embed_net = nn.Embedding
+        #embed_net = ScaledEmbed
         
         # multi-video mode
         self.num_vid =  len(self.config.sections())-1
@@ -261,7 +263,7 @@ class v2s_net(nn.Module):
         if opts.env_code:
             # add video-speficit environment lighting embedding
             env_code_dim = 64
-            self.env_code = nn.Embedding(self.num_vid, env_code_dim)
+            self.env_code = embed_net(self.num_vid, env_code_dim)
         else:
             env_code_dim = 0
 
@@ -280,7 +282,7 @@ class v2s_net(nn.Module):
         # set dnerf model
         max_t=self.data_offset[-1]  
         t_embed_dim = 128
-        self.pose_code = nn.Embedding(max_t, t_embed_dim)
+        self.pose_code = embed_net(max_t, t_embed_dim)
         if opts.flowbw:
             if opts.se3_flow:
                 flow3d_arch = SE3head
@@ -319,7 +321,7 @@ class v2s_net(nn.Module):
 #                                    D=5,W=128,
                                     D=5,W=64,
                      in_channels_dir=0, out_channels=self.num_bones, raw_feat=True)
-                self.rest_pose_code = nn.Embedding(1, t_embed_dim)
+                self.rest_pose_code = embed_net(1, t_embed_dim)
                 self.nerf_models['nerf_skin'] = self.nerf_skin
                 self.nerf_models['rest_pose_code'] = self.rest_pose_code
 
@@ -366,7 +368,7 @@ class v2s_net(nn.Module):
             elif self.root_basis == 'exp':
                 self.nerf_root_rts = RTExplicit(max_t, delta=self.use_cam)
             elif self.root_basis == 'mlp':
-                self.root_code = nn.Embedding(max_t, t_embed_dim)
+                self.root_code = embed_net(max_t, t_embed_dim)
                 self.nerf_root_rts = nn.Sequential(self.root_code,
                                 RTHead(use_quat=use_quat, 
                                 #D=5,W=128,
@@ -457,7 +459,7 @@ class v2s_net(nn.Module):
         if opts.use_unc:
             # input, (x,y,t)+code, output, (1)
             vid_code_dim=32  # add video-specific code
-            self.vid_code = nn.Embedding(self.num_vid, vid_code_dim)
+            self.vid_code = embed_net(self.num_vid, vid_code_dim)
             self.nerf_unc = NeRFUnc(in_channels_xyz=in_channels_xyz, D=5, W=128,
          out_channels=1,in_channels_dir=vid_code_dim, raw_feat=True, init_beta=1.)
             self.nerf_models['nerf_unc'] = self.nerf_unc
@@ -1029,11 +1031,12 @@ class v2s_net(nn.Module):
         sil_at_samp = rendered['sil_at_samp']
         sil_at_samp_flo = rendered['sil_at_samp_flo']
 
-        sil_err, invalid_idx = loss_filter(self.latest_vars['sil_err'], 
-                                        rendered['sil_loss_samp']*opts.sil_wt,
-                                        sil_at_samp>-1)
-        self.latest_vars['sil_err'][self.frameid.long()] = sil_err
-        rendered['sil_loss_samp'][invalid_idx] *= 0.
+        if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+            sil_err, invalid_idx = loss_filter(self.latest_vars['sil_err'], 
+                                         rendered['sil_loss_samp']*opts.sil_wt,
+                                         sil_at_samp>-1)
+            self.latest_vars['sil_err'][self.frameid.long()] = sil_err
+            rendered['sil_loss_samp'][invalid_idx] *= 0.
         
         img_loss_samp = rendered['img_loss_samp']
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
@@ -1046,14 +1049,15 @@ class v2s_net(nn.Module):
             
         # flow loss
         if opts.use_corresp:
-            flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'], 
-                                            rendered['flo_loss_samp'],
-                                            sil_at_samp_flo)
-            rendered['flo_loss_samp'][invalid_idx] *= 0.
-            self.latest_vars['flo_err'][self.frameid.long()] = flo_err
-            if invalid_idx.sum()>0:
-                print('removing invalid idx from flo')
-                print(self.frameid[invalid_idx])
+            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+                flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'], 
+                                                rendered['flo_loss_samp'],
+                                                sil_at_samp_flo)
+                rendered['flo_loss_samp'][invalid_idx] *= 0.
+                self.latest_vars['flo_err'][self.frameid.long()] = flo_err
+                if invalid_idx.sum()>0:
+                    print('removing invalid idx from flo')
+                    print(self.frameid[invalid_idx])
 
             flo_loss_samp = rendered['flo_loss_samp']
             flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() # eval on valid pts
@@ -1097,27 +1101,31 @@ class v2s_net(nn.Module):
         
         # viser loss
         if opts.use_viser:
-            feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
-                                            rendered['feat_err']*0.1,
-                                            sil_at_samp>0)
-            self.latest_vars['fp_err'][self.frameid.long(),0] = feat_err
-            rendered['feat_err'][invalid_idx] *= 0.
-            if invalid_idx.sum()>0:
-                print('removing invalid idx from feat')
-                print(self.frameid[invalid_idx])
+            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+                feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
+                                                #rendered['feat_err'],
+                                                rendered['feat_err']*0.1,
+                                                sil_at_samp>0)
+                self.latest_vars['fp_err'][self.frameid.long(),0] = feat_err
+                rendered['feat_err'][invalid_idx] *= 0.
+                if invalid_idx.sum()>0:
+                    print('removing invalid idx from feat')
+                    print(self.frameid[invalid_idx])
 
             feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.1
+            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
 
         
         if opts.use_proj:
-            proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
-                                            rendered['proj_err']*0.01,
-                                            sil_at_samp>0)
-            self.latest_vars['fp_err'][self.frameid.long(),1] = proj_err
-            rendered['proj_err'][invalid_idx] *= 0.
+            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+                proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
+                                                rendered['proj_err']*0.01,
+                                                sil_at_samp>0)
+                self.latest_vars['fp_err'][self.frameid.long(),1] = proj_err
+                rendered['proj_err'][invalid_idx] *= 0.
 
             proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
             aux_out['proj_loss'] = proj_loss
@@ -1141,11 +1149,13 @@ class v2s_net(nn.Module):
             # cycle loss
             cyc_loss = rendered['frame_cyc_dis'].mean()
             total_loss = total_loss + cyc_loss
+            #total_loss = total_loss + cyc_loss*0
             aux_out['cyc_loss'] = cyc_loss
 
             # globally rigid prior
             rig_loss = 0.0001*rendered['frame_rigloss'].mean()
             total_loss = total_loss + rig_loss
+            #total_loss = total_loss + rig_loss*0
             aux_out['rig_loss'] = rig_loss
 
             ## TODO enforcing bone distribution to be close to points within surface

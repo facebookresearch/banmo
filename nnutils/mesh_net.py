@@ -1051,7 +1051,8 @@ class v2s_net(nn.Module):
         if opts.use_corresp:
             if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
                 flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'], 
-                                                rendered['flo_loss_samp'],
+                                                rendered['flo_loss_samp']*2,
+                                                #rendered['flo_loss_samp'],
                                                 sil_at_samp_flo)
                 rendered['flo_loss_samp'][invalid_idx] *= 0.
                 self.latest_vars['flo_err'][self.frameid.long()] = flo_err
@@ -1060,7 +1061,9 @@ class v2s_net(nn.Module):
                     print(self.frameid[invalid_idx])
 
             flo_loss_samp = rendered['flo_loss_samp']
-            flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() # eval on valid pts
+            # eval on valid pts
+            flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() * 2
+            #flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean()
     
             # warm up by only using flow loss to optimize root pose
             if self.pose_update == 0:
@@ -1103,8 +1106,8 @@ class v2s_net(nn.Module):
         if opts.use_viser:
             if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
                 feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
-                                                #rendered['feat_err'],
-                                                rendered['feat_err']*0.1,
+                                                rendered['feat_err']*0.2,
+                                                #rendered['feat_err']*0.1,
                                                 sil_at_samp>0)
                 self.latest_vars['fp_err'][self.frameid.long(),0] = feat_err
                 rendered['feat_err'][invalid_idx] *= 0.
@@ -1112,8 +1115,8 @@ class v2s_net(nn.Module):
                     print('removing invalid idx from feat')
                     print(self.frameid[invalid_idx])
 
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.1
-            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()
+            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.1
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]

@@ -53,7 +53,7 @@ for i in range(args.nframes):
     if args.model=='spot':
         mesh = sr.Mesh.from_obj('mesh_material/spot/spot_triangulated.obj', load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='eagle':
-        mesh = sr.Mesh.from_obj('mesh_material/eagle/Eagle-original_%06d.obj'%int(i*args.xspeed), load_texture=True, texture_res=5, texture_type='surface')
+        mesh = sr.Mesh.from_obj('mesh_material/eagle150/Eagle-original_%06d.obj'%int(i*args.xspeed), load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='water':
         mesh = sr.Mesh.from_obj('mesh_material/water/water.obj', load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='hands':

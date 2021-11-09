@@ -66,7 +66,7 @@ parser.add_argument('--gtdir', default='',
                     help='path to gt dir')
 parser.add_argument('--test_frames', default='9',
                     help='a list of video index or num of frames, {0,1,2}, 30')
-parser.add_argument('--ama_pmat', 
+parser.add_argument('--gt_pmat', 
  default='/private/home/gengshany/data/AMA/T_swing/calibration/Camera1.Pmat.cal',
                     help='path to ama projection matrix, evaluation only')
 args = parser.parse_args()
@@ -182,6 +182,7 @@ def main():
     input_size = all_anno[0][0].shape[:2]
     output_size = (int(input_size[0] * 480/input_size[1]), 480)# 270x480
     frames=[]
+    cd_ave=[] # average chamfer distance
     if args.append_img=="yes":
         if args.append_render=='yes':
             if args.freeze: napp_fr = 30
@@ -309,12 +310,15 @@ def main():
                 refface_gt = refface
 
             #  ama camera coord -> scale -> our camera coord
-            pmat = np.loadtxt(args.ama_pmat)
-            _,R,T,_,_,_,_=cv2.decomposeProjectionMatrix(pmat)
-            Rmat_gt = R
-            Tmat_gt = T[:3,0]/T[-1,0]
-            Tmat_gt = Rmat_gt.dot(-Tmat_gt[...,None])[...,0]
-            #Rmat_gt = Rmat_gt.T
+            if args.gt_pmat!='':
+                pmat = np.loadtxt(args.gt_pmat)
+                _,R,T,_,_,_,_=cv2.decomposeProjectionMatrix(pmat)
+                Rmat_gt = R
+                Tmat_gt = T[:3,0]/T[-1,0]
+                Tmat_gt = Rmat_gt.dot(-Tmat_gt[...,None])[...,0]
+            else:
+                Rmat_gt = np.eye(3)
+                Tmat_gt = np.asarray([0,0,3]) # assuming synthetic obj has depth 3
 
             # render ground-truth to different viewpoint according to cam prediction
             #Rmat_gt = refcam[:3,:3].T
@@ -330,16 +334,17 @@ def main():
             fitted_scale = verts_gt[...,-1].median() / verts[...,-1].median()
             verts = verts*fitted_scale
             frts = pytorch3d.ops.iterative_closest_point(verts,verts_gt, \
-                    estimate_scale=False,max_iterations=1000)
+                    estimate_scale=False,max_iterations=100)
             verts = ((frts.RTs.s*verts).matmul(frts.RTs.R)+frts.RTs.T[:,None])
             raw_cd,_,_,_ = chamLoss(verts_gt,verts)  # this returns distance squared
             raw_cd = np.asarray(raw_cd.cpu()[0])
-            raw_cd = 100*raw_cd
-            cm = plt.get_cmap('plasma')
+            raw_cd = np.sqrt(raw_cd)
+            cd_ave.append(raw_cd.mean())
 
             verts = verts_gt
             refface = refface_gt
-            colors = cm(raw_cd)
+            cm = plt.get_cmap('plasma')
+            colors = cm(raw_cd/raw_cd.max())
         
         smooth=args.smooth
         if args.freeze:
@@ -414,6 +419,11 @@ def main():
 
         frames.append(color)
 
+    if args.gtdir != '':
+        cd_ave = np.asarray(cd_ave)
+        print('ave chamfer dis: %.2f cm'%(100*cd_ave.mean()))
+        print('med chamfer dis: %.2f cm'%(100*np.median(cd_ave)))
+        print('max chamfer dis: %.2f cm'%(100*np.max(cd_ave)))
     save_vid(args.outpath, frames, suffix='.gif')
     save_vid(args.outpath, frames, suffix='.mp4')
 if __name__ == '__main__':

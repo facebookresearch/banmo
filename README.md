@@ -41,6 +41,7 @@ python scripts/render_synthetic.py --outdir syn-eagle-100 --model eagle --nframe
 python scripts/render_synthetic.py --outdir syn-eagled-15h --model eagle --nframes 15 --alpha 0.5 --xspeed 1
 python scripts/render_synthetic.py --outdir syn-eagled-15q-vp2 --model eagle --nframes 15 --alpha 0.25 --xspeed 1 --init_a 0.5
 python scripts/render_synthetic.py --outdir syn-hands-20h --model hands --nframes 20 --alpha 0.5 --xspeed 1 --init_a 0.25 --focal 5 --img_size 2048
+python scripts/render_synthetic.py --outdir a-eagle-1 --model eagle --nframes 150 --alpha 0.1 --init_a 0 --xspeed 1
 ```
 To optimize
 ```

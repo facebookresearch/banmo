@@ -3,6 +3,7 @@ import sys
 sys.path.insert(0,'third_party')
 import numpy as np
 from matplotlib import pyplot as plt
+import matplotlib
 import torch
 import os
 import glob
@@ -136,7 +137,6 @@ def match_frames(trainer, idxs, nsample=200):
                         bs,opts.img_size, opts.ndepth)
 
     # visualize current error stats
-    pdb.set_trace()
     feat_err=model.latest_vars['fp_err'][:,0] 
     proj_err=model.latest_vars['fp_err'][:,1] 
     feat_err = feat_err[feat_err>0]
@@ -149,6 +149,24 @@ def match_frames(trainer, idxs, nsample=200):
     plt.hist(proj_err,bins=100)
     plt.savefig('tmp/viser_proj_err.jpg')
 
+    # visualize codes
+    with torch.no_grad():
+        pdb.set_trace()
+        D=model.pose_code.weight
+        D = D-D.mean(0)[None]
+        A = D.T.matmul(D)/D.shape[0] # fxf
+        U,S,V=torch.svd(A) # 
+        out=D.matmul(V[:,:3])
+        cmap = matplotlib.cm.get_cmap('cool')
+        time = np.asarray(range(len(model.impath)))
+        time = time/time.max()
+        out=out.detach().cpu().numpy()
+        trimesh.Trimesh(out, vertex_colors=cmap(time)).export('tmp/0.obj')
+        #plt.scatter(out[:,0], out[:,1], color=cmap(time))
+        #plt.xlim(out[:,0].min(), out[:,0].max())
+        #plt.ylim(out[:,1].min(), out[:,1].max())
+        #plt.savefig('tmp/0.jpg')
+    
 
 def main(_):
     trainer = v2s_trainer(opts, is_eval=True)

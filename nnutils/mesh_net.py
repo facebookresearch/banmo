@@ -222,7 +222,6 @@ class v2s_net(nn.Module):
         self.latest_vars['fp_err'] = np.zeros((self.data_offset[-1],2)) # feat, proj
         self.latest_vars['flo_err'] = np.zeros((self.data_offset[-1],)) 
         self.latest_vars['sil_err'] = np.zeros((self.data_offset[-1],)) 
-        self.latest_vars['img_err'] = np.zeros((self.data_offset[-1],)) 
 
         # get near-far plane
         if opts.unit_nf:
@@ -1036,12 +1035,6 @@ class v2s_net(nn.Module):
         self.latest_vars['sil_err'][self.frameid.long()] = sil_err
         rendered['sil_loss_samp'][invalid_idx] *= 0.
         
-        img_err, invalid_idx = loss_filter(self.latest_vars['img_err'], 
-                                        rendered['img_loss_samp'],
-                                        sil_at_samp[...,0]>0)
-        self.latest_vars['img_err'][self.frameid.long()] = img_err
-        rendered['img_loss_samp'][invalid_idx] *= 0.
-
         img_loss_samp = rendered['img_loss_samp']
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss_samp = opts.sil_wt*rendered['sil_loss_samp']

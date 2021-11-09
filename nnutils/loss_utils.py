@@ -350,6 +350,7 @@ def grad_update_bone(bones,embedding_xyz, nerf_vis, learning_rate):
     return bone_loc_loss
 
 def loss_filter(g_floerr, flo_loss_samp, sil_at_samp_flo):
+    #scale_factor = 5
     scale_factor = 10
     bs = sil_at_samp_flo.shape[0] 
     # find history meidan
@@ -361,6 +362,7 @@ def loss_filter(g_floerr, flo_loss_samp, sil_at_samp_flo):
         flo_err_sub =flo_loss_samp[i][sil_at_samp_flo[i]]
         if len(flo_err_sub) >0:
             flo_err_sub = flo_err_sub.median().detach().cpu().numpy()
+            #flo_err_sub = flo_err_sub.mean().detach().cpu().numpy()
         else: 
             flo_err_sub = 0
         flo_err.append(flo_err_sub)

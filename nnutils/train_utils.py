@@ -155,6 +155,7 @@ class v2s_trainer(Trainer):
         params_nerf_dp=[]
         params_sim3_j2c=[]
         params_dp_verts=[]
+        params_csenet=[]
         for name,p in self.model.named_parameters():
             if 'nerf_coarse' in name and 'beta' not in name:
                 params_nerf_coarse.append(p)
@@ -198,6 +199,8 @@ class v2s_trainer(Trainer):
                 params_sim3_j2c.append(p)
             elif 'module.dp_verts' == name:
                 params_dp_verts.append(p)
+            elif 'csenet' in name:
+                params_csenet.append(p)
             else: continue
             print(name)
 
@@ -223,6 +226,7 @@ class v2s_trainer(Trainer):
              {'params': params_nerf_dp},
              {'params': params_sim3_j2c},
              {'params': params_dp_verts},
+             {'params': params_csenet},
             ],
             lr=opts.learning_rate,betas=(0.9, 0.999),weight_decay=1e-4)
 
@@ -255,6 +259,7 @@ class v2s_trainer(Trainer):
                          opts.learning_rate, # params_nerf_dp
                       10*opts.learning_rate, # params_sim3_j2c
                        0*opts.learning_rate, # params_dp_verts
+                       0*opts.learning_rate, # params_csenet
             ],
             self.model.module.final_steps,
             pct_start=2./self.num_epochs, # use 2 epochs to warm up
@@ -969,6 +974,7 @@ class v2s_trainer(Trainer):
         grad_nerf_dp=[]
         grad_sim3_j2c=[]
         grad_dp_verts=[]
+        grad_csenet=[]
         for name,p in self.model.named_parameters():
             try: 
                 pgrad_nan = p.grad.isnan()
@@ -1018,6 +1024,8 @@ class v2s_trainer(Trainer):
                 grad_sim3_j2c.append(p)
             elif 'module.dp_verts' == name:
                 grad_dp_verts.append(p)
+            elif 'csenet' in name:
+                grad_csenet.append(p)
             else: continue
         
         # freeze root/body pose when adding in sil/rgb loss 
@@ -1060,6 +1068,7 @@ class v2s_trainer(Trainer):
         aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,       .1)
         aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,      .1)
         aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,      .1)
+        aux_out['csenet_g']        = clip_grad_norm_(grad_csenet,        .1)
 
         #if aux_out['root_code_g']>0.1:
         #    is_invalid_grad = True

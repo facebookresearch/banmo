@@ -7,6 +7,7 @@
 # Size of source mod 2**32: 4044 bytes
 import cv2, pdb, os, sys, numpy as np, torch
 import torch.nn as nn
+import torch.nn.functional as F
 import torchvision
 curr_dir = os.path.abspath(os.getcwd())
 sys.path.insert(0, curr_dir)
@@ -37,16 +38,33 @@ class CSENet(nn.Module):
 
     def forward(self, img, msk):
         bs = img.shape[0]
+        h = img.shape[2]
         device = img.device
         img = img * 255
         img = torch.flip(img, [1])
-        pdb.set_trace()
+    
+        pad = h
+        img = F.pad(img, (pad, pad, pad, pad))
+        msk = F.pad(msk, (pad, pad, pad, pad))
+        img = F.interpolate(img, (384, 384),mode='bilinear')
+        msk = F.interpolate(msk[:,None], (384, 384),mode='nearest')[:,0]
+  
+        bboxes = []
+        for i in range(bs):
+            indices = torch.where(msk[i]>0); 
+            xid = indices[1]; yid = indices[0]
+            bbox = [xid.min(), yid.min(),
+                    xid.max(), yid.max()]
+            bbox = torch.Tensor([bbox]).to(device)
+            bbox = Boxes(bbox)            
+            bboxes.append(bbox)
         #dps = []
         #feats = []
         #for i in range(bs):
         #    img_sub = img[i].permute(1, 2, 0).cpu().numpy()
         #    msk_sub = msk[i].cpu().numpy()
-        #    dp, _, feat, _, _ = run_cse((self.net), (self.embedder), (self.mesh_vertex_embeddings),
+        #    # put into a bigger image: out size 112/512 
+        #    dp, img_bgr, feat, feat_norm, bbox = run_cse((self.net), (self.embedder), (self.mesh_vertex_embeddings),
         #      img_sub,
         #      msk_sub,
         #      mesh_name=(self.mesh_name))
@@ -57,25 +75,26 @@ class CSENet(nn.Module):
         #    feats.append(feat)
         #dps = torch.stack(dps, 0)
         #feats = torch.stack(feats, 0)
+        #pdb.set_trace()
 
-        img = torch.stack([(x - self.net.pixel_mean) / self.net.pixel_std\
-                            for x in img])
-        pred_boxes = torch.Tensor([[0,0,img.shape[2], img.shape[3]]]).cuda()
-        pred_boxes = Boxes(pred_boxes)            
-        features = self.net.backbone(img)
-        features = [features[f] for f in self.net.roi_heads.in_features]
-        features = [self.net.roi_heads.decoder(features)]
-        features_dp = self.net.roi_heads.densepose_pooler(features, [pred_boxes]*img.shape[0]).detach()
+        self.net.eval()
+        with torch.no_grad():
+            img = torch.stack([(x - self.net.pixel_mean) / self.net.pixel_std\
+                                for x in img])
+            features = self.net.backbone(img)
+            features = [features[f] for f in self.net.roi_heads.in_features]
+            features = [self.net.roi_heads.decoder(features)]
+            features_dp = self.net.roi_heads.densepose_pooler(features, bboxes).detach()
+
         densepose_head_outputs = self.net.roi_heads.densepose_head(features_dp)
         densepose_predictor_outputs = self.net.roi_heads.densepose_predictor(densepose_head_outputs)
-        feats = densepose_predictor_outputs.embedding
+        feats = densepose_predictor_outputs.embedding # (xxx,112,112)
 
-        dps = []
-        for i in range(bs):
-            pdb.set_trace()
-            assign_mat = squared_euclidean_distance_matrix(feats[i].view(16,-1).T, 
-                           self.mesh_vertex_embeddings[self.mesh_name])
-            dp = assign_mat.argmin(dim=1).view(112,112)
-            dps.append(dp)
-        dps = torch.stack(dps,0)
-        return feats, dps
+        #dps = []
+        #for i in range(bs):
+        #    assign_mat = squared_euclidean_distance_matrix(feats[i].view(16,-1).T, 
+        #                   self.mesh_vertex_embeddings[self.mesh_name])
+        #    dp = assign_mat.argmin(dim=1).view(112,112)
+        #    dps.append(dp)
+        #dps = torch.stack(dps,0)
+        return feats

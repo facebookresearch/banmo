@@ -151,7 +151,6 @@ def match_frames(trainer, idxs, nsample=200):
 
     # visualize codes
     with torch.no_grad():
-        pdb.set_trace()
         D=model.pose_code.weight
         D = D-D.mean(0)[None]
         A = D.T.matmul(D)/D.shape[0] # fxf
@@ -166,6 +165,9 @@ def match_frames(trainer, idxs, nsample=200):
         #plt.xlim(out[:,0].min(), out[:,0].max())
         #plt.ylim(out[:,1].min(), out[:,1].max())
         #plt.savefig('tmp/0.jpg')
+
+    # vis dps
+    cv2.imwrite('tmp/dpc.png', model.dp_vis[model.dps[0].long()].cpu().numpy()*255)
     
 
 def main(_):

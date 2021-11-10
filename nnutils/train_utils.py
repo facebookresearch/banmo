@@ -336,10 +336,23 @@ class v2s_trainer(Trainer):
         self.model.latest_vars['obj_bound'] = latest_vars['obj_bound'] 
 
         # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat, nerf_unc
+        #TODO somehow, this will reset the batch stats for 
+        # a pretrained cse model, to keep those, we want to manually copy to states
+        if self.opts.ft_cse and \
+          'csenet.net.backbone.fpn_lateral2.weight' not in states.keys():
+            self.add_cse_to_states(self.model, states)
         self.model.load_state_dict(states, strict=False)
     
         return
-    
+
+    @staticmethod 
+    def add_cse_to_states(model, states):
+        states_init = model.state_dict()
+        for k in states_init.keys():
+            v = states_init[k]
+            if 'csenet' in k:
+                states[k] = v
+
     def eval_cam(self, idx_render=None): 
         """
         idx_render: list of frame index to render

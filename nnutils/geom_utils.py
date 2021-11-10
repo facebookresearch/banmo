@@ -1222,15 +1222,20 @@ def resample_dp(dp_feats, dp_bbox, kaug, target_size):
     dp_bbox:  bs, 4
     kaug:     bs, 4
     """
-    dp_size = dp_feats.shape[-1]
-    device = dp_feats.device
+    # if dp_bbox are all zeros, just do the resizing
+    if dp_bbox.abs().sum()==0:
+        dp_feats_rsmp = F.interpolate(dp_feats, (target_size, target_size),
+                                                            mode='bilinear')
+    else:
+        dp_size = dp_feats.shape[-1]
+        device = dp_feats.device
 
-    dp2rnd = bbox_dp2rnd(dp_bbox, kaug)
-    rnd2dp = Kmatinv(dp2rnd)
-    xygrid = sample_xy(target_size, 1, 0, device, return_all=True)[1] 
-    xygrid = xygrid.matmul(rnd2dp[:,:2,:2]) + rnd2dp[:,None,:2,2]
-    xygrid = xygrid / dp_size * 2 - 1 
-    dp_feats_rsmp = F.grid_sample(dp_feats, xygrid.view(-1,target_size,target_size,2))
+        dp2rnd = bbox_dp2rnd(dp_bbox, kaug)
+        rnd2dp = Kmatinv(dp2rnd)
+        xygrid = sample_xy(target_size, 1, 0, device, return_all=True)[1] 
+        xygrid = xygrid.matmul(rnd2dp[:,:2,:2]) + rnd2dp[:,None,:2,2]
+        xygrid = xygrid / dp_size * 2 - 1 
+        dp_feats_rsmp = F.grid_sample(dp_feats, xygrid.view(-1,target_size,target_size,2))
     return dp_feats_rsmp
 
 

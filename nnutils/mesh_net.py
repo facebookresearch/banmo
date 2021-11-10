@@ -39,6 +39,7 @@ from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_lo
                             feat_match_loss, kp_reproj_loss, grad_update_bone, \
                             loss_filter
 from utils.io import vis_viser, draw_pts
+from nnutils.cse import CSENet
 
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_integer('local_rank', 0, 'for distributed training')
@@ -163,6 +164,7 @@ flags.DEFINE_bool('sfm_init', True, 'whether to maintain sfm relative trajectory
 flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value (0-6)')
 
 #viser
+flags.DEFINE_bool('ft_cse', False, 'whether to fine-tune cse features')
 flags.DEFINE_bool('use_viser', True, 'whether to use viser')
 flags.DEFINE_bool('use_human', False, 'whether to use human cse model')
 flags.DEFINE_bool('use_proj', True, 'whether to use reprojection loss')
@@ -454,6 +456,10 @@ class v2s_net(nn.Module):
             self.nerf_feat = NeRF(in_channels_xyz=in_channels_xyz, D=5, W=128,
      out_channels=self.num_feat,in_channels_dir=0, raw_feat=True, init_beta=1.)
             self.nerf_models['nerf_feat'] = self.nerf_feat
+
+            if opts.ft_cse:
+                self.csenet = CSENet(ishuman=opts.use_human)
+
 
         # add uncertainty MLP
         if opts.use_unc:
@@ -809,6 +815,7 @@ class v2s_net(nn.Module):
 
     def convert_batch_input(self, batch):
         device = self.device
+        opts = self.opts
         if batch['img'].dim()==4:
             bs,_,h,w = batch['img'].shape
         else:
@@ -830,8 +837,11 @@ class v2s_net(nn.Module):
         dpfd = 16
         dpfs = 112
         self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(device)
-        self.dp_feats     = F.normalize(self.dp_feats, 2,1)
         self.dp_bbox      = batch['dp_bbox']     .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
+        if opts.ft_cse:
+            self.dp_feats, self.dps = self.csenet(self.imgs, self.masks)
+            self.dp_bbox[:] = 0
+        self.dp_feats     = F.normalize(self.dp_feats, 2,1)
         self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
         self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1).cpu()

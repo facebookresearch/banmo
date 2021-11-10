@@ -165,6 +165,7 @@ flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value 
 
 #viser
 flags.DEFINE_bool('ft_cse', False, 'whether to fine-tune cse features')
+flags.DEFINE_float('cse_steps', 0., 'finetune cse after several epochs')
 flags.DEFINE_bool('use_viser', True, 'whether to use viser')
 flags.DEFINE_bool('use_human', False, 'whether to use human cse model')
 flags.DEFINE_bool('use_proj', True, 'whether to use reprojection loss')
@@ -839,7 +840,14 @@ class v2s_net(nn.Module):
         self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(device)
         self.dp_bbox      = batch['dp_bbox']     .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
         if opts.ft_cse:
-            self.dp_feats = self.csenet(self.imgs, self.masks)
+            self.dp_feats_mask = self.dp_feats.abs().sum(1)>0
+            self.csepre_feats = self.dp_feats.clone()
+            # unnormalized features
+            self.csenet_feats, self.dps = self.csenet(self.imgs, self.masks)
+            # for visualization
+            self.dps = self.dps * self.dp_feats_mask.float()
+            if self.progress > opts.cse_steps and self.training:
+                self.dp_feats = self.csenet_feats
             #self.dp_bbox[:] = 0
         self.dp_feats     = F.normalize(self.dp_feats, 2,1)
         self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
@@ -1235,6 +1243,14 @@ class v2s_net(nn.Module):
             unc_loss = unc_loss.mean()
             aux_out['unc_loss'] = unc_loss
             total_loss = total_loss + unc_loss
+
+
+        # cse feature tuning
+        if opts.ft_cse:
+            csenet_loss = (self.csenet_feats - self.csepre_feats).pow(2).sum(1)
+            csenet_loss = csenet_loss[self.dp_feats_mask].mean()* 1e-5
+            total_loss = total_loss + csenet_loss
+            aux_out['csenet_loss'] = csenet_loss
 
         # save some variables
         if opts.lbs:

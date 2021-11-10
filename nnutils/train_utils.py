@@ -259,7 +259,7 @@ class v2s_trainer(Trainer):
                          opts.learning_rate, # params_nerf_dp
                       10*opts.learning_rate, # params_sim3_j2c
                        0*opts.learning_rate, # params_dp_verts
-                       0*opts.learning_rate, # params_csenet
+                       0.1*opts.learning_rate, # params_csenet
             ],
             self.model.module.final_steps,
             pct_start=2./self.num_epochs, # use 2 epochs to warm up

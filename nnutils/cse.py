@@ -46,7 +46,7 @@ class CSENet(nn.Module):
         pad = h
         img = F.pad(img, (pad, pad, pad, pad))
         msk = F.pad(msk, (pad, pad, pad, pad))
-        img = F.interpolate(img, (384, 384),mode='bilinear')
+        img = F.interpolate(img, (384, 384),mode='bilinear') 
         msk = F.interpolate(msk[:,None], (384, 384),mode='nearest')[:,0]
   
         bboxes = []
@@ -90,11 +90,12 @@ class CSENet(nn.Module):
         densepose_predictor_outputs = self.net.roi_heads.densepose_predictor(densepose_head_outputs)
         feats = densepose_predictor_outputs.embedding # (xxx,112,112)
 
-        #dps = []
-        #for i in range(bs):
-        #    assign_mat = squared_euclidean_distance_matrix(feats[i].view(16,-1).T, 
-        #                   self.mesh_vertex_embeddings[self.mesh_name])
-        #    dp = assign_mat.argmin(dim=1).view(112,112)
-        #    dps.append(dp)
-        #dps = torch.stack(dps,0)
-        return feats
+        with torch.no_grad():
+            dps = []
+            for i in range(bs):
+                assign_mat = squared_euclidean_distance_matrix(feats[i].view(16,-1).T, 
+                               self.mesh_vertex_embeddings[self.mesh_name])
+                dp = assign_mat.argmin(dim=1).view(112,112)
+                dps.append(dp)
+            dps = torch.stack(dps,0)
+        return feats, dps

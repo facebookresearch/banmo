@@ -707,7 +707,6 @@ def get_near_far(near_far, vars_np, tol_fac=1.2, pts=None):
     near_far[idk==1,1] = torch.clamp( far[idk==1], min=1e-3)
     return near_far
 
-
 def pts_to_view(pts, rtk, device, j2c=None):
     """
     object to camera coordinates
@@ -717,17 +716,18 @@ def pts_to_view(pts, rtk, device, j2c=None):
     j2c:        joint to canonical transform M, 10
     """
     M = rtk.shape[0]
-    pts = torch.Tensor(np.tile(pts[None],(M,1,1))).to(device) # M,N,3
-
-    # pts to video canonical then to camera
-    if j2c is not None:
-        Tmat_j2c, Rmat_j2c, Smat_j2c = vec_to_sim3(j2c)
-        Smat_j2c =Smat_j2c.mean(-1)[...,None,None]
-        pts = obj_to_cam(pts, Rmat_j2c, Tmat_j2c)
-        pts = pts * Smat_j2c
-    pts = obj_to_cam(pts, rtk[:,:3,:3], rtk[:,:3,3])
-    pts = pinhole_cam(pts, rtk[:,3])
-    return pts
+    out_pts = []
+    chunk=100
+    for i in range(0,M,chunk):
+        rtk_sub = rtk[i:i+chunk]
+        pts_sub = torch.Tensor(np.tile(pts[None],
+                        (len(rtk_sub),1,1))).to(device) # M,N,3
+        pts_sub = obj_to_cam(pts_sub,  rtk_sub[:,:3,:3], 
+                                       rtk_sub[:,:3,3])
+        pts_sub = pinhole_cam(pts_sub, rtk_sub[:,3])
+        out_pts.append(pts_sub)
+    out_pts = torch.cat(out_pts, 0)
+    return out_pts
 
 def compute_point_visibility(pts, vars_np, device):
     """

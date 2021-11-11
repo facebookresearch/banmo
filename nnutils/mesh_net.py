@@ -165,7 +165,8 @@ flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value 
 
 #viser
 flags.DEFINE_bool('ft_cse', True, 'whether to fine-tune cse features')
-flags.DEFINE_float('cse_steps', 0.4, 'finetune cse after several epochs')
+flags.DEFINE_float('mtcse_steps', 0., 'maintune cse after several epochs')
+flags.DEFINE_float('ftcse_steps', 0.4, 'finetune cse after several epochs')
 flags.DEFINE_bool('use_viser', True, 'whether to use viser')
 flags.DEFINE_bool('use_human', False, 'whether to use human cse model')
 flags.DEFINE_bool('use_proj', True, 'whether to use reprojection loss')
@@ -849,9 +850,10 @@ class v2s_net(nn.Module):
             self.csenet_feats, self.dps = self.csenet(self.imgs, self.masks)
             # for visualization
             self.dps = self.dps * self.dp_feats_mask.float()
-            if self.progress > opts.cse_steps:
-            #if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
                 self.dp_feats = self.csenet_feats
+                if self.progress < opts.ftcse_steps:
+                    self.dp_feats = self.dp_feats.detach()
             #self.dp_bbox[:] = 0
         self.dp_feats     = F.normalize(self.dp_feats, 2,1)
         self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
@@ -977,7 +979,6 @@ class v2s_net(nn.Module):
             rt_raw[:,:3,:3] = rmat
             rt_raw[:,:3,3] = tmat
         return rt_raw.cpu().numpy()
-
 
     def save_latest_vars(self):
         """
@@ -1270,7 +1271,10 @@ class v2s_net(nn.Module):
         if opts.ft_cse:
             csenet_loss = (self.csenet_feats - self.csepre_feats).pow(2).sum(1)
             csenet_loss = csenet_loss[self.dp_feats_mask].mean()* 1e-5
-            total_loss = total_loss + csenet_loss
+            if self.progress> opts.mtcse_steps:
+                total_loss = total_loss + csenet_loss
+            else:
+                total_loss = total_loss + csenet_loss * 0
             aux_out['csenet_loss'] = csenet_loss
 
         # save some variables

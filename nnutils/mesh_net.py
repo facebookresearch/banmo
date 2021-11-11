@@ -202,6 +202,7 @@ class v2s_net(nn.Module):
         self.use_fine = False # by default not using fine samples
         self.root_basis = opts.root_basis
         self.use_cam = opts.use_cam
+        self.is_warmup_pose = False # by default not warming up
         self.img_size = opts.img_size # current rendering size, 
                                       # have to be consistent with dataloader, 
                                       # eval/train has different size
@@ -839,14 +840,15 @@ class v2s_net(nn.Module):
         dpfs = 112
         self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(device)
         self.dp_bbox      = batch['dp_bbox']     .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
-        if opts.ft_cse:
+        if opts.ft_cse and (not self.is_warmup_pose):
             self.dp_feats_mask = self.dp_feats.abs().sum(1)>0
             self.csepre_feats = self.dp_feats.clone()
             # unnormalized features
             self.csenet_feats, self.dps = self.csenet(self.imgs, self.masks)
             # for visualization
             self.dps = self.dps * self.dp_feats_mask.float()
-            if self.progress > opts.cse_steps and self.training:
+            #if self.progress > opts.cse_steps:
+            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
                 self.dp_feats = self.csenet_feats
             #self.dp_bbox[:] = 0
         self.dp_feats     = F.normalize(self.dp_feats, 2,1)

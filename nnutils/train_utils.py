@@ -725,6 +725,7 @@ class v2s_trainer(Trainer):
         self.model.module.nerf_root_rts = self.model.module.dp_root_rts
         del self.model.module.dp_root_rts
         self.num_epochs = opts.warmup_pose_ep
+        self.model.module.is_warmup_pose=True
 
         if pose_cnn_path=='':
             # training
@@ -756,6 +757,7 @@ class v2s_trainer(Trainer):
         del self.model.module.nerf_root_rts
         self.model.module.nerf_root_rts = original_rp
         self.num_epochs = opts.num_epochs
+        self.model.module.is_warmup_pose=False
 
         # start from low learning rate again
         self.init_training()

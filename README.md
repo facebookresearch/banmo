@@ -57,6 +57,8 @@ bash scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 nerfies_cat_807-lbs-rkopt nerfies_
 bash scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats10-lbs-rkopt-b16-2ff sfm-mcats10 10001 --num_epochs 30 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --batch_size 16 --nsample 64
 bash scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 sfm-mcats10-lbs-rkopt-ft4 sfm-mcats10 10010 --num_epochs 100 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth --model_path logdir/sfm-mcats10-lbsn-correspdv-rkopt-ft-100ep-stage3/params_100.pth --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize
 bash scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 ama-female1-lbs-rkopt-b16 ama-female1 10004 --num_epochs 30 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-T_samba_small/cnn-params_10.pth --batch_size 16 --nsample 64 --use_human
+bash scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 ama-female-lbs-rkopt-ft1-100ep ama-female 10060 --num_epochs 100 --lbs --root_opt --ks_opt --pose_cnn_path logdir/pose-occ03-T_samba_small/cnn-params_10.pth --model_path logdir/ama-female1-lbs-rkopt-b16-ftcse1e504/params_26.pth --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize --use_human
+bash scripts/template-mgpu.sh 0,1,2,3,4,5,6,7 a-eagle-lbs-rkopt-b16-cam-cse a-eagle 10001 --num_epochs 30 --lbs --root_opt --ks_opt --batch_size 16 --nsample 64 --ft_cse
 ```
 
 

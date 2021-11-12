@@ -42,7 +42,8 @@ def main(_):
     opts_dict['preload'] = False
     opts_dict['dframe'] = [1,2,4,8,16,32]
 
-    dataset = config_to_dataloader(opts_dict,is_eval=False)
+    dataset = config_to_dataloader(opts_dict,is_eval=True)
+    #dataset = config_to_dataloader(opts_dict,is_eval=False)
     dataset = DataLoader(dataset,
          batch_size= 1, num_workers=0, drop_last=False, 
          pin_memory=True, shuffle=False)    

@@ -5,6 +5,7 @@ filedir=$rootdir/$prefix
 outdir=$rootdir/output
 suffix=$3
 ishuman=$4 # y/n
+#fps=30
 fps=10
 
 if [ "$suffix" = ".MOV" ]; then

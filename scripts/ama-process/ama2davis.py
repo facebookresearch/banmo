@@ -1,6 +1,7 @@
 """
 python scripts/ama-process/ama2davis.py --path ~/data/AMA/T_swing/
 """
+import pdb
 import cv2
 import numpy as np
 import os
@@ -19,15 +20,20 @@ args = parser.parse_args()
 path = '%s/images/*'%args.path
 seqname = args.path.strip('/').split('/')[-1]
 outdir = '/private/home/gengshany/data/DAVIS/'
-outsil_dir = '%s/Annotations/Full-Resolution/%s'%(outdir, seqname)
-outrgb_dir = '%s/JPEGImages/Full-Resolution/%s'%(outdir, seqname)
 
-#TODO delete if exists
-mkdir_p(outrgb_dir)
-mkdir_p(outsil_dir)
+vid_idx = 0
+for rgb_path in sorted(glob.glob(path)):
+    vid_idx_tmp = int(rgb_path.split('/')[-1].split('_')[0][5:])
+    if vid_idx_tmp != vid_idx:
+        idx=0
+        vid_idx = vid_idx_tmp
 
-
-for idx, rgb_path in enumerate(sorted(glob.glob(path))):
+    outsil_dir = '%s/Annotations/Full-Resolution/%s%d'%(outdir, seqname,vid_idx)
+    outrgb_dir = '%s/JPEGImages/Full-Resolution/%s%d'%(outdir,  seqname,vid_idx)
+    #TODO delete if exists
+    mkdir_p(outrgb_dir)
+    mkdir_p(outsil_dir)
+    
     sil_path = rgb_path.replace('images', 'silhouettes').replace('Image','Silhouette')
     outsil_path = '%s/%05d.png'%(outsil_dir, idx)
     sil = cv2.imread(sil_path,0)
@@ -49,3 +55,4 @@ for idx, rgb_path in enumerate(sorted(glob.glob(path))):
     
     print(outrgb_path)
     print(outsil_path)
+    idx = idx+1

@@ -14,6 +14,7 @@
 
 # Lint as: python3
 """Evaluation script for Nerf."""
+import pdb
 import collections
 import functools
 import time
@@ -262,6 +263,7 @@ def main(argv):
   train_eval_iter = datasource.create_iterator(train_eval_ids, batch_size=0)
   val_eval_ids = utils.strided_subset(
       datasource.val_ids, eval_config.num_val_eval)
+  pdb.set_trace()
   val_eval_iter = datasource.create_iterator(val_eval_ids, batch_size=0)
 
   test_cameras = datasource.load_test_cameras(count=eval_config.num_test_eval)

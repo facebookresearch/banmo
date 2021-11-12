@@ -164,7 +164,7 @@ flags.DEFINE_bool('sfm_init', True, 'whether to maintain sfm relative trajectory
 flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value (0-6)')
 
 #viser
-flags.DEFINE_bool('ft_cse', True, 'whether to fine-tune cse features')
+flags.DEFINE_bool('ft_cse', False, 'whether to fine-tune cse features')
 flags.DEFINE_float('mtcse_steps', 0., 'maintune cse after several epochs')
 flags.DEFINE_float('ftcse_steps', 0.4, 'finetune cse after several epochs')
 flags.DEFINE_bool('use_viser', True, 'whether to use viser')
@@ -1179,7 +1179,7 @@ class v2s_net(nn.Module):
                 warmup_weight = np.clip(warmup_weight, 0,1)
                 if (self.progress > opts.proj_start and \
                     self.progress < opts.proj_end):
-                    total_loss = total_loss*warmup_weight + \
+                    total_loss = (total_loss + proj_loss)*warmup_weight + \
                                20*proj_loss*(1-warmup_weight)
                 else:
                     total_loss = total_loss + proj_loss

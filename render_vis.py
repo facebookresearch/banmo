@@ -338,26 +338,26 @@ def main():
 
             chamLoss = chamfer3D.dist_chamfer_3D.chamfer_3DDist()
 
-            # use ICP for ours improve resutls
-            fitted_scale = verts_gt[...,-1].median() / verts[...,-1].median()
-            verts = verts*fitted_scale
-            frts = pytorch3d.ops.iterative_closest_point(verts,verts_gt, \
-                    estimate_scale=False,max_iterations=100)
-            verts = ((frts.RTs.s*verts).matmul(frts.RTs.R)+frts.RTs.T[:,None])
+            ## use ICP for ours improve resutls
+            #fitted_scale = verts_gt[...,-1].median() / verts[...,-1].median()
+            #verts = verts*fitted_scale
+            #frts = pytorch3d.ops.iterative_closest_point(verts,verts_gt, \
+            #        estimate_scale=False,max_iterations=100)
+            #verts = ((frts.RTs.s*verts).matmul(frts.RTs.R)+frts.RTs.T[:,None])
 
             # use ICP for bad shape reduce accuracy 
-            ## sample a subset of points for matching
-            #npts=100
-            #mesh_gt =   pytorch3d.structures.meshes.Meshes(verts=verts_gt, faces=refface_gt)
-            #mesh_pred = pytorch3d.structures.meshes.Meshes(verts=verts, faces=refface)
-            #verts_gt_samp,_ = pytorch3d.ops.sample_points_from_meshes(mesh_gt, npts ,return_normals=True)
-            #verts_samp,_    = pytorch3d.ops.sample_points_from_meshes(mesh_pred, npts ,return_normals=True)
+            # sample a subset of points for matching
+            npts=100
+            mesh_gt =   pytorch3d.structures.meshes.Meshes(verts=verts_gt, faces=refface_gt)
+            mesh_pred = pytorch3d.structures.meshes.Meshes(verts=verts, faces=refface)
+            verts_gt_samp,_ = pytorch3d.ops.sample_points_from_meshes(mesh_gt, npts ,return_normals=True)
+            verts_samp,_    = pytorch3d.ops.sample_points_from_meshes(mesh_pred, npts ,return_normals=True)
 
-            #icp_rot, icp_trans, icp_scale = icp(verts_samp[0].cpu().numpy(), 
-            #                            verts_gt_samp[0].cpu().numpy(),
-            #                            max_correspondence_search=10)
-            #verts = verts.matmul(torch.Tensor(icp_rot[None]).cuda()) * icp_scale\
-            #      + torch.Tensor(icp_trans[None,None]).cuda()
+            icp_rot, icp_trans, icp_scale = icp(verts_samp[0].cpu().numpy(), 
+                                        verts_gt_samp[0].cpu().numpy(),
+                                        max_correspondence_search=10)
+            verts = verts.matmul(torch.Tensor(icp_rot[None]).cuda()) * icp_scale\
+                  + torch.Tensor(icp_trans[None,None]).cuda()
             
             raw_cd,_,_,_ = chamLoss(verts_gt,verts)  # this returns distance squared
             raw_cd = np.asarray(raw_cd.cpu()[0])

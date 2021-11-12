@@ -23,25 +23,25 @@ python render_vis.py --testdir $testdir \
                      --test_frames $test_frames \
                      --vp -1 \
                      --vis_bones \
-                     --vis_traj
+#                     --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj0 \
                      --seqname $seqname \
                      --test_frames $test_frames \
                      --vp 0 \
-                     --vis_traj
+#                     --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj1 \
                      --seqname $seqname \
                      --test_frames $test_frames \
                      --vp 1 \
-                     --vis_traj
+#                     --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-trj2 \
                      --seqname $seqname \
                      --test_frames $test_frames \
                      --vp 2 \
-                     --vis_traj
+#                     --vis_traj
 python render_vis.py --testdir $testdir \
                      --outpath $prefix-vid \
                      --seqname $seqname \

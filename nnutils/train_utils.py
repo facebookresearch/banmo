@@ -295,46 +295,54 @@ class v2s_trainer(Trainer):
         latest_vars = np.load(var_path,allow_pickle=True)[()]
         
         if is_eval:
-            # TODO: modify states to be compatible with possibly more datasets
-            len_prev_fr = min(states['near_far'].shape[0], 
-                              self.model.near_far.shape[0])
-            self.model.near_far.data[:len_prev_fr] = states['near_far'][:len_prev_fr] 
+            ## TODO: modify states to be compatible with possibly more datasets
+            #len_prev_fr = min(states['near_far'].shape[0], 
+            #                  self.model.near_far.shape[0])
+            #self.model.near_far.data[:len_prev_fr] = states['near_far'][:len_prev_fr] 
 
-            if self.opts.use_sim3:
-                len_prev_vid= states['sim3_j2c'].shape[0]
-                self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
-                self.del_key( states, 'sim3_j2c')
+            #if self.opts.use_sim3:
+            #    len_prev_vid= states['sim3_j2c'].shape[0]
+            #    self.model.sim3_j2c.data[:len_prev_vid]= states['sim3_j2c']
+            #    self.del_key( states, 'sim3_j2c')
 
-            if self.opts.root_opt:
-                self.model.root_code.weight.data[:len_prev_fr] = \
-                   states['root_code.weight'][:len_prev_fr] 
-            if self.opts.lbs or self.opts.flowbw:
-                self.model.pose_code.weight.data[:len_prev_fr] = \
-                   states['pose_code.weight'][:len_prev_fr] 
+            #if self.opts.root_opt:
+            #    self.model.root_code.weight.data[:len_prev_fr] = \
+            #       states['root_code.weight'][:len_prev_fr] 
+            #if self.opts.lbs or self.opts.flowbw:
+            #    self.model.pose_code.weight.data[:len_prev_fr] = \
+            #       states['pose_code.weight'][:len_prev_fr] 
 
-            self.model.env_code.weight.data = \
-                states['env_code.weight']
-            if 'vid_code.weight' in states.keys():
-                self.model.vid_code.weight.data = \
-                    states['vid_code.weight']
+            #self.model.env_code.weight.data = \
+            #    states['env_code.weight']
+            #if 'vid_code.weight' in states.keys():
+            #    self.model.vid_code.weight.data = \
+            #        states['vid_code.weight']
 
-            if 'ks_param' in states.keys():
-                self.model.ks_param.data = states['ks_param']
+            #if 'ks_param' in states.keys():
+            #    self.model.ks_param.data = states['ks_param']
         
             # load variables
             self.model.latest_vars = latest_vars
 
-        # delete size-mismatched variables
-        self.del_key( states, 'near_far') 
-        self.del_key( states, 'root_code.weight')
-        self.del_key( states, 'pose_code.weight')
-        self.del_key( states, 'nerf_bone_rts.0.weight')
-        self.del_key( states, 'nerf_root_rts.0.weight')
-        self.del_key( states, 'env_code.weight')
-        if 'vid_code.weight' in states.keys():
-            self.del_key( states, 'vid_code.weight')
-        if 'ks_param' in states.keys():
-            self.del_key( states, 'ks_param')
+        # if size mismatch, delete all related variables
+        if states['near_far'].shape[0] != self.model.near_far.shape[0]:
+            self.del_key( states, 'near_far') 
+            self.del_key( states, 'root_code.weight')
+            self.del_key( states, 'pose_code.weight')
+            self.del_key( states, 'nerf_bone_rts.0.weight')
+            self.del_key( states, 'nerf_root_rts.0.weight')
+            self.del_key( states, 'env_code.weight')
+            if 'vid_code.weight' in states.keys():
+                self.del_key( states, 'vid_code.weight')
+            if 'ks_param' in states.keys():
+                self.del_key( states, 'ks_param')
+            del_key_list = []
+            for k in states.keys():
+                if 'nerf_bone_rts' in k or 'nerf_root_rts' in k:
+                    del_key_list.append(k)
+            for k in del_key_list:
+                print(k)
+                self.del_key( states, k)
 
         # load some variables
         # this is important for volume matching

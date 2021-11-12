@@ -3,3 +3,6 @@ meshes
 dataset
 notebooks/mask-raw/
 notebooks/rgb-raw/
+notebooks/rgb/
+notebooks/.ipynb_checkpoints/
+notebooks/.ipynb_checkpoints/Nerfies_Capture_Processing-checkpoint.ipynb

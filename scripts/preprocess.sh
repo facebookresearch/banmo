@@ -40,7 +40,7 @@ for infile in $filedir/*$suffix; do
     mkdir $todir/images/
     mkdir $todir/masks/
     cp $outdir/* $todir/images
-    python scripts/densepose.py $seqname
+    python scripts/densepose.py $seqname $ishuman
   elif [ "$suffix" = ".zip" ]; then
     seqname=$(basename "$infile")
     seqname=${seqname::-4}

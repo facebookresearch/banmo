@@ -117,7 +117,7 @@ flags.DEFINE_integer('chunk', 32*1024, 'chunk size to split the input to avoid O
 flags.DEFINE_integer('N_importance', 0, 'number of additional fine samples')
 flags.DEFINE_float('perturb',   1.0, 'factor to perturb depth sampling points')
 flags.DEFINE_float('noise_std', 0., 'std dev of noise added to regularize sigma')
-flags.DEFINE_bool('queryfw', False, 'use forward warping to query deformed shape')
+flags.DEFINE_bool('queryfw', True, 'use forward warping to query deformed shape')
 flags.DEFINE_bool('flowbw', False, 'use backward warping 3d flow')
 flags.DEFINE_bool('lbs', False, 'use lbs for backward warping 3d flow')
 flags.DEFINE_bool('use_cam', True, 'whether to use camera pose')

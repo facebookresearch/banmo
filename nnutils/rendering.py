@@ -405,19 +405,19 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat_j2c, Tmat_j2c)
             xyz_coarse_target = xyz_coarse_target * Smat_j2c
 
-        # compute correspondence: root space to target view space
-        # RT: root space to camera space
-        rtk_vec_target =  rays['rtk_vec_target']
-        Rmat = rtk_vec_target[:,0:9].view(N_rays,1,3,3)
-        Tmat = rtk_vec_target[:,9:12].view(N_rays,1,3)
-        Kinv = rtk_vec_target[:,12:21].view(N_rays,1,3,3)
-        K = mat2K(Kmatinv(Kinv))
+        if 'rtk_vec_target' in rays.keys():
+            # compute correspondence: root space to target view space
+            # RT: root space to camera space
+            rtk_vec_target =  rays['rtk_vec_target']
+            Rmat = rtk_vec_target[:,0:9].view(N_rays,1,3,3)
+            Tmat = rtk_vec_target[:,9:12].view(N_rays,1,3)
+            Kinv = rtk_vec_target[:,12:21].view(N_rays,1,3,3)
+            K = mat2K(Kmatinv(Kinv))
 
-        xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
-        xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
+            xyz_coarse_target = obj_to_cam(xyz_coarse_target, Rmat, Tmat) 
+            xyz_coarse_target = pinhole_cam(xyz_coarse_target,K)
             
         result['xyz_coarse_frame']   = xyz_coarse_frame 
-
 
         if 'rtk_vec_dentrg' in rays.keys():
             if 'sim3_j2c_dentrg' in rays.keys():
@@ -470,10 +470,11 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
 
         # render flow 
         xys = rays['xys']
-        flo_coarse, flo_valid = vrender_flo(weights_coarse, xyz_coarse_target,
-                                            xys, img_size)
-        result['flo_coarse'] = flo_coarse
-        result['flo_valid'] = flo_valid
+        if 'rtk_vec_target' in rays.keys():
+            flo_coarse, flo_valid = vrender_flo(weights_coarse, xyz_coarse_target,
+                                                xys, img_size)
+            result['flo_coarse'] = flo_coarse
+            result['flo_valid'] = flo_valid
 
         if 'rtk_vec_dentrg' in rays.keys():
             fdp_coarse, fdp_valid = vrender_flo(weights_coarse, 
@@ -518,38 +519,39 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             unc_pred = nerf_unc(xyt_code)
             result['unc_pred'] = unc_pred
         
-        # compute other losses
-        img_at_samp = rays['img_at_samp']
-        sil_at_samp = rays['sil_at_samp']
-        flo_at_samp = rays['flo_at_samp']
-        cfd_at_samp = rays['cfd_at_samp']
+        if 'img_at_samp' in rays.keys():
+            # compute other losses
+            img_at_samp = rays['img_at_samp']
+            sil_at_samp = rays['sil_at_samp']
+            flo_at_samp = rays['flo_at_samp']
+            cfd_at_samp = rays['cfd_at_samp']
 
-        # img loss
-        img_loss_samp = (rgb_coarse - img_at_samp).pow(2)
-        
-        # sil loss, weight sil loss based on # points
-        if is_training and sil_at_samp.sum()>0 and (1-sil_at_samp).sum()>0:
-            pos_wt = sil_at_samp.numel()/    sil_at_samp.sum()
-            neg_wt = sil_at_samp.numel()/(1-sil_at_samp).sum()
-            sil_balance_wt = 0.5*pos_wt*sil_at_samp + 0.5*neg_wt*(1-sil_at_samp)
-        else: sil_balance_wt = 1
-        sil_loss_samp = (sil_coarse[...,None] - sil_at_samp).pow(2) * sil_balance_wt
-           
-        # flo loss, confidence weighting: 30x normalized distance - 0.1x pixel error
-        flo_loss_samp = (flo_coarse - flo_at_samp).pow(2).sum(-1)
-        # hard-threshold cycle error
-        sil_at_samp_flo = (sil_at_samp>0)\
-                # & (rendered['flo_valid']==1)
-        sil_at_samp_flo[cfd_at_samp==0] = False 
-        cfd_at_samp = cfd_at_samp / cfd_at_samp[sil_at_samp_flo].mean()
-        flo_loss_samp = flo_loss_samp[...,None] * cfd_at_samp
+            # img loss
+            img_loss_samp = (rgb_coarse - img_at_samp).pow(2)
+            
+            # sil loss, weight sil loss based on # points
+            if is_training and sil_at_samp.sum()>0 and (1-sil_at_samp).sum()>0:
+                pos_wt = sil_at_samp.numel()/    sil_at_samp.sum()
+                neg_wt = sil_at_samp.numel()/(1-sil_at_samp).sum()
+                sil_balance_wt = 0.5*pos_wt*sil_at_samp + 0.5*neg_wt*(1-sil_at_samp)
+            else: sil_balance_wt = 1
+            sil_loss_samp = (sil_coarse[...,None] - sil_at_samp).pow(2) * sil_balance_wt
+               
+            # flo loss, confidence weighting: 30x normalized distance - 0.1x pixel error
+            flo_loss_samp = (flo_coarse - flo_at_samp).pow(2).sum(-1)
+            # hard-threshold cycle error
+            sil_at_samp_flo = (sil_at_samp>0)\
+                    # & (rendered['flo_valid']==1)
+            sil_at_samp_flo[cfd_at_samp==0] = False 
+            cfd_at_samp = cfd_at_samp / cfd_at_samp[sil_at_samp_flo].mean()
+            flo_loss_samp = flo_loss_samp[...,None] * cfd_at_samp
        
-        result['img_at_samp']   = img_at_samp
-        result['sil_at_samp']   = sil_at_samp
-        result['sil_at_samp_flo']   = sil_at_samp_flo
-        result['flo_at_samp']   = flo_at_samp
-        result['img_loss_samp'] = img_loss_samp 
-        result['sil_loss_samp'] = sil_loss_samp
-        result['flo_loss_samp'] = flo_loss_samp
+            result['img_at_samp']   = img_at_samp
+            result['sil_at_samp']   = sil_at_samp
+            result['sil_at_samp_flo']   = sil_at_samp_flo
+            result['flo_at_samp']   = flo_at_samp
+            result['img_loss_samp'] = img_loss_samp 
+            result['sil_loss_samp'] = sil_loss_samp
+            result['flo_loss_samp'] = flo_loss_samp
 
     return result, weights_coarse

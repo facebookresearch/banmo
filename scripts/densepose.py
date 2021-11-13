@@ -28,6 +28,7 @@ import point_rend
         
 
 seqname=sys.argv[1]
+ishuman=sys.argv[2] # 'y/n'
 datadir='tmp/%s/images/'%seqname
 odir='database/DAVIS/'
 imgdir= '%s/JPEGImages/Full-Resolution/%s'%(odir,seqname)
@@ -73,8 +74,12 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%datadir))):
         print(ins_cls)
         #if ins_cls ==15: # cat
         #if ins_cls==0 or (ins_cls >= 14 and ins_cls <= 23):
-        if ins_cls >= 14 and ins_cls <= 23:
-            mask_rszd += np.asarray(outputs.pred_masks[it])
+        if ishuman:
+            if ins_cls ==0:
+                mask_rszd += np.asarray(outputs.pred_masks[it])
+        else:
+            if ins_cls >= 14 and ins_cls <= 23:
+                mask_rszd += np.asarray(outputs.pred_masks[it])
 
     nb_components, output, stats, centroids = \
     cv2.connectedComponentsWithStats(mask_rszd.astype(np.uint8), connectivity=8)

@@ -423,6 +423,7 @@ def raycast(xys, Rmat, Tmat, Kinv, near_far):
     Rmat:bs, ...,3,3 
     Tmat:bs, ...,3, camera to root coord transform 
     Kinv:bs, ...,3,3 
+    near_far:bs,2
     """
     Rmat, Tmat, Kinv, xys = force_type([Rmat, Tmat, Kinv, xys])
     Rmat = Rmat.view(-1,3,3)

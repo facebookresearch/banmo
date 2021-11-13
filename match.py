@@ -174,6 +174,7 @@ def main(_):
     trainer = v2s_trainer(opts, is_eval=True)
     data_info = trainer.init_dataset()    
     trainer.define_model(data_info)
+    trainer.model.img_size = opts.render_size
 
     #TODO write matching function
     img_match = match_frames(trainer, opts.match_frames)

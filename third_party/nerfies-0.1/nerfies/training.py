@@ -13,6 +13,7 @@
 # limitations under the License.
 
 """Library to training NeRFs."""
+import pdb
 import functools
 from typing import Any
 from typing import Callable
@@ -134,19 +135,30 @@ def train_step(model: models.NerfModel,
 
   # pylint: disable=unused-argument
   def _compute_loss_and_stats(params, model_out, use_elastic_loss=False):
-    # object mask
-    rgb_loss = ((model_out['rgb'] - batch['rgb'][..., :3])**2).mean()
+    ## fg+bg
+    #rgb_loss = ((model_out['rgb'] - batch['rgb'][..., :3])**2).mean()
+    #
+    #sil = ((batch['rgb'][...,:3]**2).sum(-1)!=0).astype(float)
+    #reweight = sil.sum()/sil.shape[0] # fg/all
+    #sil_loss = ((model_out['acc'] - sil)**2)
+    #sil_loss = (sil_loss*sil).sum()/sil.sum()*(1-reweight) + (sil_loss*(1-sil)).sum()/(1-sil).sum() * reweight
+    #loss = rgb_loss
     
+    # fg
     sil = ((batch['rgb'][...,:3]**2).sum(-1)!=0).astype(float)
+    rgb_loss = ((model_out['rgb'] - batch['rgb'][..., :3])**2).mean(1)
+    rgb_loss  = rgb_loss * sil
+    rgb_loss = rgb_loss.sum()/sil.sum()
+    
     reweight = sil.sum()/sil.shape[0] # fg/all
     sil_loss = ((model_out['acc'] - sil)**2)
     sil_loss = (sil_loss*sil).sum()/sil.sum()*(1-reweight) + (sil_loss*(1-sil)).sum()/(1-sil).sum() * reweight
+    loss = sil_loss+rgb_loss
+    
     stats = {
         'loss/rgb': rgb_loss,
         'loss/sil': sil_loss,
     }
-    loss = rgb_loss
-    #loss = sil_loss+rgb_loss
     if use_elastic_loss:
       v_elastic_fn = jax.jit(vmap(vmap(compute_elastic_loss)))
       weights = lax.stop_gradient(model_out['weights'])

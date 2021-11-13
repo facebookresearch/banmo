@@ -45,4 +45,4 @@
 #  bash compute_flow.sh $seqname
 #cd -
 
-python preload.py --seqname a-eagle
+#python preload.py --seqname a-eagle

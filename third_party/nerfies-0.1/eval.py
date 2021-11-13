@@ -105,7 +105,8 @@ def process_batch(*,
     rgb_target = batch['rgb']
     mse = ((rgb - batch['rgb'])**2).mean()
     psnr = utils.compute_psnr(mse)
-    ssim = compute_multiscale_ssim(rgb_target, rgb)
+    ssim = psnr
+    #ssim = compute_multiscale_ssim(rgb_target, rgb)
     out['mse'] = mse
     out['psnr'] = psnr
     out['ssim'] = ssim

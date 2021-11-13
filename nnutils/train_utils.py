@@ -69,6 +69,16 @@ class v2s_trainer(Trainer):
         self.is_eval=is_eval
         self.local_rank = opts.local_rank
         self.save_dir = os.path.join(opts.checkpoint_dir, opts.logname)
+        
+        if opts.use_accu:
+            # 4bs  30 ep  => accu=1  (nerfies807, 120 img), 1.5h
+            # 16bs 90 ep  => accu=3  (sfm10, 750 img), 6h
+            # 16bs 300 ep => accu=10 (amaf, 2600 img), 15h
+            accu_steps = max(1, opts.num_epochs // 30)
+            self.accu_steps = int(accu_steps)
+        else:
+            self.accu_steps = 1
+        
         # write logs
         if opts.local_rank==0:
             if not os.path.exists(self.save_dir): os.makedirs(self.save_dir)
@@ -261,7 +271,7 @@ class v2s_trainer(Trainer):
                        0*opts.learning_rate, # params_dp_verts
                        0.1*opts.learning_rate, # params_csenet
             ],
-            self.model.module.final_steps,
+            int(self.model.module.final_steps/self.accu_steps),
             pct_start=2./self.num_epochs, # use 2 epochs to warm up
             cycle_momentum=False, 
             anneal_strategy='linear',
@@ -806,8 +816,9 @@ class v2s_trainer(Trainer):
                     torch.cuda.synchronize()
                     print('update near-far plane time:%.2f'%(time.time()-start_time))
 
-            self.optimizer.zero_grad()
+#            self.optimizer.zero_grad()
             total_loss,aux_out = self.model(batch)
+            total_loss = total_loss/self.accu_steps
 
             if opts.debug:
                 if 'start_time' in locals().keys():
@@ -821,9 +832,11 @@ class v2s_trainer(Trainer):
                     torch.cuda.synchronize()
                     print('forward back time:%.2f'%(time.time()-start_time))
 
-            self.clip_grad(aux_out)
-            self.optimizer.step()
-            self.scheduler.step()
+            if (i+1)%self.accu_steps == 0:
+                self.clip_grad(aux_out)
+                self.optimizer.step()
+                self.scheduler.step()
+                self.optimizer.zero_grad()
                 
             #for param_group in self.optimizer.param_groups:
             #    print(param_group['lr'])

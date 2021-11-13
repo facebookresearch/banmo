@@ -1,6 +1,6 @@
 gpus=$1
-seqname=ama-female1
-addname=mstage
+seqname=ama-female
+addname=1acu
 addr=10001
 use_human=
 
@@ -13,15 +13,13 @@ else
 fi
 echo $pose_cnn_path
 
-#savename=${model_prefix}-init
-#bash scripts/template-mgpu.sh $gpus $savename \
-#    $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
-#  --pose_cnn_path $pose_cnn_path \
-#  --batch_size 16 --nsample 64 \
-#  --${use_human}use_human
-
-#TODO
-seqname=ama-female
+savename=${model_prefix}-init
+bash scripts/template-mgpu.sh $gpus $savename \
+    $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+  --pose_cnn_path $pose_cnn_path \
+  --batch_size 16 --nsample 64 \
+  --${use_human}use_human \
+  --accu_steps 1\
 
 #loadname=${model_prefix}-init
 #savename=${model_prefix}-ft1-2
@@ -33,35 +31,35 @@ seqname=ama-female
 #  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
 #  --${use_human}use_human \
 #  --proj_end 2 #TODO use all epochs for learrning articulation MLP weights
-
-loadname=${model_prefix}-ft1-2
-savename=${model_prefix}-ft2-3
-bash scripts/template-mgpu.sh $gpus $savename \
-    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
-  --pose_cnn_path $pose_cnn_path \
-  --model_path logdir/$loadname/params_$num_epochs.pth \
-  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
-  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
-  --${use_human}use_human \
-  --proj_end 1 #TODO use all epochs for learrning articulation MLP weights
-
-loadname=${model_prefix}-ft2-3
-savename=${model_prefix}-ft3-3
-bash scripts/template-mgpu.sh $gpus $savename \
-    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
-  --pose_cnn_path $pose_cnn_path \
-  --model_path logdir/$loadname/params_$num_epochs.pth \
-  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
-  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
-  --${use_human}use_human \
-  --proj_end 0.5 #TODO use all epochs for learrning articulation MLP weights
-
-loadname=${model_prefix}-ft3-3
-savename=${model_prefix}-ft4-3
-bash scripts/template-mgpu.sh $gpus $savename \
-    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
-  --pose_cnn_path $pose_cnn_path \
-  --model_path logdir/$loadname/params_$num_epochs.pth \
-  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
-  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
-  --${use_human}use_human
+#
+#loadname=${model_prefix}-ft1-2
+#savename=${model_prefix}-ft2-3
+#bash scripts/template-mgpu.sh $gpus $savename \
+#    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+#  --pose_cnn_path $pose_cnn_path \
+#  --model_path logdir/$loadname/params_$num_epochs.pth \
+#  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
+#  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+#  --${use_human}use_human \
+#  --proj_end 1 #TODO use all epochs for learrning articulation MLP weights
+#
+#loadname=${model_prefix}-ft2-3
+#savename=${model_prefix}-ft3-3
+#bash scripts/template-mgpu.sh $gpus $savename \
+#    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+#  --pose_cnn_path $pose_cnn_path \
+#  --model_path logdir/$loadname/params_$num_epochs.pth \
+#  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
+#  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+#  --${use_human}use_human \
+#  --proj_end 0.5 #TODO use all epochs for learrning articulation MLP weights
+#
+#loadname=${model_prefix}-ft3-3
+#savename=${model_prefix}-ft4-3
+#bash scripts/template-mgpu.sh $gpus $savename \
+#    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+#  --pose_cnn_path $pose_cnn_path \
+#  --model_path logdir/$loadname/params_$num_epochs.pth \
+#  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
+#  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+#  --${use_human}use_human

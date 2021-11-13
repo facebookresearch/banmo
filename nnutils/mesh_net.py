@@ -179,6 +179,7 @@ flags.DEFINE_float('fine_steps', 0.8, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
+flags.DEFINE_bool('use_accu',False, 'whether to use gradient accumulation')
 
 # for preloading
 flags.DEFINE_bool('preload', True, 'whether to use pre-computed data')

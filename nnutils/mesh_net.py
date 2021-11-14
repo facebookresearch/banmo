@@ -166,7 +166,7 @@ flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value 
 #viser
 flags.DEFINE_bool('ft_cse', False, 'whether to fine-tune cse features')
 flags.DEFINE_float('mtcse_steps', 0., 'maintune cse after several epochs')
-flags.DEFINE_float('ftcse_steps', 0.4, 'finetune cse after several epochs')
+flags.DEFINE_float('ftcse_steps', 0.2, 'finetune cse after several epochs')
 flags.DEFINE_bool('use_viser', True, 'whether to use viser')
 flags.DEFINE_bool('use_human', False, 'whether to use human cse model')
 flags.DEFINE_bool('use_proj', True, 'whether to use reprojection loss')
@@ -251,6 +251,7 @@ class v2s_net(nn.Module):
         self.near_far = torch.Tensor(self.near_far).to(self.device)
         self.obj_scale = float(near_far_to_bound(self.near_far)) / 0.3 # to 0.3
         self.near_far = self.near_far / self.obj_scale
+        self.near_far_base = self.near_far.clone() # used for create_base_se3()
         self.near_far = nn.Parameter(self.near_far)
     
         # object bound
@@ -851,10 +852,8 @@ class v2s_net(nn.Module):
             self.csenet_feats, self.dps = self.csenet(self.imgs, self.masks)
             # for visualization
             self.dps = self.dps * self.dp_feats_mask.float()
-            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+            if self.progress > opts.ftcse_steps:
                 self.dp_feats = self.csenet_feats
-                if self.progress < opts.ftcse_steps:
-                    self.dp_feats = self.dp_feats.detach()
             #self.dp_bbox[:] = 0
         self.dp_feats     = F.normalize(self.dp_feats, 2,1)
         self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
@@ -892,7 +891,7 @@ class v2s_net(nn.Module):
         bs = self.rtk.shape[0]
         device = self.device
         
-        self.rtk[:,:3] = self.create_base_se3(self.near_far, bs, device)
+        self.rtk[:,:3] = self.create_base_se3(self.near_far_base, bs, device)
         frame_code = self.dp_feats
         rts_mhp = self.nerf_root_rts(frame_code) # bs, N, 13
 
@@ -916,7 +915,7 @@ class v2s_net(nn.Module):
         self.rtk[:,:3,3] = self.rtk[:,:3,3] / self.obj_scale
         self.rtk_raw = self.rtk.clone()
         if not self.use_cam:
-            self.rtk[:,:3] = self.create_base_se3(self.near_far, bs, device)
+            self.rtk[:,:3] = self.create_base_se3(self.near_far_base, bs, device)
 
         if self.opts.root_opt:
             frameid = self.frameid.long().to(device)
@@ -1314,7 +1313,7 @@ class v2s_net(nn.Module):
 
             # construct base se3
             rtk = torch.zeros(bs_rd, 4,4).to(self.device)
-            rtk[:,:3] = self.create_base_se3(self.near_far, bs_rd, self.device)
+            rtk[:,:3] = self.create_base_se3(self.near_far_base, bs_rd, self.device)
 
             # compose se3
             rmat = rtk[:,:3,:3]

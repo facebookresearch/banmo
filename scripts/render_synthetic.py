@@ -57,7 +57,7 @@ for i in range(args.nframes):
     elif args.model=='water':
         mesh = sr.Mesh.from_obj('mesh_material/water/water.obj', load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='hands':
-        mesh = sr.Mesh.from_obj('mesh_material/hands/hands_%06d.obj'%int(1+i*args.xspeed), load_texture=True, texture_res=100, texture_type='surface')
+        mesh = sr.Mesh.from_obj('mesh_material/hands2/hands_%06d.obj'%int(1+i*args.xspeed), load_texture=True, texture_res=100, texture_type='surface')
 
     overts = mesh.vertices
     center = overts.mean(1)[:,None]

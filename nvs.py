@@ -26,10 +26,11 @@ opts = flags.FLAGS
 # script specific ones
 flags.DEFINE_integer('maxframe', 1, 'maximum number frame to render')
 flags.DEFINE_integer('vidid', 0, 'video id that determines the env code')
+flags.DEFINE_integer('bullet_time', -1, 'frame id in a video to show bullet time')
 flags.DEFINE_float('scale', 0.1,
         'scale applied to the rendered image (wrt focal length)')
 flags.DEFINE_string('rootdir', 
-        'database/DAVIS/Cameras/Full-Resolution/syn-eagle-100/',
+        'tmp/traj/',
         'root body directory')
 
 def construct_rays_nvs(img_size, rtks, near_far, device):
@@ -57,7 +58,6 @@ def main(_):
 
     # bs, 4,4 (R|T)
     #         (f|p)
-    #TODO modify as args
     rtks = load_root(opts.rootdir, opts.maxframe)  # cap frame=1000
 
     # determine render image scale
@@ -80,16 +80,27 @@ def main(_):
                             vars_np,
                             pts=model.latest_vars['mesh_rest'].vertices)
 
+    vidid = torch.Tensor([opts.vidid]).to(model.device).long()
+    source_l = model.data_offset[opts.vidid+1] - model.data_offset[opts.vidid] -1
+    embedid = torch.Tensor(np.linspace(0,source_l,bs)).to(model.device).long() + \
+              model.data_offset[opts.vidid]
+    if opts.bullet_time>-1: embedid[:] = opts.bullet_time
     rgbs = []
     sils = []
     viss = []
     for i in range(bs):
         rays = construct_rays_nvs(model.img_size, rtks[i:i+1], 
                                               near_far[i:i+1], model.device)
-        # TODO need to add more env_code
-        vidid = torch.Tensor([opts.vidid]).to(model.device).long()
+        # add env code
         rays['env_code'] = model.env_code(vidid)
         rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
+        
+        # add bones
+        time_embedded = model.pose_code(embedid[i:i+1])[:,None]
+        rays['time_embedded'] = time_embedded.repeat(1,rays['nsample'],1)
+        if opts.lbs and model.num_bone_used>0:
+            bone_rts = model.nerf_bone_rts(embedid[i:i+1])
+            rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
         with torch.no_grad():
             # render images only
@@ -120,6 +131,8 @@ def main(_):
         dph = results['depth_rnd'][0,...,0].cpu().numpy()
         sil = results['sil_coarse'][0,...,0].cpu().numpy()
         vis = results['vis_pred'][0,...,0].cpu().numpy()
+        sil[sil<0.5] = 0
+        rgb[sil<0.5] = 0
     
         rgbs.append(rgb)
         sils.append(sil*255)

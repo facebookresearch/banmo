@@ -102,6 +102,12 @@ To re-render meshes
 ```
 CUDA_VISIBLE_DEVICES=1 bash scripts/render_vids.sh sfm-mcats10 logdir/sfm-mcats10-lbs-rkopt-ft4/params_30.pth "8 9" "--sample_grid3d 128 --queryfw --root_opt --lbs --render_size 16 --ndepth 16 --nouse_viser --nouse_corresp --nouse_proj"
 ```
+
+To re-render nerfies meshes
+```
+bash scripts/render_nerfies.sh cat_905 logdir/baseline-cat_905/ {0}
+```
+
 ## Additional Notes
 - wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl
 

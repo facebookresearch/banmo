@@ -1,9 +1,9 @@
 gpus=$1
-seqname=sfm-mcats16
-num_epochs=150
+seqname=ama-female
+num_epochs=300
 addname=b16
-addr=10001
-use_human=no
+addr=10004
+use_human=
 
 model_prefix=$seqname-lbs-rkopt-$num_epochs-$addname
 if [ "$use_human" = "" ]; then
@@ -23,7 +23,7 @@ echo $pose_cnn_path
 loadname=${model_prefix}-init
 savename=${model_prefix}-ft1
 bash scripts/template-mgpu.sh $gpus $savename \
-    $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
   --model_path logdir/$loadname/params_$num_epochs.pth \
   --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \

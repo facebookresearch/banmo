@@ -79,6 +79,7 @@ def render_rays(models,
                 img_size=None,
                 progress=None,
                 opts=None,
+                render_vis=False,
                 ):
     """
     Render rays by computing the output of @model applied on @rays
@@ -169,13 +170,13 @@ def render_rays(models,
                           chunk, N_samples,
                           N_rays, embedding_xyz, rays_d, noise_std,
                           obj_bound, dir_embedded, z_vals,
-                          img_size, progress,opts)
+                          img_size, progress,opts,render_vis=render_vis)
 
     return result
     
 def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 
         N_rays, N_samples,chunk, noise_std,
-        env_code=None, weights_only=False):
+        env_code=None, weights_only=False, clip_bound = None, vis_pred=None):
     """
     Helper function that performs model inference.
 
@@ -256,6 +257,14 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
     sigmas = sigmas * ibetas
 
     alphas = 1-torch.exp(-deltas*sigmas) # (N_rays, N_samples_), p_i
+
+    #set out-of-bound and nonvisible alphas to zero
+    if clip_bound is not None:
+        oob = (xyz_.abs()>float(clip_bound)).sum(-1).view(N_rays,N_samples)>0
+        alphas[oob]=0
+    if vis_pred is not None:
+        alphas[vis_pred<0.5] = 0
+
     alphas_shifted = \
         torch.cat([torch.ones_like(alphas[:, :1]), 1-alphas+1e-10], -1) # [1, a1, a2, ...]
     alpha_prod = torch.cumprod(alphas_shifted, -1)[:, :-1]
@@ -275,7 +284,12 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
 def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                          N_rays, embedding_xyz, rays_d, noise_std,
                          obj_bound, dir_embedded, z_vals,
-                         img_size, progress,opts, fine_iter=True):
+                         img_size, progress,opts, fine_iter=True, 
+                         render_vis=False):
+    """
+    fine_iter: whether to render loss-related terms
+    render_vis: used for novel view synthesis
+    """
     is_training = models['coarse'].training
     if 'sim3_j2c' in rays.keys():
         # similarity transform to the joint canoical space
@@ -380,16 +394,30 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     else:
         env_code = None
 
+    # TODO set out of bounds weights to zero
+    if render_vis: 
+        clip_bound = obj_bound
+        xyz_embedded = embedding_xyz(xyz_coarse_sampled)
+        vis_pred = evaluate_mlp(models['nerf_vis'], 
+                               xyz_embedded, chunk=chunk)[...,0].sigmoid()
+    else:
+        clip_bound = None
+        vis_pred = None
     rgb_coarse, depth_rnd, weights_coarse, vis_coarse = \
         inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                 dir_embedded, z_vals, N_rays, N_samples, chunk, noise_std,
-                weights_only=False, env_code=env_code)
+                weights_only=False, env_code=env_code, 
+                clip_bound=clip_bound, vis_pred=vis_pred)
     sil_coarse =  weights_coarse[:,:-1].sum(1)
     result = {'img_coarse': rgb_coarse,
               'depth_rnd': depth_rnd,
               'sil_coarse': sil_coarse,
              }
-   
+  
+    # render visibility scores
+    if render_vis:
+        result['vis_pred'] = (vis_pred * weights_coarse).sum(-1)
+
     if fine_iter:
         xyz_joint = xyz_coarse_sampled
         if 'nerf_dp' in models.keys():

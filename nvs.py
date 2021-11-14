@@ -23,6 +23,15 @@ from ext_utils.util_flow import write_pfm
 from ext_utils.flowlib import cat_imgflo 
 opts = flags.FLAGS
 
+# script specific ones
+flags.DEFINE_integer('maxframe', 1, 'maximum number frame to render')
+flags.DEFINE_integer('vidid', 0, 'video id that determines the env code')
+flags.DEFINE_float('scale', 0.1,
+        'scale applied to the rendered image (wrt focal length)')
+flags.DEFINE_string('rootdir', 
+        'database/DAVIS/Cameras/Full-Resolution/syn-eagle-100/',
+        'root body directory')
+
 def construct_rays_nvs(img_size, rtks, near_far, device):
     bs = rtks.shape[0]
     rtks = torch.Tensor(rtks).to(device)
@@ -49,14 +58,10 @@ def main(_):
     # bs, 4,4 (R|T)
     #         (f|p)
     #TODO modify as args
-    dataid = 0
-    render_scale = 0.1
-    root_dir = 'logdir/ama-female-lbs-rkopt-300-b16-init/init-cam/T_swing1-'
-    
-    rtks = load_root(root_dir,1000)  # cap frame=1000
+    rtks = load_root(opts.rootdir, opts.maxframe)  # cap frame=1000
 
     # determine render image scale
-    rtks[:,3] = rtks[:,3]*render_scale
+    rtks[:,3] = rtks[:,3]*opts.scale
     fl_mean = rtks[:,3,:2].mean()
     img_size = int(fl_mean)
     model.img_size = img_size
@@ -75,42 +80,56 @@ def main(_):
                             vars_np,
                             pts=model.latest_vars['mesh_rest'].vertices)
 
-    rays = construct_rays_nvs(model.img_size, rtks, near_far, model.device)
-    # TODO need to add more env_code
-    dataid = torch.Tensor(bs*[dataid]).to(model.device).long()
-    rays['env_code'] = model.env_code(dataid)
-    rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
-
-    with torch.no_grad():
-        # render images only
-        results=defaultdict(list)
-        bs_rays = rays['bs'] * rays['nsample'] #
-        for i in range(0, bs_rays, opts.chunk):
-            rays_chunk = chunk_rays(rays,i,opts.chunk)
-            rendered_chunks = render_rays(nerf_models,
-                        embeddings,
-                        rays_chunk,
-                        N_samples = opts.ndepth,
-                        perturb=0,
-                        noise_std=0,
-                        chunk=opts.chunk, # chunk size is effective in val mode
-                        use_fine=True,
-                        img_size=model.img_size,
-                        )
-            for k, v in rendered_chunks.items():
-                results[k] += [v]
-       
-    for k, v in results.items():
-        v = torch.cat(v, 0)
-        v = v.view(bs,model.img_size, model.img_size, -1)
-        results[k] = v
-    pdb.set_trace()
-    rgb = results['img_coarse'].cpu().numpy()
-    dph = results['depth_rnd'][...,0].cpu().numpy()
-    sil = results['sil_coarse'][...,0].cpu().numpy()
+    rgbs = []
+    sils = []
+    viss = []
     for i in range(bs):
-        cv2.imwrite('tmp/rgb_%05d.png'%i, rgb[i,:,:,::-1]*255)
-        cv2.imwrite('tmp/sil_%05d.png'%i, sil[i,:,:]*255)
+        rays = construct_rays_nvs(model.img_size, rtks[i:i+1], 
+                                              near_far[i:i+1], model.device)
+        # TODO need to add more env_code
+        vidid = torch.Tensor([opts.vidid]).to(model.device).long()
+        rays['env_code'] = model.env_code(vidid)
+        rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
+
+        with torch.no_grad():
+            # render images only
+            results=defaultdict(list)
+            bs_rays = rays['bs'] * rays['nsample'] #
+            for j in range(0, bs_rays, opts.chunk):
+                rays_chunk = chunk_rays(rays,j,opts.chunk)
+                rendered_chunks = render_rays(nerf_models,
+                            embeddings,
+                            rays_chunk,
+                            N_samples = opts.ndepth,
+                            perturb=0,
+                            noise_std=0,
+                            chunk=opts.chunk, # chunk size is effective in val mode
+                            use_fine=True,
+                            img_size=model.img_size,
+                            obj_bound = model.latest_vars['obj_bound'],
+                            render_vis=True,
+                            )
+                for k, v in rendered_chunks.items():
+                    results[k] += [v]
+           
+        for k, v in results.items():
+            v = torch.cat(v, 0)
+            v = v.view(1,model.img_size, model.img_size, -1)
+            results[k] = v
+        rgb = results['img_coarse'][0].cpu().numpy()
+        dph = results['depth_rnd'][0,...,0].cpu().numpy()
+        sil = results['sil_coarse'][0,...,0].cpu().numpy()
+        vis = results['vis_pred'][0,...,0].cpu().numpy()
+    
+        rgbs.append(rgb)
+        sils.append(sil*255)
+        viss.append(vis*255)
+        cv2.imwrite('tmp/rgb_%05d.png'%i, rgb[...,::-1]*255)
+        cv2.imwrite('tmp/sil_%05d.png'%i, sil*255)
+        cv2.imwrite('tmp/vis_%05d.png'%i, vis*255)
+    save_vid('tmp/rgb', rgbs, suffix='.mp4')
+    save_vid('tmp/sil', sils, suffix='.mp4')
+    save_vid('tmp/vis', viss, suffix='.mp4')
 
 
 if __name__ == '__main__':

@@ -1,6 +1,6 @@
 gpus=$1
-seqname=ama-female
-num_epochs=300
+seqname=T_samba
+num_epochs=200
 addname=b16
 addr=10004
 use_human=

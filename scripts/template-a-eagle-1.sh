@@ -1,5 +1,5 @@
 gpus=$1
-seqname=a-eagle-1
+seqname=a-hand-1
 num_epochs=30
 addname=b4-nopose-nort
 addr=10005

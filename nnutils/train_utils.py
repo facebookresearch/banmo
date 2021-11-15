@@ -1116,7 +1116,7 @@ class v2s_trainer(Trainer):
 
     @staticmethod
     def extract_mesh(model,chunk,grid_size,
-                      #threshold = 0.01,
+                      #threshold = -0.001,
                       threshold = 0.,
                       embedid=None,
                       mesh_dict_in=None):

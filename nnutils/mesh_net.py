@@ -911,6 +911,7 @@ class v2s_net(nn.Module):
         opts = self.opts
         bs = self.rtk.shape[0]
         device = self.device
+
         #TODO change scale of input cameras
         self.rtk[:,:3,3] = self.rtk[:,:3,3] / self.obj_scale
         self.rtk_raw = self.rtk.clone()

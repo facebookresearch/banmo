@@ -1,3 +1,6 @@
+"""
+bash scripts/render_nvs.sh
+"""
 from absl import flags, app
 import sys
 sys.path.insert(0,'third_party')
@@ -29,9 +32,8 @@ flags.DEFINE_integer('vidid', 0, 'video id that determines the env code')
 flags.DEFINE_integer('bullet_time', -1, 'frame id in a video to show bullet time')
 flags.DEFINE_float('scale', 0.1,
         'scale applied to the rendered image (wrt focal length)')
-flags.DEFINE_string('rootdir', 
-        'tmp/traj/',
-        'root body directory')
+flags.DEFINE_string('rootdir', 'tmp/traj/','root body directory')
+flags.DEFINE_string('nvs_outpath', 'tmp/nvs-','output prefix')
 
 def construct_rays_nvs(img_size, rtks, near_far, device):
     bs = rtks.shape[0]
@@ -137,12 +139,12 @@ def main(_):
         rgbs.append(rgb)
         sils.append(sil*255)
         viss.append(vis*255)
-        cv2.imwrite('tmp/rgb_%05d.png'%i, rgb[...,::-1]*255)
-        cv2.imwrite('tmp/sil_%05d.png'%i, sil*255)
-        cv2.imwrite('tmp/vis_%05d.png'%i, vis*255)
-    save_vid('tmp/rgb', rgbs, suffix='.mp4')
-    save_vid('tmp/sil', sils, suffix='.mp4')
-    save_vid('tmp/vis', viss, suffix='.mp4')
+        cv2.imwrite('%s-rgb_%05d.png'%(opts.nvs_outpath,i), rgb[...,::-1]*255)
+        cv2.imwrite('%s-sil_%05d.png'%(opts.nvs_outpath,i), sil*255)
+        cv2.imwrite('%s-vis_%05d.png'%(opts.nvs_outpath,i), vis*255)
+    save_vid('%s-rgb'%(opts.nvs_outpath), rgbs, suffix='.mp4')
+    save_vid('%s-sil'%(opts.nvs_outpath), sils, suffix='.mp4')
+    save_vid('%s-vis'%(opts.nvs_outpath), viss, suffix='.mp4')
 
 
 if __name__ == '__main__':

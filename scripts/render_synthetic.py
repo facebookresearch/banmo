@@ -21,6 +21,8 @@ parser.add_argument('--outdir', default='syn-spot3f',
                     help='output dir')
 parser.add_argument('--model', default='spot',
                     help='model to render, {spot, eagle}')
+parser.add_argument('--rot_axis', default='y',
+                    help='axis to rotate around')
 parser.add_argument('--nframes', default=3,type=int,
                     help='number of frames to render')
 parser.add_argument('--alpha', default=1.,type=float,
@@ -58,10 +60,13 @@ for i in range(args.nframes):
         mesh = sr.Mesh.from_obj('mesh_material/water/water.obj', load_texture=True, texture_res=5, texture_type='surface')
     elif args.model=='hands':
         mesh = sr.Mesh.from_obj('mesh_material/hands2/hands_%06d.obj'%int(1+i*args.xspeed), load_texture=True, texture_res=100, texture_type='surface')
+        mesh.vertices = mesh.vertices*10
 
     overts = mesh.vertices
-    center = overts.mean(1)[:,None]
-    scale = max((overts - center)[0].abs().max(0)[0])
+    if i==0:
+        center = overts.mean(1)[:,None]
+        scale = max((overts - center)[0].abs().max(0)[0])
+
     overts -= center
     overts *= 1.0 / float(scale)
     overts[:,:,1]*= -1  # aligh with camera coordinate
@@ -93,9 +98,15 @@ for i in range(0,args.nframes):
 
     # set cameras
     #rotx = np.random.rand()
-    rotx=0.
-    if i==0: rotx=0.
-    roty = args.init_a*6.28+args.alpha*6.28*i/args.nframes
+    if args.rot_axis=='x':
+        rotx = args.init_a*6.28+args.alpha*6.28*i/args.nframes
+    else:
+        rotx=0.
+#    if i==0: rotx=0.
+    if args.rot_axis=='y':
+        roty = args.init_a*6.28+args.alpha*6.28*i/args.nframes
+    else:
+        roty = 0
     rotz = 0.
     Rmat = cv2.Rodrigues(np.asarray([rotx, roty, rotz]))[0]
     Rmat = torch.Tensor(Rmat).cuda()

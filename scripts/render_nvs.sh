@@ -1,10 +1,20 @@
-dev=1
-CUDA_VISIBLE_DEVICES=$dev python nvs.py --seqname nerfies_cat_807 \
-  --model_path logdir/nerfies_cat_807-lbsn-correspdv-ropt-f1x08-a04-120ep/params_116.pth \
-  --scale 0.5 --maxframe 90 --lbs --bullet_time -1 --rootdir tmp/traj-freeze/ --nvs_outpath tmp/frz
-CUDA_VISIBLE_DEVICES=$dev python nvs.py --seqname nerfies_cat_807 \
-  --model_path logdir/nerfies_cat_807-lbsn-correspdv-ropt-f1x08-a04-120ep/params_116.pth \
-  --scale 0.5 --maxframe 90 --lbs --bullet_time 0 --nvs_outpath tmp/b00
-CUDA_VISIBLE_DEVICES=$dev python nvs.py --seqname nerfies_cat_807 \
-  --model_path logdir/nerfies_cat_807-lbsn-correspdv-ropt-f1x08-a04-120ep/params_116.pth \
-  --scale 0.5 --maxframe 90 --lbs --bullet_time 85 --nvs_outpath tmp/b85
+dev=0
+seqname=sfm-mcats10
+model_path=logdir/sfm-mcats10-lbs-rkopt-90-noaccu-b16-ft2-ftcse/params_90.pth
+prefix=tmp/nvs
+vidid=3
+scale=2
+
+CUDA_VISIBLE_DEVICES=$dev python nvs.py --seqname $seqname \
+  --model_path $model_path \
+  --vidid $vidid \
+  --scale $scale --maxframe 90 --lbs --bullet_time -1 \
+  --rootdir tmp/traj-freeze/ --nvs_outpath $prefix-frz
+CUDA_VISIBLE_DEVICES=$dev python nvs.py --seqname $seqname \
+  --model_path $model_path \
+  --vidid $vidid \
+  --scale $scale --maxframe 90 --lbs --bullet_time 0 --nvs_outpath $prefix-b00
+CUDA_VISIBLE_DEVICES=$dev python nvs.py --seqname $seqname \
+  --model_path $model_path \
+  --vidid $vidid \
+  --scale $scale --maxframe 90 --lbs --bullet_time 85 --nvs_outpath $prefix-b85

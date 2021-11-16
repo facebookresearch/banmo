@@ -38,6 +38,7 @@ from nnutils.geom_utils import lbs, reinit_bones, warp_bw, warp_fw, vec_to_sim3,
                                obj_to_cam, get_near_far, near_far_to_bound, \
                                compute_point_visibility, process_so3_seq, \
                                ood_check_cse, align_sfm_sim3, gauss_mlp_skinning
+from nnutils.nerf import grab_xyz_weights
 from ext_nnutils.train_utils import Trainer
 from ext_utils.flowlib import flow_to_image
 from ext_utils.io import mkdir_p
@@ -333,6 +334,21 @@ class v2s_trainer(Trainer):
         
             # load variables
             self.model.latest_vars = latest_vars
+        
+        if self.opts.loadid0>=0:
+            # TODO load the specific vid codes
+            loadvid=self.opts.loadvid
+            loadid0=self.opts.loadid0
+            loadidn=loadid0+len(self.model.root_code.weight)
+            self.model.env_code.weight.data= states['env_code.weight'][loadvid:loadvid+1]
+            self.model.ks_param       .data= states['ks_param'][loadvid:loadvid+1]
+            self.model.root_code.weight.data  = states['root_code.weight'][loadid0:loadidn]
+            self.model.pose_code.weight.data  = states['pose_code.weight'][loadid0:loadidn]
+            self.model.nerf_root_rts[0].weight.data = \
+                            states['nerf_root_rts.0.weight'][loadid0:loadidn]
+            self.model.nerf_bone_rts[0].weight.data = \
+                            states['nerf_bone_rts.0.weight'][loadid0:loadidn]
+
 
         # if size mismatch, delete all related variables
         if states['near_far'].shape[0] != self.model.near_far.shape[0]:
@@ -346,13 +362,15 @@ class v2s_trainer(Trainer):
                 self.del_key( states, 'vid_code.weight')
             if 'ks_param' in states.keys():
                 self.del_key( states, 'ks_param')
-            del_key_list = []
-            for k in states.keys():
-                if 'nerf_bone_rts' in k or 'nerf_root_rts' in k:
-                    del_key_list.append(k)
-            for k in del_key_list:
-                print(k)
-                self.del_key( states, k)
+            #TODO delete backbones?
+            #del_key_list = []
+            #for k in states.keys():
+            #    if 'nerf_bone_rts' in k or 'nerf_root_rts' in k:
+            #        del_key_list.append(k)
+            #for k in del_key_list:
+            #    print(k)
+            #    self.del_key( states, k)
+
 
         # load some variables
         # this is important for volume matching
@@ -365,7 +383,6 @@ class v2s_trainer(Trainer):
           'csenet.net.backbone.fpn_lateral2.weight' not in states.keys():
             self.add_cse_to_states(self.model, states)
         self.model.load_state_dict(states, strict=False)
-    
         return
 
     @staticmethod 
@@ -608,6 +625,12 @@ class v2s_trainer(Trainer):
 
         # reset idk in latest_vars
         self.model.module.latest_vars['idk'][:] = 0.
+   
+        #TODO save loaded wts of posecs
+        if opts.freeze_coarse:
+            self.model.module.shape_xyz_wt = \
+                grab_xyz_weights(self.model.module.nerf_coarse, clone=True)
+            #TODO do the same for skin/feat
 
         # start training
         for epoch in range(0, self.num_epochs):
@@ -1069,6 +1092,22 @@ class v2s_trainer(Trainer):
         if self.model.module.cvf_update == 1:
             self.zero_grad_list(grad_nerf_feat)
             self.zero_grad_list(grad_nerf_beta_feat)
+        if self.opts.freeze_coarse:
+            # this include nerf_coarse, nerf_skin (optional)
+            grad_coarse_mlp = []
+            grad_coarse_mlp += self.find_nerf_coarse(\
+                                self.model.module.nerf_coarse)
+            grad_coarse_mlp += self.find_nerf_coarse(\
+                                self.model.module.nerf_skin)
+            grad_coarse_mlp += self.find_nerf_coarse(\
+                                self.model.module.nerf_feat)
+            self.zero_grad_list(grad_coarse_mlp)
+            # add skinning 
+            self.zero_grad_list(grad_bones)
+            self.zero_grad_list(grad_skin_aux)
+            # add vis
+            self.zero_grad_list(grad_nerf_vis)
+            #print(self.model.module.nerf_coarse.xyz_encoding_1[0].weight[0,:])
     
         aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,   .1)
         aux_out['nerf_beta_g']     = clip_grad_norm_(grad_nerf_beta,     .1)
@@ -1097,6 +1136,37 @@ class v2s_trainer(Trainer):
         #    is_invalid_grad = True
         if is_invalid_grad:
             self.zero_grad_list(self.model.parameters())
+            
+    @staticmethod
+    def find_nerf_coarse(nerf_model):
+        """
+        zero grad for coarse component connected to inputs, 
+        and return intermediate params
+        """
+        param_list = []
+        input_layers=[0]+nerf_model.skips
+
+        input_wt_names = []
+        for layer in input_layers:
+            input_wt_names.append(f"xyz_encoding_{layer+1}.0.weight")
+
+        for name,p in nerf_model.named_parameters():
+            if name in input_wt_names:
+                # get the weights according to coarse posec
+                # 63 = 3 + 60
+                # 60 = (num_freqs, 2, 3)
+                out_dim = p.shape[0]
+                pos_dim = nerf_model.in_channels_xyz-nerf_model.in_channels_code
+                # TODO
+                num_coarse = 8 # out of 10
+                #num_coarse = 10 # out of 10
+                #num_coarse = 1 # out of 10
+           #     p.grad[:,:3] = 0 # xyz
+           #     p.grad[:,3:pos_dim].view(out_dim,-1,6)[:,:num_coarse] = 0 # xyz-coarse
+                p.grad[:,pos_dim:] = 0 # others
+            else:
+                param_list.append(p)
+        return param_list
 
     @staticmethod 
     def render_vid(model, batch):
@@ -1185,10 +1255,10 @@ class v2s_trainer(Trainer):
 
             # mesh post-processing 
             if len(mesh.vertices)>0:
-                # keep the largest mesh
-                mesh = [i for i in mesh.split(only_watertight=False)]
-                mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
-                mesh = mesh[-1]
+                ## keep the largest mesh
+                #mesh = [i for i in mesh.split(only_watertight=False)]
+                #mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
+                #mesh = mesh[-1]
 
                 # assign color based on canonical location
                 vis = mesh.vertices

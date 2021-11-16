@@ -370,3 +370,10 @@ def loss_filter(g_floerr, flo_loss_samp, sil_at_samp_flo, scale_factor=10):
     invalid_idx = flo_err > np.median(g_floerr)*scale_factor
     return flo_err, invalid_idx
 
+
+def compute_xyz_wt_loss(gt_list, curr_list):
+    loss = []
+    for i in range(len(gt_list)):
+        loss.append( (gt_list[i].detach() - curr_list[i]).pow(2).mean() )
+    loss = torch.stack(loss).mean()
+    return loss

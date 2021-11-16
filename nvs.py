@@ -63,9 +63,9 @@ def main(_):
     rtks = load_root(opts.rootdir, opts.maxframe)  # cap frame=1000
 
     # determine render image scale
-    rtks[:,3] = rtks[:,3]*opts.scale
+    rtks[:,3,:2] = rtks[:,3,:2]*opts.scale
     fl_mean = rtks[:,3,:2].mean()
-    img_size = int(fl_mean)
+    img_size = int(fl_mean/2)
     model.img_size = img_size
     opts.render_size = img_size
 

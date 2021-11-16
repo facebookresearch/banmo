@@ -82,19 +82,22 @@ class NeRF(nn.Module):
                  D=8, W=256,
                  in_channels_xyz=63, in_channels_dir=27,
                  out_channels=3, 
-                 skips=[4], raw_feat=False, init_beta=1./100, activation=nn.ReLU(True)):
+                 skips=[4], raw_feat=False, init_beta=1./100, 
+                 activation=nn.ReLU(True), in_channels_code=0):
         """
         D: number of layers for density (sigma) encoder
         W: number of hidden units in each layer
         in_channels_xyz: number of input channels for xyz (3+3*10*2=63 by default)
         in_channels_dir: number of input channels for direction (3+3*4*2=27 by default)
         skips: add skip connection in the Dth layer
+        in_channels_code: only used for nerf_skin,
         """
         super(NeRF, self).__init__()
         self.D = D
         self.W = W
         self.in_channels_xyz = in_channels_xyz
         self.in_channels_dir = in_channels_dir
+        self.in_channels_code = in_channels_code
         self.skips = skips
         self.use_xyz = False
 
@@ -472,3 +475,31 @@ def generate_healpix_grid(recursion_level=None, size=None):
     #vecs = rot_mats.matmul(torch.Tensor([0,0,1])[None,:,None])[...,0]
     #trimesh.Trimesh(vecs).export('0.obj')
     return rot_mats
+    
+def grab_xyz_weights(nerf_model, clone=False):
+    """
+    zero grad for coarse component connected to inputs, 
+    and return intermediate params
+    """
+    param_list = []
+    input_layers=[0]+nerf_model.skips
+
+    input_wt_names = []
+    for layer in input_layers:
+        input_wt_names.append(f"xyz_encoding_{layer+1}.0.weight")
+
+    for name,p in nerf_model.named_parameters():
+        if name in input_wt_names:
+            # equiv since the wt after pos_dim does not change
+            if clone:
+                param_list.append(p.detach().clone()) 
+            else:
+                param_list.append(p) 
+            ## get the weights according to coarse posec
+            ## 63 = 3 + 60
+            ## 60 = (num_freqs, 2, 3)
+            #out_dim = p.shape[0]
+            #pos_dim = nerf_model.in_channels_xyz-nerf_model.in_channels_code
+            #param_list.append(p[:,:pos_dim]) # 
+    return param_list
+

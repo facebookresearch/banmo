@@ -25,7 +25,8 @@ import configparser
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils
 from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, RTExplicit, Encoder,\
-                    ScoreHead, evaluate_mlp, Transhead, NeRFUnc, ScaledEmbed
+                    ScoreHead, evaluate_mlp, Transhead, NeRFUnc, ScaledEmbed,\
+                    grab_xyz_weights
 import kornia, configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
@@ -37,7 +38,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
                             feat_match_loss, kp_reproj_loss, grad_update_bone, \
-                            loss_filter
+                            loss_filter, compute_xyz_wt_loss
 from utils.io import vis_viser, draw_pts
 from nnutils.cse import CSENet
 
@@ -180,6 +181,9 @@ flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane a
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
 flags.DEFINE_bool('use_accu',False, 'whether to use gradient accumulation')
+flags.DEFINE_bool('freeze_coarse', False, 'whether to freeze coarse posec of MLP')
+flags.DEFINE_integer('loadid0', -1, 'frame id to load (for ft)')
+flags.DEFINE_integer('loadvid', -1, 'video id to load (for ft)')
 
 # for preloading
 flags.DEFINE_bool('preload', True, 'whether to use pre-computed data')
@@ -329,7 +333,8 @@ class v2s_net(nn.Module):
                 self.nerf_skin = NeRF(in_channels_xyz=in_channels_xyz+t_embed_dim,
 #                                    D=5,W=128,
                                     D=5,W=64,
-                     in_channels_dir=0, out_channels=self.num_bones, raw_feat=True)
+                     in_channels_dir=0, out_channels=self.num_bones, 
+                     raw_feat=True, in_channels_code=t_embed_dim)
                 self.rest_pose_code = embed_net(1, t_embed_dim)
                 self.nerf_models['nerf_skin'] = self.nerf_skin
                 self.nerf_models['rest_pose_code'] = self.rest_pose_code
@@ -1277,6 +1282,14 @@ class v2s_net(nn.Module):
             else:
                 total_loss = total_loss + csenet_loss * 0
             aux_out['csenet_loss'] = csenet_loss
+
+        if opts.freeze_coarse:
+            # compute nerf xyz wt loss
+            shape_xyz_wt_curr = grab_xyz_weights(self.nerf_coarse)
+            shape_xyz_wt_loss = compute_xyz_wt_loss(self.shape_xyz_wt, 
+                                                    shape_xyz_wt_curr)
+            total_loss = total_loss + shape_xyz_wt_loss
+            aux_out['shape_xyz_wt_loss'] = shape_xyz_wt_loss
 
         # save some variables
         if opts.lbs:

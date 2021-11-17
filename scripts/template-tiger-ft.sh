@@ -1,8 +1,8 @@
 gpus=$1
-seqname=nerfies_cat_807
+seqname=tiger-100
 num_epochs=30
 addname=frz
-addr=10004
+addr=10005
 use_human=no
 
 model_prefix=$seqname-lbs-rkopt-$num_epochs-$addname
@@ -17,7 +17,6 @@ echo $pose_cnn_path
 model_path=logdir/sfm-mcats10-lbs-rkopt-90-noaccu-b16-ft2-ftcse/params_90.pth
 
 #TODO no use corresp
-#savename=test-3
 savename=${model_prefix}-ftloss-nocorresp
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \

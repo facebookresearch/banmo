@@ -191,6 +191,9 @@ flags.DEFINE_bool('preload', True, 'whether to use pre-computed data')
 # for match
 flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
 
+# for retarget
+flags.DEFINE_string('retarget_path', '', 'load source model path for regargeting')
+
 class v2s_net(nn.Module):
     def __init__(self, opts, data_info):
         super(v2s_net, self).__init__()
@@ -859,6 +862,8 @@ class v2s_net(nn.Module):
             self.dps = self.dps * self.dp_feats_mask.float()
             if self.progress > opts.ftcse_steps:
                 self.dp_feats = self.csenet_feats
+            else:
+                self.dp_feats = self.csenet_feats.detach()
             #self.dp_bbox[:] = 0
         self.dp_feats     = F.normalize(self.dp_feats, 2,1)
         self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
@@ -1287,9 +1292,18 @@ class v2s_net(nn.Module):
             # compute nerf xyz wt loss
             shape_xyz_wt_curr = grab_xyz_weights(self.nerf_coarse)
             shape_xyz_wt_loss = compute_xyz_wt_loss(self.shape_xyz_wt, 
-                                                    shape_xyz_wt_curr)
-            total_loss = total_loss + shape_xyz_wt_loss
+                                                         shape_xyz_wt_curr)
+            skin_xyz_wt_curr = grab_xyz_weights(self.nerf_skin)
+            skin_xyz_wt_loss = compute_xyz_wt_loss(self.skin_xyz_wt, 
+                                                        skin_xyz_wt_curr)
+            feat_xyz_wt_curr = grab_xyz_weights(self.nerf_feat)
+            feat_xyz_wt_loss = compute_xyz_wt_loss(self.feat_xyz_wt, 
+                                                        feat_xyz_wt_curr)
             aux_out['shape_xyz_wt_loss'] = shape_xyz_wt_loss
+            aux_out['skin_xyz_wt_loss'] = skin_xyz_wt_loss
+            aux_out['feat_xyz_wt_loss'] = feat_xyz_wt_loss
+            total_loss = total_loss + shape_xyz_wt_loss + skin_xyz_wt_loss\
+                    + feat_xyz_wt_loss
 
         # save some variables
         if opts.lbs:

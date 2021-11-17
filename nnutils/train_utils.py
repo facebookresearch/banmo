@@ -246,7 +246,7 @@ class v2s_trainer(Trainer):
         elif self.model.root_basis=='cnn':
             lr_nerf_root_rts = 0.2
         elif self.model.root_basis=='mlp':
-            lr_nerf_root_rts = 1
+            lr_nerf_root_rts = 1 
         else: print('error'); exit()
         self.scheduler = torch.optim.lr_scheduler.OneCycleLR(self.optimizer,\
                         [opts.learning_rate, # params_nerf_coarse
@@ -351,6 +351,7 @@ class v2s_trainer(Trainer):
 
 
         # if size mismatch, delete all related variables
+        #if True:
         if states['near_far'].shape[0] != self.model.near_far.shape[0]:
             self.del_key( states, 'near_far') 
             self.del_key( states, 'root_code.weight')
@@ -363,13 +364,13 @@ class v2s_trainer(Trainer):
             if 'ks_param' in states.keys():
                 self.del_key( states, 'ks_param')
             #TODO delete backbones?
-            #del_key_list = []
-            #for k in states.keys():
-            #    if 'nerf_bone_rts' in k or 'nerf_root_rts' in k:
-            #        del_key_list.append(k)
-            #for k in del_key_list:
-            #    print(k)
-            #    self.del_key( states, k)
+            del_key_list = []
+            for k in states.keys():
+                if 'nerf_bone_rts' in k or 'nerf_root_rts' in k:
+                    del_key_list.append(k)
+            for k in del_key_list:
+                print(k)
+                self.del_key( states, k)
 
 
         # load some variables
@@ -383,6 +384,15 @@ class v2s_trainer(Trainer):
           'csenet.net.backbone.fpn_lateral2.weight' not in states.keys():
             self.add_cse_to_states(self.model, states)
         self.model.load_state_dict(states, strict=False)
+
+
+        # TODO 
+        if self.opts.retarget_path!='':
+            source_states = torch.load(self.opts.retarget_path,map_location='cpu')
+            source_shape_states = self.rm_module_prefix(source_states, 
+                    prefix='module.nerf_coarse')
+            self.model.nerf_coarse.load_state_dict(source_shape_states, strict=False)
+
         return
 
     @staticmethod 
@@ -630,7 +640,10 @@ class v2s_trainer(Trainer):
         if opts.freeze_coarse:
             self.model.module.shape_xyz_wt = \
                 grab_xyz_weights(self.model.module.nerf_coarse, clone=True)
-            #TODO do the same for skin/feat
+            self.model.module.skin_xyz_wt = \
+                grab_xyz_weights(self.model.module.nerf_skin, clone=True)
+            self.model.module.feat_xyz_wt = \
+                grab_xyz_weights(self.model.module.nerf_feat, clone=True)
 
         # start training
         for epoch in range(0, self.num_epochs):
@@ -1186,7 +1199,7 @@ class v2s_trainer(Trainer):
 
     @staticmethod
     def extract_mesh(model,chunk,grid_size,
-                      #threshold = -0.001,
+                      #threshold = -0.002,
                       threshold = 0.,
                       embedid=None,
                       mesh_dict_in=None):
@@ -1255,10 +1268,10 @@ class v2s_trainer(Trainer):
 
             # mesh post-processing 
             if len(mesh.vertices)>0:
-                ## keep the largest mesh
-                #mesh = [i for i in mesh.split(only_watertight=False)]
-                #mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
-                #mesh = mesh[-1]
+                # keep the largest mesh
+                mesh = [i for i in mesh.split(only_watertight=False)]
+                mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
+                mesh = mesh[-1]
 
                 # assign color based on canonical location
                 vis = mesh.vertices

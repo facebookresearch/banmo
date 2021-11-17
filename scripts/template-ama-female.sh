@@ -30,14 +30,36 @@ echo $pose_cnn_path
 #  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
 #  --${use_human}use_human
 
-#TODO ft cse
 loadname=${model_prefix}-ft1
-savename=${model_prefix}-ft2
+savename=${model_prefix}-ft2-2
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
   --model_path logdir/$loadname/params_$num_epochs.pth \
   --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
   --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
-  --ft_cse \
   --${use_human}use_human
+
+##TODO ft cse
+#loadname=${model_prefix}-ft1
+#savename=${model_prefix}-ft2
+#bash scripts/template-mgpu.sh $gpus $savename \
+#    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+#  --pose_cnn_path $pose_cnn_path \
+#  --model_path logdir/$loadname/params_$num_epochs.pth \
+#  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
+#  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+#  --ft_cse \
+#  --${use_human}use_human
+
+##TODO ft cse, num epochs, proj end
+#loadname=${model_prefix}-ft2
+#savename=${model_prefix}-ft3-3
+#bash scripts/template-mgpu.sh $gpus $savename \
+#    $seqname $addr --num_epochs 30 --lbs --root_opt --ks_opt \
+#  --pose_cnn_path $pose_cnn_path \
+#  --model_path logdir/$loadname/params_283.pth \
+#  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
+#  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+#  --${use_human}use_human\
+#  --ft_cse --ftcse_steps 0.2 --mtcse_steps 0.2

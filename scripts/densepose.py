@@ -74,7 +74,7 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%datadir))):
         print(ins_cls)
         #if ins_cls ==15: # cat
         #if ins_cls==0 or (ins_cls >= 14 and ins_cls <= 23):
-        if ishuman:
+        if ishuman=='y':
             if ins_cls ==0:
                 mask_rszd += np.asarray(outputs.pred_masks[it])
         else:
@@ -86,7 +86,7 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%datadir))):
     if nb_components>1:
         max_label, max_size = max([(i, stats[i, cv2.CC_STAT_AREA]) for i in range(1, nb_components)], key=lambda x: x[1])
         mask_rszd = output == max_label
-
+    
     mask_rszd = mask_rszd.astype(bool).astype(int)
     if (mask_rszd.sum())<1000: continue
 

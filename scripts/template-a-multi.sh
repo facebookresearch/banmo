@@ -1,9 +1,9 @@
 gpus=$1
-seqname=a-hands
-num_epochs=90
-addname=b16-nopose-nort-v2
+seqname=a-eagle
+num_epochs=30
+addname=b16-cam-cse
 addr=10005
-use_human=
+use_human=no
 
 model_prefix=$seqname-lbs-rkopt-$num_epochs-$addname
 if [ "$use_human" = "" ]; then
@@ -23,7 +23,7 @@ echo $pose_cnn_path
 
 #TODO proj end
 loadname=${model_prefix}-init
-savename=${model_prefix}-ft1
+savename=${model_prefix}-ft1-2
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --model_path logdir/$loadname/params_$num_epochs.pth \
@@ -32,4 +32,5 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --${use_human}use_human \
   --noroot_opt  --noks_opt \
   --proj_end 0.001 \
+  --ft_cse --ftcse_steps 0
 #  --pose_cnn_path $pose_cnn_path \

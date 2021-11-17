@@ -61,11 +61,13 @@ def main(_):
     # bs, 4,4 (R|T)
     #         (f|p)
     rtks = load_root(opts.rootdir, opts.maxframe)  # cap frame=1000
+    #TODO
+    rtks[0] = rtks[40]
 
     # determine render image scale
     rtks[:,3,:2] = rtks[:,3,:2]*opts.scale
     fl_mean = rtks[:,3,:2].mean()
-    img_size = int(fl_mean/2)
+    img_size = int(fl_mean/1.5)
     model.img_size = img_size
     opts.render_size = img_size
 
@@ -86,7 +88,8 @@ def main(_):
     source_l = model.data_offset[opts.vidid+1] - model.data_offset[opts.vidid] -1
     embedid = torch.Tensor(np.linspace(0,source_l,bs)).to(model.device).long() + \
               model.data_offset[opts.vidid]
-    if opts.bullet_time>-1: embedid[:] = opts.bullet_time
+    if opts.bullet_time>-1: embedid[:] = opts.bullet_time+model.data_offset[opts.vidid]
+    print(embedid)
     rgbs = []
     sils = []
     viss = []
@@ -134,7 +137,7 @@ def main(_):
         sil = results['sil_coarse'][0,...,0].cpu().numpy()
         vis = results['vis_pred'][0,...,0].cpu().numpy()
         sil[sil<0.5] = 0
-        rgb[sil<0.5] = 0
+        rgb[sil<0.5] = 1
     
         rgbs.append(rgb)
         sils.append(sil*255)

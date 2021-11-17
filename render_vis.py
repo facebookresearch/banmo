@@ -71,6 +71,8 @@ parser.add_argument('--test_frames', default='9',
 parser.add_argument('--gt_pmat', 
  default='/private/home/gengshany/data/AMA/T_swing/calibration/Camera1.Pmat.cal',
                     help='path to ama projection matrix, evaluation only')
+parser.add_argument('--clean', dest='clean', action='store_true',
+                    help='whether to use cc to clean up input mesh')
 args = parser.parse_args()
 
 gt_meshes =   [trimesh.load(i, process=False) for i in sorted( glob.glob('%s/*.obj'%(args.gtdir)) )]
@@ -127,6 +129,12 @@ def main():
 
         try:
             mesh = trimesh.load('%s/%s-mesh-%05d.obj'%(args.testdir, seqname, fr),process=False)
+            if args.clean:
+                # keep the largest mesh
+                mesh = [i for i in mesh.split(only_watertight=False)]
+                mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
+                mesh = mesh[-1]
+
             all_mesh.append(mesh)
             
             cam = np.loadtxt('%s/%s-cam-%05d.txt'%(args.testdir, seqname, fr))
@@ -325,25 +333,19 @@ def main():
                 focal[1] = K[1,1]
             else:
                 Rmat_gt = np.eye(3)
-                Tmat_gt = np.asarray([0,0,3]) # assuming synthetic obj has depth 3
+                Tmat_gt = np.asarray([0,0,0]) # assuming synthetic obj has depth 3
 
             # render ground-truth to different viewpoint according to cam prediction
             #Rmat_gt = refcam[:3,:3].T
             #Tmat_gt = -refcam[:3,:3].T.dot(refcam[:3,3:4])[...,0]
             #Rmat_gt = refcam_vp[:3,:3].dot(Rmat_gt)
             #Tmat_gt = refcam_vp[:3,:3].dot(Tmat_gt[...,None])[...,0] + refcam_vp[:3,3]
+            # transform gt to camera
             Rmat_gt = torch.Tensor(Rmat_gt).cuda()[None]
             Tmat_gt = torch.Tensor(Tmat_gt).cuda()[None]
             verts_gt = obj_to_cam(verts_gt, Rmat_gt, Tmat_gt)
 
             chamLoss = chamfer3D.dist_chamfer_3D.chamfer_3DDist()
-
-            # use ICP for ours improve resutls
-            fitted_scale = verts_gt[...,-1].median() / verts[...,-1].median()
-            verts = verts*fitted_scale
-            frts = pytorch3d.ops.iterative_closest_point(verts,verts_gt, \
-                    estimate_scale=False,max_iterations=100)
-            verts = ((frts.RTs.s*verts).matmul(frts.RTs.R)+frts.RTs.T[:,None])
 
             ## use ICP for bad shape reduce accuracy 
             ## sample a subset of points for matching
@@ -359,16 +361,30 @@ def main():
             #verts = verts.matmul(torch.Tensor(icp_rot.T[None]).cuda()) * icp_scale\
             #      + torch.Tensor(icp_trans[None,None]).cuda()
             
-            raw_cd,_,_,_ = chamLoss(verts_gt,verts)  # this returns distance squared
+            ## use ICP for ours improve resutls
+            fitted_scale = verts_gt[...,-1].median() / verts[...,-1].median()
+            verts = verts*fitted_scale
+
+            frts = pytorch3d.ops.iterative_closest_point(verts,verts_gt, \
+                    estimate_scale=False,max_iterations=100)
+            verts = ((frts.RTs.s*verts).matmul(frts.RTs.R)+frts.RTs.T[:,None])
+
+            ## show registered meshes
+            #t=trimesh.Trimesh(verts[0].cpu()).export('tmp/0.obj')
+            #t=trimesh.Trimesh(verts_gt[0].cpu()).export('tmp/1.obj')
+            #pdb.set_trace()
+           
+            raw_cd,raw_cd_back,_,_ = chamLoss(verts_gt,verts)  # this returns distance squared
             raw_cd = np.asarray(raw_cd.cpu()[0])
             raw_cd = np.sqrt(raw_cd)
-            cd_ave.append(raw_cd.mean())
-            print('cd:%.2f cm'%(100*raw_cd.mean()))
+            cd_mean = raw_cd.mean() + raw_cd_back.mean()
+            cd_ave.append(cd_mean.cpu())
+            print('cd:%.2f cm'%(100*cd_mean))
 
-            #verts = verts_gt
-            #refface = refface_gt
-            #cm = plt.get_cmap('plasma')
-            #colors = cm(raw_cd*5)
+            verts = verts_gt
+            refface = refface_gt
+            cm = plt.get_cmap('plasma')
+            colors = cm(raw_cd*5)
         
         smooth=args.smooth
         if args.freeze:

@@ -31,6 +31,8 @@ from utils.io import config_to_dataloader, draw_cams
 parser = argparse.ArgumentParser(description='script to render cameras over epochs')
 parser.add_argument('--testdir', default='',
                     help='path to test dir')
+parser.add_argument('--cap_frame', default=-1,type=int,
+                    help='number of frames to cap')
 args = parser.parse_args()
         
 img_size = 1024
@@ -48,6 +50,8 @@ def main():
     first_valid_idx = np.linalg.norm(var['rtk'][:,:3,3], 2,-1)>0
     first_valid_idx = np.argmax(first_valid_idx)
     #varlist = varlist[1:]
+    if args.cap_frame>-1:
+        varlist = varlist[:args.cap_frame]
     size = len(varlist)
 
     mesh_cams = []

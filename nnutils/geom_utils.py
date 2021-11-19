@@ -115,11 +115,11 @@ def mlp_skinning(mlp, code, pts_embed):
     #print((skin>0).view(-1,12).sum(0))
     #skin = skin.softmax(-1)
     return dskin
-    
 
+#def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
 def skinning(bones, pts, dskin=None, skin_aux=None):
     """
-    bone: ...,B,10  - B gaussian ellipsoids
+    bone: bs,B,10  - B gaussian ellipsoids
     pts: bs,N,3    - N 3d points
     skin: bs,N,B   - skinning matrix
     """
@@ -154,7 +154,34 @@ def skinning(bones, pts, dskin=None, skin_aux=None):
     
     skin = mdis.softmax(2)
     return skin
+    
 
+#def skinning(bones, pts, dskin=None, skin_aux=None):
+#    """
+#    bone: ...,B,10  - B gaussian ellipsoids
+#    pts: bs,N,3    - N 3d points
+#    skin: bs,N,B   - skinning matrix
+#    """
+#    chunk=1024
+#    bs,N,_ = pts.shape
+#    print(bs)
+#    B = bones.shape[-2]
+#    if bones.dim()==2: bones = bones[None].repeat(bs,1,1)
+#    bones = bones.view(-1,B,10)
+#
+#    skin = []
+#    for i in range(0,bs,chunk):
+#        if dskin is None:
+#            dskin_chunk = None
+#        else: 
+#            dskin_chunk = dskin[i:i+chunk]
+#        skin_chunk = skinning_chunk(bones[i:i+chunk], pts[i:i+chunk], \
+#                              dskin=dskin_chunk, skin_aux=skin_aux)
+#        skin.append( skin_chunk )
+#    skin = torch.cat(skin,0)
+#    return skin
+
+#def blend_skinning_chunk(bones, rts, skin, pts):
 def blend_skinning(bones, rts, skin, pts):
     """
     bone: bs,B,10   - B gaussian ellipsoids
@@ -211,6 +238,31 @@ def blend_skinning(bones, rts, skin, pts):
     pts = Rmat_w.matmul(pts[...,None]) + Tmat_w[...,None] 
     pts = pts[...,0]
     return pts
+
+#def blend_skinning(bones, rts, skin, pts):
+#    """
+#    bone: bs,B,10   - B gaussian ellipsoids
+#    rts: bs,B,3,4   - B ririd transforms, applied to bone coordinates
+#    pts: bs,N,3     - N 3d points
+#    skin: bs,N,B   - skinning matrix
+#    apply rts to bone coordinates, while computing blending globally
+#    """
+#    chunk=1024
+#    B = rts.shape[-3]
+#    N = pts.shape[-2]
+#    bones = bones.view(-1,B,10)
+#    pts = pts.view(-1,N,3)
+#    rts = rts.view(-1,B,3,4)
+#    bs = pts.shape[0]
+#    print(bs)
+#
+#    pts_out = []
+#    for i in range(0,bs,chunk):
+#        pts_chunk = blend_skinning_chunk(bones[i:i+chunk], rts[i:i+chunk], 
+#                                          skin[i:i+chunk], pts[i:i+chunk])
+#        pts_out.append(pts_chunk)
+#    pts = torch.cat(pts_out,0)
+#    return pts
 
 def lbs(bones, rts_fw, skin, xyz_in, backward=True):
     """
@@ -591,7 +643,8 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, embedid):
             nerf_skin = model.nerf_skin
         else:
             nerf_skin = None
-        time_embedded = model.pose_code(query_time)[:,0]
+        time_embedded = model.pose_code(query_time)
+        #time_embedded = model.pose_code(query_time)[:,0]
         bones_dfm = bone_transform(bones, bone_rts_fw)
 
         skin_backward = gauss_mlp_skinning(query_xyz_chunk, model.embedding_xyz,

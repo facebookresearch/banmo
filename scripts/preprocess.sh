@@ -5,8 +5,8 @@ filedir=$rootdir/$prefix
 outdir=$rootdir/output
 suffix=$3
 ishuman=$4 # y/n
-#fps=30
-fps=10
+fps=$5
+#fps=10
 
 if [ "$suffix" = ".MOV" ]; then
   # rename to upper case
@@ -60,7 +60,7 @@ for infile in $filedir/*$suffix; do
   bash compute_flow.sh $seqname
   cd -
 
-  bash scripts/colmap_to_data.sh $seqname
+#  bash scripts/colmap_to_data.sh $seqname
 
   ## save to zips
   #cd database/DAVIS/

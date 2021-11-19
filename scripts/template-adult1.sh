@@ -1,7 +1,7 @@
 gpus=$1
 seqname=adult1
 num_epochs=90
-addname=b16
+addname=b16-64bone
 addr=10004
 use_human=
 
@@ -18,6 +18,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
   --batch_size 16 --nsample 64 \
+  --num_bones 64 \
   --${use_human}use_human
 
 #loadname=${model_prefix}-init

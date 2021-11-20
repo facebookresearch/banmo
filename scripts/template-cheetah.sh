@@ -1,6 +1,6 @@
 gpus=$1
-seqname=polarbear
-num_epochs=120 # ~800 frames
+seqname=cheetah
+num_epochs=60 # ~400 frames
 addname=b16-flowdp
 addr=10004
 use_human=no

@@ -26,7 +26,7 @@ for infile in $filedir/*$suffix; do
 
   echo $infile  
 
-  if [ "$suffix" = ".MOV" ]; then
+  if [ "$suffix" = ".MOV" ] || [ "$suffix" = ".mp4" ]; then
     seqname=$prefix$(printf "%02d" $counter)
     ## process videos
     # extract frames

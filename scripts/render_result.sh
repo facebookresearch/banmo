@@ -48,6 +48,7 @@ python render_vis.py --testdir $testdir \
                      --test_frames $test_frames \
                      --append_img yes \
                      --append_render no
+# other renderings
 #python render_vis.py --testdir $testdir \
 #                     --outpath $prefix-rst \
 #                     --seqname $seqname \

@@ -824,8 +824,9 @@ class v2s_net(nn.Module):
                                                 save_path = save_path)
 
             self.dp_conf[idx] = torch.Tensor(fberr_fw)
-            if self.dataid[idx]==self.dataid[jdx]: # remove flow in same vid
-                self.dp_conf[idx] = self.dp_thrd
+            ## TODO remove flow in same vid
+            #if self.dataid[idx]==self.dataid[jdx]:
+            #    self.dp_conf[idx] = self.dp_thrd
         self.dp_conf[self.dp_conf>self.dp_thrd] = self.dp_thrd
 
     def convert_batch_input(self, batch):
@@ -1022,7 +1023,8 @@ class v2s_net(nn.Module):
         bs = self.imgs.shape[0]
         
         if self.is_flow_dp:
-            self.compute_dp_flow(bs)
+            with torch.no_grad():
+                self.compute_dp_flow(bs)
  
         self.convert_root_pose()
       

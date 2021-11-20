@@ -1,9 +1,9 @@
 gpus=$1
-seqname=polarbear
-num_epochs=120 # ~800 frames
-addname=b16-flowdp
+seqname=adult-201
+num_epochs=60
+addname=flowdp
 addr=10004
-use_human=no
+use_human=
 
 model_prefix=$seqname-lbs-rkopt-$num_epochs-$addname
 if [ "$use_human" = "" ]; then
@@ -13,6 +13,7 @@ else
 fi
 echo $pose_cnn_path
 
+#TODO flodp
 savename=${model_prefix}-init
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \

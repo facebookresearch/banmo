@@ -1,9 +1,9 @@
 gpus=$1
-seqname=polarbear
-num_epochs=120 # ~800 frames
+seqname=bboy # ~900 frames
+num_epochs=150
 addname=b16-flowdp
 addr=10004
-use_human=no
+use_human=
 
 model_prefix=$seqname-lbs-rkopt-$num_epochs-$addname
 if [ "$use_human" = "" ]; then

@@ -111,11 +111,11 @@ def main():
 
     for name in imglist:
         rgb_img = cv2.imread(name)
-        # replace with densepose
-        name1, name2 = name.rsplit('/',1)
-        dppath = '%s/vis-%s'%(name1.replace('JPEGImages', 'Densepose'), name2)
-        if os.path.exists(dppath):
-            rgb_img = cv2.resize(cv2.imread(dppath), rgb_img.shape[:2][::-1])
+        ## replace with densepose
+        #name1, name2 = name.rsplit('/',1)
+        #dppath = '%s/vis-%s'%(name1.replace('JPEGImages', 'Densepose'), name2)
+        #if os.path.exists(dppath):
+        #    rgb_img = cv2.resize(cv2.imread(dppath), rgb_img.shape[:2][::-1])
 
 
         try: sil_img = cv2.imread(name.replace('JPEGImages', 'Annotations').replace('.jpg', '.png'),0)[:,:,None]

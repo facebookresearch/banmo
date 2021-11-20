@@ -889,6 +889,40 @@ def compute_flow_geodist(dp_refr,dp_targ, geodists):
     h_rszd,w_rszd = dp_refr.shape
     hw_rszd = h_rszd*w_rszd
     device = dp_refr.device
+    chunk = 1024
+
+    # match: hw**2
+    match = torch.zeros(hw_rszd).to(device)
+    for i in range(0,hw_rszd,chunk):
+        chunk_size = len(dp_refr.view(-1,1)[i:i+chunk] )
+        dp_refr_sub = dp_refr.view(-1,1)[i:i+chunk].repeat(1,hw_rszd).view(-1,1)
+        dp_targ_sub = dp_targ.view(1,-1)        .repeat(chunk_size,1).view(-1,1)
+        match_sub = geodists[dp_refr_sub, dp_targ_sub]
+        dis_geo_sub,match_sub = match_sub.view(-1, hw_rszd).min(1)
+        #match_sub[dis_geo_sub>0.1] = 0
+        match[i:i+chunk] = match_sub
+
+    # cx,cy
+    tar_coord = match2coords(match, w_rszd)
+    ref_coord = sample_xy(w_rszd, 1, 0, device, return_all=True)[1].view(-1,2)
+    ref_coord = ref_coord.view(h_rszd, w_rszd, 2)
+    tar_coord = tar_coord.view(h_rszd, w_rszd, 2)
+    flo_dp = (tar_coord - ref_coord) / w_rszd * 2 # [-2,2]
+    match = match.view(h_rszd, w_rszd)
+    flo_dp[match==0] = 0
+    flo_dp = flo_dp.permute(2,0,1)
+    return flo_dp
+
+def compute_flow_geodist_old(dp_refr,dp_targ, geodists):
+    """
+    compute the flow between two frames under geodesic distance matching
+    dps:        h,w, canonical surface mapping index
+    geodists    N,N, distance matrix
+    flo_dp:     2,h,w
+    """
+    h_rszd,w_rszd = dp_refr.shape
+    hw_rszd = h_rszd*w_rszd
+    device = dp_refr.device
     dp_refr = dp_refr.view(-1,1).repeat(1,hw_rszd).view(-1,1)
     dp_targ = dp_targ.view(1,-1).repeat(hw_rszd,1).view(-1,1)
 

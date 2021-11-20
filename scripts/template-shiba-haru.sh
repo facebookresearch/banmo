@@ -1,7 +1,7 @@
 gpus=$1
 seqname=shiba-haru
-num_epochs=240 # ~1800 frames
-addname=b16
+num_epochs=150 # ~1200 frames
+addname=b16-flowdp
 addr=10004
 use_human=no
 
@@ -18,6 +18,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
   --batch_size 16 --nsample 64 \
+  --flow_dp \
   --${use_human}use_human
 
 loadname=${model_prefix}-init
@@ -28,4 +29,5 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --model_path logdir/$loadname/params_$num_epochs.pth \
   --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
   --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+  --flow_dp \
   --${use_human}use_human

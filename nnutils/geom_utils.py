@@ -596,6 +596,7 @@ def reinit_bones(model, mesh, num_bones):
 
     if points.shape[0]<10:
         bound = model.latest_vars['obj_bound']
+        bound = torch.Tensor(bound)[None]
         center = torch.rand(num_bones, 3) *  bound*2 - bound
     else:
         _, center = kmeans(X=points, num_clusters=num_bones, iter_limit=100,

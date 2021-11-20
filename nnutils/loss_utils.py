@@ -38,6 +38,9 @@ def nerf_gradient(mlp, embed, pts, use_xyz=False,code=None, sigma_only=False):
 def eikonal_loss(mlp, embed, bound, nsample=1000):
     device = next(mlp.parameters()).device
     # Sample points for the eikonal loss
+    #TODO check 
+    pdb.set_trace()
+    bound = torch.Tensor(bound)[None,None]
     pts = torch.rand(1,nsample,3)*2*bound-bound
     pts= pts.to(device)
 
@@ -79,6 +82,7 @@ def visibility_loss(mlp, embed, xyz_pos, w_pos, bound, chunk):
     
     # negative examples
     nsample = w_pos.shape[0]*w_pos.shape[1]
+    bound = torch.Tensor(bound)[None,None]
     xyz_neg = torch.rand(1,nsample,3)*2*bound-bound
     xyz_neg = xyz_neg.to(device)
     xyz_neg_embedded = embed(xyz_neg)
@@ -267,10 +271,14 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
     nsample,_ = feats.shape
     device = feats.device
     feats = F.normalize(feats,2,-1)
-
+    
     # sample model on a regular 3d grid, and correlate with feature, nkxkxk
-    p1d = np.linspace(-bound, bound, grid_size).astype(np.float32)
-    query_yxz = np.stack(np.meshgrid(p1d, p1d, p1d), -1)  # (y,x,z)
+    #p1d = np.linspace(-bound, bound, grid_size).astype(np.float32)
+    #query_yxz = np.stack(np.meshgrid(p1d, p1d, p1d), -1)  # (y,x,z)
+    pxd = np.linspace(-bound[0], bound[0], grid_size).astype(np.float32)
+    pyd = np.linspace(-bound[1], bound[1], grid_size).astype(np.float32)
+    pzd = np.linspace(-bound[2], bound[2], grid_size).astype(np.float32)
+    query_yxz = np.stack(np.meshgrid(pyd, pxd, pzd), -1)  # (y,x,z)
     query_yxz = torch.Tensor(query_yxz).to(device).view(-1, 3)
     query_xyz = torch.cat([query_yxz[:,1:2], query_yxz[:,0:1], query_yxz[:,2:3]],-1)
 
@@ -282,8 +290,8 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
 
     #TODO inject some noise at training time
     if is_training and init_pts is None:
-        query_xyz = query_xyz + torch.randn_like(query_xyz[:,0])[:,None] \
-                * float(bound * 0.05)
+        bound = torch.Tensor(bound)[None,None].to(device)
+        query_xyz = query_xyz + torch.randn_like(query_xyz) * bound * 0.05
 
     cost_vol = []
     for i in range(0,grid_size**3,chunk_pts):

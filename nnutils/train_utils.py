@@ -375,6 +375,8 @@ class v2s_trainer(Trainer):
 
         # load some variables
         # this is important for volume matching
+        if latest_vars['obj_bound'].size==1:
+            latest_vars['obj_bound'] = latest_vars['obj_bound'] * np.ones(3)
         self.model.latest_vars['obj_bound'] = latest_vars['obj_bound'] 
 
         # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat, nerf_unc
@@ -957,7 +959,7 @@ class v2s_trainer(Trainer):
 
         # reset object bound, for feature matching
         if epoch>int(self.num_epochs*(opts.warmup_init_steps)):
-            self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max()
+            self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max(0)
         
         # reinit bones based on extracted surface
         # only reinit for the initialization phase
@@ -1231,11 +1233,15 @@ class v2s_trainer(Trainer):
         mesh_dict = {}
         if model.near_far is not None: 
             bound = model.latest_vars['obj_bound']
-        else: bound=1.5
+        else: bound=1.5*np.asarray([1,1,1])
 
         if mesh_dict_in is None:
-            pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
-            query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)
+            ptx = np.linspace(-bound[0], bound[0], grid_size).astype(np.float32)
+            pty = np.linspace(-bound[1], bound[1], grid_size).astype(np.float32)
+            ptz = np.linspace(-bound[2], bound[2], grid_size).astype(np.float32)
+            query_yxz = np.stack(np.meshgrid(pty, ptx, ptz), -1)  # (y,x,z)
+            #pts = np.linspace(-bound, bound, grid_size).astype(np.float32)
+            #query_yxz = np.stack(np.meshgrid(pts, pts, pts), -1)  # (y,x,z)
             query_yxz = torch.Tensor(query_yxz).to(model.device).view(-1, 3)
             query_xyz = torch.cat([query_yxz[:,1:2], query_yxz[:,0:1], query_yxz[:,2:3]],-1)
             query_dir = torch.zeros_like(query_xyz)
@@ -1287,7 +1293,7 @@ class v2s_trainer(Trainer):
 
             print('fraction occupied:', (vol_o > threshold).float().mean())
             vertices, triangles = mcubes.marching_cubes(vol_o.cpu().numpy(), threshold)
-            vertices = (vertices - grid_size/2)/grid_size*2*bound
+            vertices = (vertices - grid_size/2)/grid_size*2*bound[None, :]
             mesh = trimesh.Trimesh(vertices, triangles)
 
             # mesh post-processing 

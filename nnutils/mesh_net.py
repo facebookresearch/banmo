@@ -262,10 +262,11 @@ class v2s_net(nn.Module):
         self.near_far = nn.Parameter(self.near_far)
     
         # object bound
-        self.latest_vars['obj_bound'] = near_far_to_bound(self.near_far)
+        self.latest_vars['obj_bound'] = np.asarray([1.,1.,1.])
+        self.latest_vars['obj_bound'] *= near_far_to_bound(self.near_far)
 
         self.vis_min=np.asarray([[0,0,0]])
-        self.vis_len=np.asarray([[1,1,1]])*self.latest_vars['obj_bound']/2
+        self.vis_len=self.latest_vars['obj_bound']/2
         
         if opts.use_sim3:
             # video specific sim3: from video to joint canonical space

@@ -260,6 +260,9 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
 
     #set out-of-bound and nonvisible alphas to zero
     if clip_bound is not None:
+        #TODO check
+        pdb.set_trace()
+        clip_bound = torch.Tensor(clip_bound).to(xyz_.device)[None,None]
         oob = (xyz_.abs()>float(clip_bound)).sum(-1).view(N_rays,N_samples)>0
         alphas[oob]=0
     if vis_pred is not None:

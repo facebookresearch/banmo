@@ -1,7 +1,7 @@
 gpus=$1
 seqname=adult2-sub # 330 frames
-num_epochs=60
-addname=b16-flowdp
+num_epochs=30
+addname=b16-flowdp-norig
 addr=10004
 use_human=
 

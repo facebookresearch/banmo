@@ -178,6 +178,7 @@ flags.DEFINE_bool('freeze_root',False, 'whether to freeze root pose')
 flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 flags.DEFINE_float('fine_steps', 0.8, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
+flags.DEFINE_float('bound_reset', 0.5, 'by default, start reseting bound from 50%')
 flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
 flags.DEFINE_bool('use_accu',False, 'whether to use gradient accumulation')
@@ -1116,7 +1117,8 @@ class v2s_net(nn.Module):
 
             flo_loss_samp = rendered['flo_loss_samp']
             # eval on valid pts
-            flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() * 2
+            flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() * 10
+            #flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() * 2
             #flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean()
     
             # warm up by only using flow loss to optimize root pose
@@ -1146,13 +1148,14 @@ class v2s_net(nn.Module):
 
             # TODO confidence weighting
             sil_at_samp_fdp = (sil_at_samp>0) & (dcf_at_samp<self.dp_thrd-1e-3)\
-#                                & (rendered['fdp_valid']==1)
+                                & (rendered['fdp_valid']==1)
             dcf_at_samp = (-30*dcf_at_samp).sigmoid()
             if sil_at_samp_fdp.sum()>0:
                 dcf_at_samp = dcf_at_samp / dcf_at_samp[sil_at_samp_fdp].mean()
                 fdp_loss = fdp_loss * dcf_at_samp[...,0]
                 
-                fdp_loss = 0.001*fdp_loss[sil_at_samp_fdp[...,0]].mean() # eval on valid pts
+                #fdp_loss = 0.01*fdp_loss[sil_at_samp_fdp[...,0]].mean() # eval on valid pts
+                fdp_loss = 0.05*fdp_loss[sil_at_samp_fdp[...,0]].mean() # eval on valid pts
                 total_loss = total_loss + fdp_loss
                 aux_out['fdp_loss'] = fdp_loss
         
@@ -1170,7 +1173,8 @@ class v2s_net(nn.Module):
                     print(self.frameid[invalid_idx])
 
             #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.1
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
+            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.5
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
@@ -1184,19 +1188,19 @@ class v2s_net(nn.Module):
                 self.latest_vars['fp_err'][self.frameid.long(),1] = proj_err
                 rendered['proj_err'][invalid_idx] *= 0.
 
-            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
+            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.02
+            #proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
             aux_out['proj_loss'] = proj_loss
             if opts.freeze_proj:
+                total_loss = total_loss + proj_loss
                 # warm up by only using projection loss to optimize bones
                 warmup_weight = (self.progress - opts.proj_start)/(opts.proj_end-opts.proj_start)
                 warmup_weight = (warmup_weight - 0.5) * 2
                 warmup_weight = np.clip(warmup_weight, 0,1)
                 if (self.progress > opts.proj_start and \
                     self.progress < opts.proj_end):
-                    total_loss = (total_loss + proj_loss)*warmup_weight + \
-                               20*proj_loss*(1-warmup_weight)
-                else:
-                    total_loss = total_loss + proj_loss
+                    total_loss = total_loss*warmup_weight + \
+                               10*proj_loss*(1-warmup_weight)
             elif self.progress > (opts.warmup_init_steps + opts.warmup_steps):
                 # only add it after feature volume is trained well
                 total_loss = total_loss + proj_loss
@@ -1211,8 +1215,8 @@ class v2s_net(nn.Module):
 
             # globally rigid prior
             rig_loss = 0.0001*rendered['frame_rigloss'].mean()
-            total_loss = total_loss + rig_loss
-            #total_loss = total_loss + rig_loss*0
+            total_loss = total_loss + rig_loss*0
+            #total_loss = total_loss + rig_loss
             aux_out['rig_loss'] = rig_loss
 
             ## TODO enforcing bone distribution to be close to points within surface

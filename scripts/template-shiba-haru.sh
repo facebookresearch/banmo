@@ -1,6 +1,6 @@
 gpus=$1
 seqname=shiba-haru
-num_epochs=150 # ~1200 frames
+num_epochs=150 # ~750 frames
 addname=b16-flowdp
 addr=10004
 use_human=no
@@ -13,21 +13,62 @@ else
 fi
 echo $pose_cnn_path
 
-savename=${model_prefix}-init
-bash scripts/template-mgpu.sh $gpus $savename \
-    $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
-  --pose_cnn_path $pose_cnn_path \
-  --batch_size 16 --nsample 64 \
-  --flow_dp \
-  --${use_human}use_human
+#savename=${model_prefix}-init
+#bash scripts/template-mgpu.sh $gpus $savename \
+#    $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+#  --pose_cnn_path $pose_cnn_path \
+#  --batch_size 16 --nsample 64 \
+#  --flow_dp \
+#  --${use_human}use_human
 
-loadname=${model_prefix}-init
-savename=${model_prefix}-ft1
+#loadname=shiba-haru-lbs-rkopt-150-b16-flowdp-ft1
+#savename=${model_prefix}-ft2
+#bash scripts/template-mgpu.sh $gpus $savename \
+#    $seqname $addr --num_epochs 30 --lbs --root_opt --ks_opt \
+#  --pose_cnn_path $pose_cnn_path \
+#  --model_path logdir/$loadname/params_105.pth \
+#  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0.2 --dskin_steps 0.2 \
+#  --fine_steps 0.2 --noanneal_freq --nouse_resize \
+#  --flow_dp \
+#  --bound_reset 0.2 \
+#  --${use_human}use_human
+#  #--fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+
+#loadname=${model_prefix}-ft2
+#savename=${model_prefix}-ft3
+#bash scripts/template-mgpu.sh $gpus $savename \
+#    $seqname $addr --num_epochs 30 --lbs --root_opt --ks_opt \
+#  --pose_cnn_path $pose_cnn_path \
+#  --model_path logdir/$loadname/params_30.pth \
+#  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0.2 --dskin_steps 0.2 \
+#  --fine_steps 0.2 --noanneal_freq --nouse_resize \
+#  --flow_dp \
+#  --bound_reset 0.2 \
+#  --${use_human}use_human
+#  #--fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+
+#loadname=${model_prefix}-ft3
+#savename=${model_prefix}-ft4
+#bash scripts/template-mgpu.sh $gpus $savename \
+#    $seqname $addr --num_epochs 30 --lbs --root_opt --ks_opt \
+#  --pose_cnn_path $pose_cnn_path \
+#  --model_path logdir/$loadname/params_30.pth \
+#  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0.2 --dskin_steps 0.2 \
+#  --fine_steps 0.2 --noanneal_freq --nouse_resize \
+#  --bound_reset 0.2 \
+#  --${use_human}use_human
+#  #--fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+#  #--flow_dp \
+
+loadname=${model_prefix}-ft4
+savename=${model_prefix}-ft5
 bash scripts/template-mgpu.sh $gpus $savename \
-    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+    $seqname $addr --num_epochs 30 --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
-  --model_path logdir/$loadname/params_$num_epochs.pth \
-  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0 --dskin_steps 0 \
-  --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
-  --flow_dp \
+  --model_path logdir/$loadname/params_30.pth \
+  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0.2 --dskin_steps 0.2 \
+  --fine_steps 0.2 --noanneal_freq --nouse_resize \
+  --bound_reset 0.2 \
   --${use_human}use_human
+  #--fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+  #--flow_dp \

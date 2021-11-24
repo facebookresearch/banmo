@@ -1,8 +1,8 @@
 gpus=$1
 seqname=cheetah
-num_epochs=60 # ~400 frames
-addname=b16-flowdp
-addr=10004
+num_epochs=50 # ~200 frames
+addname=b16-5xf
+addr=10005
 use_human=no
 
 model_prefix=$seqname-lbs-rkopt-$num_epochs-$addname

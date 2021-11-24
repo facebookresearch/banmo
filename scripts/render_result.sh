@@ -7,6 +7,7 @@ add_args=${*: 3:$#-1}
 prefix=$testdir/$seqname-$test_frames
 #prefix=/scratch/gengshany/Dropbox/output/$seqname
 
+# part 1
 python extract.py --seqname $seqname \
                   --model_path $model_path \
                   --test_frames $test_frames \
@@ -48,7 +49,38 @@ python render_vis.py --testdir $testdir \
                      --test_frames $test_frames \
                      --append_img yes \
                      --append_render no
-# other renderings
+
+# part2 other renderings
+#python render_vis.py --testdir $testdir \
+#                     --outpath $prefix-cbne \
+#                     --seqname $seqname \
+#                     --test_frames $test_frames \
+#                     --vp -2 \
+#                     --vis_bones \
+#python render_vis.py --testdir $testdir \
+#                     --outpath $prefix-cgray \
+#                     --seqname $seqname \
+#                     --test_frames $test_frames \
+#                     --vp -2 \
+#                     --gray_color \
+#python render_vis.py --testdir $testdir \
+#                     --outpath $prefix-vbne \
+#                     --seqname $seqname \
+#                     --test_frames $test_frames \
+#                     --vp 0 \
+#                     --vis_bones \
+#python render_vis.py --testdir $testdir \
+#                     --outpath $prefix-vgray \
+#                     --seqname $seqname \
+#                     --test_frames $test_frames \
+#                     --vp 0 \
+#                     --gray_color
+#python render_vis.py --testdir $testdir \
+#                     --outpath $prefix-fgray \
+#                     --seqname $seqname \
+#                     --test_frames $test_frames \
+#                     --vp -1 \
+#                     --gray_color
 #python render_vis.py --testdir $testdir \
 #                     --outpath $prefix-rst \
 #                     --seqname $seqname \
@@ -74,6 +106,7 @@ python render_vis.py --testdir $testdir \
 #                     --vp -1 \
 #                     --gtdir database/DAVIS/Meshes/Full-Resolution/$seqname/
 
+# part 3
 ffmpeg -y -i $prefix-vid.mp4 \
           -i $prefix-frz.mp4 \
           -i $prefix-bne.mp4 \

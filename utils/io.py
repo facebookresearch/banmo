@@ -101,7 +101,8 @@ def vis_viser(results, masks, imgs, bs,img_size,ndepth):
         near_plane[...,-1] -= d_near*0.01
         far_plane = xyz_coarse_frame.view(bs,-1,ndepth,3)[0,:,-1]
         nf_plane = torch.cat([near_plane, far_plane],0)
-        trimesh.Trimesh(nf_plane.cpu().numpy(), vertex_colors=color_plane).\
+        #trimesh.Trimesh(nf_plane.cpu().numpy(), vertex_colors=color_plane).\
+        trimesh.Trimesh(near_plane.cpu().numpy(), vertex_colors=img_rszd.view(-1,3).cpu().numpy()).\
                 export('tmp/viser_plane.obj')
 
         near_plane_mskd = near_plane[mask_rszd.view(-1)].cpu()
@@ -127,6 +128,9 @@ def draw_lines_ray_canonical(near_plane_mskd, pts_exp, img_mskd, path):
     idx=0
     num_pts = len(near_plane_mskd)
     for i in range(0,num_pts, num_pts//50): # display 50 points
+        if idx!=5:        
+            idx+=1
+            continue
         segment = np.stack([near_plane_mskd[i], pts_exp[i]])
         line = trimesh.creation.cylinder(0.0001, 
                 segment=segment,sections=5, vertex_colors=colormap[idx%len_color])
@@ -152,6 +156,23 @@ def render_root_txt(cam_dir, cap_frame):
     mesh = draw_cams(camlist)
     save_dir,seqname=cam_dir.rsplit('/',1)
     mesh.export('%s/mesh-%s.obj'%(save_dir, seqname))
+
+def load_sils(root_dir, cap_frame):
+    """
+    load all the imgs with
+    input is ...-(00000.png)
+    """
+    imglist = []
+    img_path = '%s0*.png'%(root_dir)
+    all_path = sorted(glob.glob(img_path))
+    if cap_frame>0:
+        all_path = all_path[:cap_frame]
+    for idx,path in enumerate(all_path):
+        img = cv2.imread(path,0)
+        imglist.append(img)
+    imglist = np.asarray(imglist)
+    return imglist
+
 
 def load_root(root_dir, cap_frame):
     """

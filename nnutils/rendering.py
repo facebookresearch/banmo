@@ -261,9 +261,8 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
     #set out-of-bound and nonvisible alphas to zero
     if clip_bound is not None:
         #TODO check
-        pdb.set_trace()
         clip_bound = torch.Tensor(clip_bound).to(xyz_.device)[None,None]
-        oob = (xyz_.abs()>float(clip_bound)).sum(-1).view(N_rays,N_samples)>0
+        oob = (xyz_.abs()>clip_bound).sum(-1).view(N_rays,N_samples)>0
         alphas[oob]=0
     if vis_pred is not None:
         alphas[vis_pred<0.5] = 0
@@ -572,7 +571,7 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             flo_loss_samp = (flo_coarse - flo_at_samp).pow(2).sum(-1)
             # hard-threshold cycle error
             sil_at_samp_flo = (sil_at_samp>0)\
-                    # & (rendered['flo_valid']==1)
+                     & (flo_valid==1)
             sil_at_samp_flo[cfd_at_samp==0] = False 
             cfd_at_samp = cfd_at_samp / cfd_at_samp[sil_at_samp_flo].mean()
             flo_loss_samp = flo_loss_samp[...,None] * cfd_at_samp

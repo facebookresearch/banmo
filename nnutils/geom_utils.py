@@ -1259,6 +1259,8 @@ def ood_check_cse(dp_feats, dp_embed, dp_idx):
     # fb check
     err_list = []
     err_threshold = 12
+    # TODO no fb check
+    #err_threshold = 100
     for i in range(bs):
         # use chunk
         chunk = 5000

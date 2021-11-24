@@ -15,7 +15,7 @@ from scipy.spatial.transform import Rotation as R
 import imageio
 from collections import defaultdict
 
-from utils.io import save_vid, str_to_frame, save_bones, load_root
+from utils.io import save_vid, str_to_frame, save_bones, load_root, load_sils
 from utils.colors import label_colormap
 from nnutils.train_utils import v2s_trainer
 from nnutils.geom_utils import obj_to_cam, tensor2array, vec_to_sim3, \
@@ -35,11 +35,16 @@ flags.DEFINE_float('scale', 0.1,
 flags.DEFINE_string('rootdir', 'tmp/traj/','root body directory')
 flags.DEFINE_string('nvs_outpath', 'tmp/nvs-','output prefix')
 
-def construct_rays_nvs(img_size, rtks, near_far, device):
+def construct_rays_nvs(img_size, rtks, near_far, rndmask, device):
+    """
+    rndmask: controls which pixel to render
+    """
     bs = rtks.shape[0]
     rtks = torch.Tensor(rtks).to(device)
+    rndmask = torch.Tensor(rndmask).to(device).view(-1)>0
 
     _, xys = sample_xy(img_size, bs, 0, device, return_all=True)
+    xys=xys[:,rndmask]
     Rmat = rtks[:,:3,:3]
     Tmat = rtks[:,:3,3]
     Kinv = K2inv(rtks[:,3])
@@ -61,19 +66,24 @@ def main(_):
     # bs, 4,4 (R|T)
     #         (f|p)
     rtks = load_root(opts.rootdir, opts.maxframe)  # cap frame=1000
-    #TODO
-    rtks[0] = rtks[40]
+    rndsils = load_sils(opts.rootdir.replace('ctrajs', 'refsil'), 
+                        opts.maxframe)
+    img_size = rndsils[0].shape
+    if img_size[0] > img_size[1]:
+        img_type='vert'
+    else:
+        img_type='hori'
 
     # determine render image scale
-    rtks[:,3,:2] = rtks[:,3,:2]*opts.scale
-    fl_mean = rtks[:,3,:2].mean()
-    img_size = int(fl_mean/1.5)
+    rtks[:,3] = rtks[:,3]*opts.scale
+    img_size = int(max(img_size)*opts.scale)
+    print("render size: %d"%img_size)
     model.img_size = img_size
     opts.render_size = img_size
 
     #TODO need to resize according to object size
     # fl*obj_bound/depth ~= img_size/2
-    rtks[:,:3,3] = rtks[:,:3,3] / model.obj_scale
+    #rtks[:,:3,3] = rtks[:,:3,3] / model.obj_scale
     bs = len(rtks)
     
     vars_np = {}
@@ -94,8 +104,18 @@ def main(_):
     sils = []
     viss = []
     for i in range(bs):
+        rndsil = rndsils[i]
+        rndmask = np.zeros((img_size, img_size))
+        if img_type=='vert':
+            size_short_edge = int(rndsil.shape[1] * img_size/rndsil.shape[0])
+            rndsil = cv2.resize(rndsil, (size_short_edge, img_size))
+            rndmask[:,:size_short_edge] = rndsil
+        else:
+            size_short_edge = int(rndsil.shape[0] * img_size/rndsil.shape[1])
+            rndsil = cv2.resize(rndsil, (img_size, size_short_edge))
+            rndmask[:size_short_edge] = rndsil
         rays = construct_rays_nvs(model.img_size, rtks[i:i+1], 
-                                              near_far[i:i+1], model.device)
+                                       near_far[i:i+1], rndmask, model.device)
         # add env code
         rays['env_code'] = model.env_code(vidid)
         rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
@@ -130,14 +150,34 @@ def main(_):
            
         for k, v in results.items():
             v = torch.cat(v, 0)
-            v = v.view(1,model.img_size, model.img_size, -1)
+            v = v.view(rays['nsample'], -1)
             results[k] = v
-        rgb = results['img_coarse'][0].cpu().numpy()
-        dph = results['depth_rnd'][0,...,0].cpu().numpy()
-        sil = results['sil_coarse'][0,...,0].cpu().numpy()
-        vis = results['vis_pred'][0,...,0].cpu().numpy()
+        rgb = results['img_coarse'].cpu().numpy()
+        dph = results['depth_rnd'] [...,0].cpu().numpy()
+        sil = results['sil_coarse'][...,0].cpu().numpy()
+        vis = results['vis_pred']  [...,0].cpu().numpy()
         sil[sil<0.5] = 0
         rgb[sil<0.5] = 1
+
+        rgbtmp = np.ones((img_size, img_size, 3))
+        dphtmp = np.ones((img_size, img_size))
+        siltmp = np.ones((img_size, img_size))
+        vistmp = np.ones((img_size, img_size))
+        rgbtmp[rndmask>0] = rgb
+        dphtmp[rndmask>0] = dph
+        siltmp[rndmask>0] = sil
+        vistmp[rndmask>0] = vis
+
+        if img_type=='vert':
+            rgb = rgbtmp[:,:size_short_edge]
+            sil = siltmp[:,:size_short_edge]
+            vis = vistmp[:,:size_short_edge]
+            dph = dphtmp[:,:size_short_edge]
+        else:
+            rgb = rgbtmp[:size_short_edge]
+            sil = siltmp[:size_short_edge]
+            vis = vistmp[:size_short_edge]
+            dph = dphtmp[:size_short_edge]
     
         rgbs.append(rgb)
         sils.append(sil*255)

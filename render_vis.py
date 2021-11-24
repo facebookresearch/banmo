@@ -73,6 +73,8 @@ parser.add_argument('--gt_pmat',
                     help='path to ama projection matrix, evaluation only')
 parser.add_argument('--clean', dest='clean', action='store_true',
                     help='whether to use cc to clean up input mesh')
+parser.add_argument('--gray_color', dest='gray_color', action='store_true',
+                    help='whether to overwrite color with gray')
 args = parser.parse_args()
 
 gt_meshes =   [trimesh.load(i, process=False) for i in sorted( glob.glob('%s/*.obj'%(args.gtdir)) )]
@@ -135,6 +137,9 @@ def main():
                 mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
                 mesh = mesh[-1]
 
+            if args.gray_color:
+                mesh.visual.vertex_colors[:,:3]=128 # necessary for color override
+
             all_mesh.append(mesh)
             
             cam = np.loadtxt('%s/%s-cam-%05d.txt'%(args.testdir, seqname, fr))
@@ -190,8 +195,11 @@ def main():
 
     # read images
     input_size = all_anno[0][0].shape[:2]
+    #output_size = input_size
     output_size = (int(input_size[0] * 480/input_size[1]), 480)# 270x480
     frames=[]
+    ctrajs=[]
+    rndsils=[]
     cd_ave=[] # average chamfer distance
     if args.append_img=="yes":
         if args.append_render=='yes':
@@ -271,6 +279,16 @@ def main():
             vp_rmat = all_cam[0][:3,:3].dot(refcam[:3,:3].T)
 #            vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0].dot(vp_rmat) # bev
             vp_tmat = all_cam[0][:3,3]
+            vp_kmat = all_cam[0][3].copy()
+            vp_kmat[2] = vp_kmat[2]/all_anno[0][0].shape[1]*all_anno[i][0].shape[1]
+            vp_kmat[3] = vp_kmat[3]/all_anno[0][0].shape[0]*all_anno[i][0].shape[0]
+        elif args.vp==-2:
+            # canonical camera
+            can_vis_rot = cv2.Rodrigues(np.asarray([0,np.pi/3,0]))[0].dot(\
+                          cv2.Rodrigues(np.asarray([np.pi, 0,0 ]))[0])
+            vp_rmat = can_vis_rot.dot(refcam[:3,:3].T)
+            vp_tmat = np.zeros(3)
+            vp_tmat[2] = all_cam[0][2,3]
             vp_kmat = all_cam[0][3].copy()
             vp_kmat[2] = vp_kmat[2]/all_anno[0][0].shape[1]*all_anno[i][0].shape[1]
             vp_kmat[3] = vp_kmat[3]/all_anno[0][0].shape[0]*all_anno[i][0].shape[0]
@@ -449,6 +467,7 @@ def main():
         color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL | pyrender.RenderFlags.SKIP_CULL_FACES)
         r.delete()
         color = color[:refimg.shape[0],:refimg.shape[1],:3]
+        rndsil = (depth[:refimg.shape[0],:refimg.shape[1]]>0).astype(int)*100
         if args.overlay=='yes':
             color = cv2.addWeighted(color, 0.5, refimg[:,:,::-1], 0.5, 0)
         prefix = (args.outpath).split('/')[-1].split('.')[0]
@@ -456,8 +475,16 @@ def main():
         imoutpath = '%s/%s-mrender%03d.png'%(args.testdir, prefix,i)
         cv2.imwrite(imoutpath,color[:,:,::-1] )
         color = cv2.resize(color, output_size[::-1])
+        rndsil = cv2.resize(rndsil.astype(np.int16), output_size[::-1])
 
         frames.append(color)
+
+        # TODO save cams
+        ctraj = torch.cat([Rmat, Tmat[...,None]],-1).cpu().numpy() # 1,3,4
+        kmat = np.asarray([focal[0], focal[0], ppoint[0], ppoint[1]])
+        ctraj = np.concatenate([ctraj,kmat[None,None,:]],1) # 1,4,4
+        ctrajs.append(ctraj[0])
+        rndsils.append(rndsil)
 
     if args.gtdir != '':
         cd_ave = np.asarray(cd_ave)
@@ -466,5 +493,14 @@ def main():
         print('max chamfer dis: %.2f cm'%(100*np.max(cd_ave)))
     save_vid(args.outpath, frames, suffix='.gif')
     save_vid(args.outpath, frames, suffix='.mp4')
+
+
+    # save camera trajectory and reference sil
+    for idx in range(len(ctrajs)):
+        save_path = '%s-ctrajs-%05d.txt'%(args.outpath, idx)
+        np.savetxt(save_path, ctrajs[idx])
+        save_path = '%s-refsil-%05d.png'%(args.outpath, idx)
+        cv2.imwrite(save_path, rndsils[idx])
+
 if __name__ == '__main__':
     main()

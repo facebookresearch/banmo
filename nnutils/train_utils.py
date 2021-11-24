@@ -266,7 +266,7 @@ class v2s_trainer(Trainer):
                          opts.learning_rate, # params_vid_code
                          opts.learning_rate, # params_bones
                       10*opts.learning_rate, # params_skin_aux
-                         opts.learning_rate, # params_ks
+                      10*opts.learning_rate, # params_ks
                          opts.learning_rate, # params_nerf_dp
                       10*opts.learning_rate, # params_sim3_j2c
                        0*opts.learning_rate, # params_dp_verts
@@ -371,6 +371,11 @@ class v2s_trainer(Trainer):
             for k in del_key_list:
                 print(k)
                 self.del_key( states, k)
+    
+        if states['bones'].shape[0] != self.model.bones.shape[0]:
+            self.del_key(states, 'bones')
+            states = self.rm_module_prefix(states, prefix='nerf_skin')
+            states = self.rm_module_prefix(states, prefix='nerf_bone_rts')
 
 
         # load some variables
@@ -388,12 +393,13 @@ class v2s_trainer(Trainer):
         self.model.load_state_dict(states, strict=False)
 
 
-        # TODO 
         if self.opts.retarget_path!='':
             source_states = torch.load(self.opts.retarget_path,map_location='cpu')
             source_shape_states = self.rm_module_prefix(source_states, 
                     prefix='module.nerf_coarse')
             self.model.nerf_coarse.load_state_dict(source_shape_states, strict=False)
+            # TODO need to pick a lighting code
+            #self.model.env_code.weight.data = source_states['module.env_code.weight'][0:1]
 
         return
 
@@ -562,7 +568,8 @@ class v2s_trainer(Trainer):
             # save canonical mesh and extract skinning weights
             mesh_rest = aux_seq['mesh_rest']
             self.model.latest_vars['mesh_rest'] = mesh_rest
-            if opts.lbs: 
+            if opts.lbs:
+                # compute skinning color
                 if mesh_rest.vertices.shape[0]>100:
                     rest_verts = torch.Tensor(mesh_rest.vertices).to(self.device)
                     nerf_skin = self.model.nerf_skin if opts.nerf_skin else None
@@ -581,6 +588,8 @@ class v2s_trainer(Trainer):
                     mesh_rest_skin = mesh_rest.copy()
                     mesh_rest_skin.visual.vertex_colors = colormap
                     aux_seq['mesh_rest_skin'] = mesh_rest_skin
+
+                # compute view-dependent texture
 
                 aux_seq['bone_rest'] = self.model.bones.cpu().numpy()
         
@@ -603,6 +612,7 @@ class v2s_trainer(Trainer):
             # save images
             for k,v in rendered_seq.items():
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)
+                #TODO
                 if opts.local_rank==0:
                     print('saving %s to gif'%k)
                     is_flow = self.isflow(k)
@@ -958,8 +968,10 @@ class v2s_trainer(Trainer):
         mesh_rest = self.model.latest_vars['mesh_rest']
 
         # reset object bound, for feature matching
-        if epoch>int(self.num_epochs*(opts.warmup_init_steps)):
-            self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max(0)
+        if epoch>int(self.num_epochs*(opts.warmup_init_steps)) and \
+           epoch>int(self.num_epochs*(opts.bound_reset)):
+            if mesh_rest.vertices.shape[0]>100:
+                self.model.latest_vars['obj_bound'] = 1.2*np.abs(mesh_rest.vertices).max(0)
         
         # reinit bones based on extracted surface
         # only reinit for the initialization phase
@@ -1124,54 +1136,31 @@ class v2s_trainer(Trainer):
             self.zero_grad_list(grad_nerf_vis)
             #print(self.model.module.nerf_coarse.xyz_encoding_1[0].weight[0,:])
             
-        # no clip
-        aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,   10)
-        aux_out['nerf_beta_g']     = clip_grad_norm_(grad_nerf_beta,     10)
-        aux_out['nerf_feat_g']     = clip_grad_norm_(grad_nerf_feat,     10)
-        aux_out['nerf_beta_feat_g']= clip_grad_norm_(grad_nerf_beta_feat,10)
-        aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,     10)
-        aux_out['nerf_unc_g']     = clip_grad_norm_(grad_nerf_unc,       10)
-        aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,   10)
-        aux_out['nerf_skin_g']     = clip_grad_norm_(grad_nerf_skin,     10)
-        aux_out['nerf_vis_g']      = clip_grad_norm_(grad_nerf_vis,      10)
-        aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts, 10)
-        aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts, 10)
-        aux_out['root_code_g']= clip_grad_norm_(grad_root_code,          10)
-        aux_out['pose_code_g']= clip_grad_norm_(grad_pose_code,          10)
-        aux_out['env_code_g']      = clip_grad_norm_(grad_env_code,      10)
-        aux_out['vid_code_g']      = clip_grad_norm_(grad_vid_code,      10)
-        aux_out['bones_g']         = clip_grad_norm_(grad_bones,         10)
-        aux_out['skin_aux_g']   = clip_grad_norm_(grad_skin_aux,         10)
-        aux_out['ks_g']            = clip_grad_norm_(grad_ks,            10)
-        aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,       10)
-        aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,      10)
-        aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,      10)
-        aux_out['csenet_g']        = clip_grad_norm_(grad_csenet,        10)
-    
-        #aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,    1)
-        #aux_out['nerf_beta_g']     = clip_grad_norm_(grad_nerf_beta,      1)
-        #aux_out['nerf_feat_g']     = clip_grad_norm_(grad_nerf_feat,     .1)
-        #aux_out['nerf_beta_feat_g']= clip_grad_norm_(grad_nerf_beta_feat,.1)
-        #aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,     .1)
-        #aux_out['nerf_unc_g']     = clip_grad_norm_(grad_nerf_unc,       .1)
-        #aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,   .1)
-        #aux_out['nerf_skin_g']     = clip_grad_norm_(grad_nerf_skin,     .1)
-        #aux_out['nerf_vis_g']      = clip_grad_norm_(grad_nerf_vis,      .1)
-        #aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts,  1)
-        #aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts,  1)
-        #aux_out['root_code_g']= clip_grad_norm_(grad_root_code,          .1)
-        #aux_out['pose_code_g']= clip_grad_norm_(grad_pose_code,          .1)
-        #aux_out['env_code_g']      = clip_grad_norm_(grad_env_code,      .1)
-        #aux_out['vid_code_g']      = clip_grad_norm_(grad_vid_code,      .1)
-        #aux_out['bones_g']         = clip_grad_norm_(grad_bones,          1)
-        #aux_out['skin_aux_g']   = clip_grad_norm_(grad_skin_aux,         .1)
-        #aux_out['ks_g']            = clip_grad_norm_(grad_ks,            .1)
-        #aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,       .1)
-        #aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,      .1)
-        #aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,      .1)
-        #aux_out['csenet_g']        = clip_grad_norm_(grad_csenet,        .1)
+        #TODO don't clip root pose
+        aux_out['nerf_coarse_g']   = clip_grad_norm_(grad_nerf_coarse,    1)
+        aux_out['nerf_beta_g']     = clip_grad_norm_(grad_nerf_beta,      1)
+        aux_out['nerf_feat_g']     = clip_grad_norm_(grad_nerf_feat,     .1)
+        aux_out['nerf_beta_feat_g']= clip_grad_norm_(grad_nerf_beta_feat,.1)
+        aux_out['nerf_fine_g']     = clip_grad_norm_(grad_nerf_fine,     .1)
+        aux_out['nerf_unc_g']     = clip_grad_norm_(grad_nerf_unc,       .1)
+        aux_out['nerf_flowbw_g']   = clip_grad_norm_(grad_nerf_flowbw,   .1)
+        aux_out['nerf_skin_g']     = clip_grad_norm_(grad_nerf_skin,     .1)
+        aux_out['nerf_vis_g']      = clip_grad_norm_(grad_nerf_vis,      .1)
+        aux_out['nerf_root_rts_g'] = clip_grad_norm_(grad_nerf_root_rts,  100)
+        aux_out['nerf_bone_rts_g'] = clip_grad_norm_(grad_nerf_bone_rts,  1)
+        aux_out['root_code_g']= clip_grad_norm_(grad_root_code,           100)
+        aux_out['pose_code_g']= clip_grad_norm_(grad_pose_code,          .1)
+        aux_out['env_code_g']      = clip_grad_norm_(grad_env_code,      .1)
+        aux_out['vid_code_g']      = clip_grad_norm_(grad_vid_code,      .1)
+        aux_out['bones_g']         = clip_grad_norm_(grad_bones,          1)
+        aux_out['skin_aux_g']   = clip_grad_norm_(grad_skin_aux,         .1)
+        aux_out['ks_g']            = clip_grad_norm_(grad_ks,            .1)
+        aux_out['nerf_dp_g']       = clip_grad_norm_(grad_nerf_dp,       .1)
+        aux_out['sim3_j2c_g']      = clip_grad_norm_(grad_sim3_j2c,      .1)
+        aux_out['dp_verts_g']      = clip_grad_norm_(grad_dp_verts,      .1)
+        aux_out['csenet_g']        = clip_grad_norm_(grad_csenet,        .1)
 
-        #if aux_out['root_code_g']>0.1:
+        #if aux_out['nerf_root_rts_g']>10:
         #    is_invalid_grad = True
         if is_invalid_grad:
             self.zero_grad_list(self.model.parameters())

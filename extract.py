@@ -64,6 +64,9 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
             
         img_gt = rendered_seq['img'][i]
         flo_gt = rendered_seq['flo'][i]
+        mask_gt = rendered_seq['sil'][i][...,0]
+        flo_gt[mask_gt<=0] = 0
+        img_gt[mask_gt<=0] = 1
         if save_flo: img_gt = cat_imgflo(img_gt, flo_gt)
         else: img_gt*=255
         cv2.imwrite('%s-img-gt-%05d.jpg'%(save_prefix, idx), img_gt[...,::-1])
@@ -71,13 +74,14 @@ def save_output(rendered_seq, aux_seq, seqname, save_flo):
         
         img_p = rendered_seq['img_coarse'][i]
         flo_p = rendered_seq['flo_coarse'][i]
+        mask_gt = cv2.resize(mask_gt, flo_p.shape[:2][::-1]).astype(bool)
+        flo_p[mask_gt<=0] = 0
+        img_p[mask_gt<=0] = 1
         if save_flo: img_p = cat_imgflo(img_p, flo_p)
         else: img_p*=255
         cv2.imwrite('%s-img-p-%05d.jpg'%(save_prefix, idx), img_p[...,::-1])
         flo_p_vid.append(img_p)
 
-        mask_gt = rendered_seq['sil'][i][...,0]
-        mask_gt = cv2.resize(mask_gt, flo_p.shape[:2][::-1]).astype(bool)
         flo_gt = cv2.resize(flo_gt, flo_p.shape[:2])
         flo_err = np.linalg.norm( flo_p - flo_gt ,2,-1)
         flo_err_med = np.median(flo_err[mask_gt])
@@ -124,6 +128,14 @@ def main(_):
     idx_render = str_to_frame(opts.test_frames, data_info)
 #    idx_render[0] += 50
 #    idx_render[0] += 374
+#    idx_render[0] += 292
+#    idx_render[0] += 10
+#    idx_render[0] += 340
+#    idx_render[0] += 440
+#    idx_render[0] += 540
+#    idx_render[0] += 640
+#    idx_render[0] += trainer.model.data_offset[4]-4 + 37
+#    idx_render[0] += 36
 
     trainer.model.img_size = opts.render_size
     chunk = opts.frame_chunk

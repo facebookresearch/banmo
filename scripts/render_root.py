@@ -33,6 +33,10 @@ parser.add_argument('--testdir', default='',
                     help='path to test dir')
 parser.add_argument('--cap_frame', default=-1,type=int,
                     help='number of frames to cap')
+parser.add_argument('--first_idx', default=0,type=int,
+                    help='first frame index to vis')
+parser.add_argument('--last_idx', default=-1,type=int,
+                    help='last frame index to vis')
 args = parser.parse_args()
         
 img_size = 1024
@@ -47,6 +51,7 @@ def main():
     
     # get first index that is used for optimization
     var = np.load(varlist[-1],allow_pickle=True)[()]
+    var['rtk'] = var['rtk'][args.first_idx:args.last_idx] 
     first_valid_idx = np.linalg.norm(var['rtk'][:,:3,3], 2,-1)>0
     first_valid_idx = np.argmax(first_valid_idx)
     #varlist = varlist[1:]
@@ -59,6 +64,7 @@ def main():
     for var_path in varlist:
         # construct camera mesh
         var = np.load(var_path,allow_pickle=True)[()]
+        var['rtk'] = var['rtk'][args.first_idx:args.last_idx] 
         mesh_cams.append(draw_cams(var['rtk'][first_valid_idx:]))
         mesh_objs.append(var['mesh_rest'])
        
@@ -71,7 +77,7 @@ def main():
         mtrans = np.median(np.linalg.norm(var['rtk'][first_valid_idx:,:3,3],2,-1)) 
         refcam[:2,3] = 0  # trans xy
         refcam[2,3] = 4*mtrans # depth
-        refcam[3,:2] = 2*img_size/2 # fl
+        refcam[3,:2] = 3*img_size/2 # fl
         refcam[3,2] = img_size/2
         refcam[3,3] = img_size/2
         vp_rmat = refcam[:3,:3]

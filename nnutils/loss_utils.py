@@ -36,6 +36,9 @@ def nerf_gradient(mlp, embed, pts, use_xyz=False,code=None, sigma_only=False):
     return gradients
 
 def eikonal_loss(mlp, embed, bound, nsample=1000):
+    """
+    found not useful
+    """
     device = next(mlp.parameters()).device
     # Sample points for the eikonal loss
     #TODO check 
@@ -113,6 +116,7 @@ def rtk_loss(rtk, rtk_raw, aux_out):
 
 def rtk_cls_loss(scores, grid, rtk_raw, aux_out):
     """
+    not used
     scores, bs, N
     grid,   bs, N, 3,3
     rtk_raw bs, 4,4
@@ -288,7 +292,7 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
         # N x Ns x 3
         query_xyz = query_xyz[None]
 
-    #TODO inject some noise at training time
+    # inject some noise at training time
     if is_training and init_pts is None:
         bound = torch.Tensor(bound)[None,None].to(device)
         query_xyz = query_xyz + torch.randn_like(query_xyz) * bound * 0.05
@@ -307,7 +311,7 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
             feats_chunk = feats[j:j+chunk_pix] # (chunk pix, num_feat)
      
             if init_pts is not None:
-                #TODO only query 3d grid according to each px when they are diff
+                # only query 3d grid according to each px when they are diff
                 # vol feature
                 query_xyz_chunk = query_xyz[j:j+chunk_pix,i:i+chunk_pts].clone()
                 xyz_embedded = embedding_xyz(query_xyz_chunk)

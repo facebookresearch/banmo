@@ -138,8 +138,6 @@ def render_rays(models,
     xyz_sampled = rays_o.unsqueeze(1) + \
                          rays_d.unsqueeze(1) * z_vals.unsqueeze(2) # (N_rays, N_samples, 3)
 
-    #TODO
-    # for fine model, change z_vals, models to fine, sampled points
     if use_fine: # sample points for fine model
         # output: 
         #  loss:   'img_coarse', 'sil_coarse', 'feat_err', 'proj_err' 
@@ -152,7 +150,7 @@ def render_rays(models,
                               obj_bound, dir_embedded, z_vals,
                               img_size, progress,opts,fine_iter=False)
 
-        #TODO reset N_importance
+        # reset N_importance
         N_importance = N_samples
         z_vals_mid = 0.5 * (z_vals[: ,:-1] + z_vals[: ,1:]) 
         z_vals_ = sample_pdf(z_vals_mid, weights_coarse[:, 1:-1],
@@ -260,7 +258,6 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
 
     #set out-of-bound and nonvisible alphas to zero
     if clip_bound is not None:
-        #TODO check
         clip_bound = torch.Tensor(clip_bound).to(xyz_.device)[None,None]
         oob = (xyz_.abs()>clip_bound).sum(-1).view(N_rays,N_samples)>0
         alphas[oob]=0
@@ -396,7 +393,7 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     else:
         env_code = None
 
-    # TODO set out of bounds weights to zero
+    # set out of bounds weights to zero
     if render_vis: 
         clip_bound = obj_bound
         xyz_embedded = embedding_xyz(xyz_coarse_sampled)
@@ -475,7 +472,6 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             result['frame_cyc_dis'] = (frame_cyc_dis * weights_coarse.detach()).sum(-1)
             if 'flowbw' in models.keys():
                 result['frame_rigloss'] =  (frame_disp3d  * weights_coarse.detach()).sum(-1)
-                #TODO enable elastic energy?
                 # only evaluate at with_grad mode
                 if xyz_coarse_frame.requires_grad:
                     # elastic energy

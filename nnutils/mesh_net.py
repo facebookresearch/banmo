@@ -18,9 +18,7 @@ from torch.autograd import Variable
 import torch.nn.functional as F
 import trimesh, pytorch3d, pytorch3d.loss, pdb
 from pytorch3d import transforms
-#from pytorch3d import structures
 import configparser
-#from geomloss import SamplesLoss
 
 from ext_utils import mesh
 from ext_utils import geometry as geom_utils

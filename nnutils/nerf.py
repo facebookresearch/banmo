@@ -247,7 +247,6 @@ class RTHead(NeRF):
         rts = x.view(-1,self.num_output)  # bs B,x
         B = rts.shape[0]//bs
 
-        #tmat= rts[:,0:3] * 0.5
         tmat= rts[:,0:3] *0.1
 
         if self.use_quat:
@@ -255,8 +254,6 @@ class RTHead(NeRF):
             rquat=F.normalize(rquat,2,-1)
             rmat=transforms.quaternion_to_matrix(rquat) 
         else:
-            #TODO add more variance to the network
-            #rot=rts[:,3:6] * 10
             rot=rts[:,3:6]
             rmat = transforms.so3_exponential_map(rot)
         rmat = rmat.view(-1,9)
@@ -338,7 +335,7 @@ class ScoreHead(NeRF):
         bs = x.shape[0]
         x = x.view(-1,self.num_scores+3)  # bs B,x
 
-        #TODO do not use tmat since it is not trained
+        # do not use tmat since it is not trained
         tmat = x[:,0:3]*0.
         scores=x[:,3:]
         if self.training:

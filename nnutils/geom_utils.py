@@ -107,13 +107,6 @@ def mlp_skinning(mlp, code, pts_embed):
         dskin = None
     else:
         dskin = evaluate_mlp(mlp, pts_embed, code=code, chunk=8*1024)
-    
-    ##TODO
-    ## truncated softmax
-    #skin_trun = torch.zeros_like(skin).fill_(-np.inf)
-    #skin_trun[skin>0] = skin[skin>0]
-    #print((skin>0).view(-1,12).sum(0))
-    #skin = skin.softmax(-1)
     return dskin
 
 def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
@@ -142,6 +135,7 @@ def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
         mdis = mdis[...,0]
         mdis = scale.view(bs,1,B,3) * mdis.pow(2)
     else:
+        # for efficiency considerations
         mdis = mdis.pow(2)
     mdis = mdis*100*log_scale.exp() # TODO accound for scaled near-far plane
     mdis = (-10 * mdis.sum(3)) # bs,N,B
@@ -167,7 +161,6 @@ def skinning(bones, pts, dskin=None, skin_aux=None):
     """
     chunk=1024
     bs,N,_ = pts.shape
-    print(bs)
     B = bones.shape[-2]
     if bones.dim()==2: bones = bones[None].repeat(bs,1,1)
     bones = bones.view(-1,B,10)
@@ -229,12 +222,6 @@ def blend_skinning_chunk(bones, rts, skin, pts):
     Rmat = gmat[:,:,:3,:3]
     Tmat = gmat[:,:,:3,3]
 
-    ##TODO add identiry mapping for background modeling
-    #Ridn = torch.eye(3)[None,None].repeat(bs,1,1,1).to(device)
-    #Tidn = torch.zeros(bs,1,3).to(device)
-    #Rmat = torch.cat([Rmat, Ridn],1)
-    #Tmat = torch.cat([Tmat, Tidn],1)
-    
     # Gi=sum(wbGb), V=RV+T
     Rmat_w = (skin[...,None,None] * Rmat[:,None]).sum(2) # bs,N,B,3
     Tmat_w = (skin[...,None] * Tmat[:,None]).sum(2) # bs,N,B,3
@@ -257,7 +244,6 @@ def blend_skinning(bones, rts, skin, pts):
     pts = pts.view(-1,N,3)
     rts = rts.view(-1,B,3,4)
     bs = pts.shape[0]
-    print(bs)
 
     pts_out = []
     for i in range(0,bs,chunk):
@@ -496,9 +482,7 @@ def raycast(xys, Rmat, Tmat, Kinv, near_far):
         znear= (torch.ones(bs,nsample,1).to(device) * near_far[:,0,None,None]) 
         zfar = (torch.ones(bs,nsample,1).to(device) * near_far[:,1,None,None]) 
     else:
-        #TODO need a better way to bound raycast
         lbound, ubound=[-1.5,1.5]
-        #lbound, ubound=[-5, 5]
 
         znear= Tmat[:,:,-1:].repeat(1,nsample,1)+lbound
         zfar = Tmat[:,:,-1:].repeat(1,nsample,1)+ubound
@@ -642,13 +626,11 @@ def warp_bw(opts, model, rt_dict, query_xyz_chunk, embedid):
         query_xyz_chunk = query_xyz_chunk[:,None]
         bone_rts_fw = model.nerf_bone_rts(query_time)
 
-        #TODO
         if opts.nerf_skin:
             nerf_skin = model.nerf_skin
         else:
             nerf_skin = None
         time_embedded = model.pose_code(query_time)
-        #time_embedded = model.pose_code(query_time)[:,0]
         bones_dfm = bone_transform(bones, bone_rts_fw)
 
         skin_backward = gauss_mlp_skinning(query_xyz_chunk, model.embedding_xyz,
@@ -683,7 +665,6 @@ def warp_fw(opts, model, rt_dict, vertices, embedid):
         pts_can = pts_can[:,None]
         bone_rts_fw = model.nerf_bone_rts(query_time)
         
-        ##TODO
         if opts.nerf_skin:
             nerf_skin = model.nerf_skin
         else:
@@ -812,7 +793,7 @@ def compute_point_visibility(pts, vars_np, device):
     xy[...,0] = xy[...,0]/w*2 - 1
     xy[...,1] = xy[...,1]/h*2 - 1
 
-    #TODO grab the visibility value in the mask and sum over frames
+    # grab the visibility value in the mask and sum over frames
     vis = F.grid_sample(vis, xy)[:,0,0]
     vis = (idk[:,None]*vis).sum(0)
     vis = (vis>0).float() # at least seen in one view
@@ -1030,7 +1011,7 @@ def process_so3_seq(rtk_seq, vis=False, smooth=True):
     entropy = (-distribution.log() * distribution).sum(1)
 
     if vis:
-        # TODO draw distribution
+        # draw distribution
         obj_scale = 3
         cam_space = obj_scale * 0.2
         tmat_raw = np.tile(rtk_raw[:,None,:3,3], (1,N,1))
@@ -1052,7 +1033,7 @@ def process_so3_seq(rtk_seq, vis=False, smooth=True):
             mesh.export('tmp/%d.obj'%(i))
    
     if smooth:
-        #TODO graph cut scores, bsxN
+        # graph cut scores, bsxN
         import pydensecrf.densecrf as dcrf
         from pydensecrf.utils import unary_from_softmax
         graph = dcrf.DenseCRF2D(bs, 1, N)  # width, height, nlabels
@@ -1088,7 +1069,7 @@ def process_so3_seq(rtk_seq, vis=False, smooth=True):
     rtk_raw[:,:3,3] = tmat
    
     if vis:
-        #TODO draw again
+        # draw again
         pdb.set_trace()
         rtk_vis = rtk_raw.copy()
         rtk_vis[:,:3,3] *= scale_factor
@@ -1160,7 +1141,7 @@ def align_sfm_sim3(aux_seq, datasets):
             root_pred = aux_seq['rtk'][seq_idx]
             is_inlier = aux_seq['is_valid'][seq_idx]
             err_valid = aux_seq['err_valid'][seq_idx]
-            # TODO only use certain ones to match
+            # only use certain ones to match
             #pdb.set_trace()
             #mesh = draw_cams(root_sfm, color='gray')
             #mesh.export('0.obj')

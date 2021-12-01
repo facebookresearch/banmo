@@ -116,11 +116,11 @@ def mlp_skinning(mlp, code, pts_embed):
     #skin = skin.softmax(-1)
     return dskin
 
-#def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
-def skinning(bones, pts, dskin=None, skin_aux=None):
+def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
+#def skinning(bones, pts, dskin=None, skin_aux=None):
     """
     bone: bs,B,10  - B gaussian ellipsoids
-    pts: bs,N,3    - N 3d points
+    pts: bs,N,3    - N 3d points, usually N=num points per ray, b~=2034
     skin: bs,N,B   - skinning matrix
     """
     device = pts.device
@@ -137,9 +137,12 @@ def skinning(bones, pts, dskin=None, skin_aux=None):
     # mahalanobis distance [(p-v)^TR^T]S[R(p-v)]
     # transform a vector to the local coordinate
     mdis = center.view(bs,1,B,3) - pts.view(bs,N,1,3) # bs,N,B,3
-    mdis = orient.view(bs,1,B,3,3).matmul(mdis[...,None]) # bs,N,B,3,1
-    mdis = mdis[...,0]
-    mdis = scale.view(bs,1,B,3) * mdis.pow(2)
+    if B<50:
+        mdis = orient.view(bs,1,B,3,3).matmul(mdis[...,None]) # bs,N,B,3,1
+        mdis = mdis[...,0]
+        mdis = scale.view(bs,1,B,3) * mdis.pow(2)
+    else:
+        mdis = mdis.pow(2)
     mdis = mdis*100*log_scale.exp() # TODO accound for scaled near-far plane
     mdis = (-10 * mdis.sum(3)) # bs,N,B
 
@@ -156,33 +159,33 @@ def skinning(bones, pts, dskin=None, skin_aux=None):
     return skin
     
 
-#def skinning(bones, pts, dskin=None, skin_aux=None):
-#    """
-#    bone: ...,B,10  - B gaussian ellipsoids
-#    pts: bs,N,3    - N 3d points
-#    skin: bs,N,B   - skinning matrix
-#    """
-#    chunk=1024
-#    bs,N,_ = pts.shape
-#    print(bs)
-#    B = bones.shape[-2]
-#    if bones.dim()==2: bones = bones[None].repeat(bs,1,1)
-#    bones = bones.view(-1,B,10)
-#
-#    skin = []
-#    for i in range(0,bs,chunk):
-#        if dskin is None:
-#            dskin_chunk = None
-#        else: 
-#            dskin_chunk = dskin[i:i+chunk]
-#        skin_chunk = skinning_chunk(bones[i:i+chunk], pts[i:i+chunk], \
-#                              dskin=dskin_chunk, skin_aux=skin_aux)
-#        skin.append( skin_chunk )
-#    skin = torch.cat(skin,0)
-#    return skin
+def skinning(bones, pts, dskin=None, skin_aux=None):
+    """
+    bone: ...,B,10  - B gaussian ellipsoids
+    pts: bs,N,3    - N 3d points
+    skin: bs,N,B   - skinning matrix
+    """
+    chunk=1024
+    bs,N,_ = pts.shape
+    print(bs)
+    B = bones.shape[-2]
+    if bones.dim()==2: bones = bones[None].repeat(bs,1,1)
+    bones = bones.view(-1,B,10)
 
-#def blend_skinning_chunk(bones, rts, skin, pts):
-def blend_skinning(bones, rts, skin, pts):
+    skin = []
+    for i in range(0,bs,chunk):
+        if dskin is None:
+            dskin_chunk = None
+        else: 
+            dskin_chunk = dskin[i:i+chunk]
+        skin_chunk = skinning_chunk(bones[i:i+chunk], pts[i:i+chunk], \
+                              dskin=dskin_chunk, skin_aux=skin_aux)
+        skin.append( skin_chunk )
+    skin = torch.cat(skin,0)
+    return skin
+
+def blend_skinning_chunk(bones, rts, skin, pts):
+#def blend_skinning(bones, rts, skin, pts):
     """
     bone: bs,B,10   - B gaussian ellipsoids
     rts: bs,B,3,4   - B ririd transforms, applied to bone coordinates
@@ -239,30 +242,30 @@ def blend_skinning(bones, rts, skin, pts):
     pts = pts[...,0]
     return pts
 
-#def blend_skinning(bones, rts, skin, pts):
-#    """
-#    bone: bs,B,10   - B gaussian ellipsoids
-#    rts: bs,B,3,4   - B ririd transforms, applied to bone coordinates
-#    pts: bs,N,3     - N 3d points
-#    skin: bs,N,B   - skinning matrix
-#    apply rts to bone coordinates, while computing blending globally
-#    """
-#    chunk=1024
-#    B = rts.shape[-3]
-#    N = pts.shape[-2]
-#    bones = bones.view(-1,B,10)
-#    pts = pts.view(-1,N,3)
-#    rts = rts.view(-1,B,3,4)
-#    bs = pts.shape[0]
-#    print(bs)
-#
-#    pts_out = []
-#    for i in range(0,bs,chunk):
-#        pts_chunk = blend_skinning_chunk(bones[i:i+chunk], rts[i:i+chunk], 
-#                                          skin[i:i+chunk], pts[i:i+chunk])
-#        pts_out.append(pts_chunk)
-#    pts = torch.cat(pts_out,0)
-#    return pts
+def blend_skinning(bones, rts, skin, pts):
+    """
+    bone: bs,B,10   - B gaussian ellipsoids
+    rts: bs,B,3,4   - B ririd transforms, applied to bone coordinates
+    pts: bs,N,3     - N 3d points
+    skin: bs,N,B   - skinning matrix
+    apply rts to bone coordinates, while computing blending globally
+    """
+    chunk=1024
+    B = rts.shape[-3]
+    N = pts.shape[-2]
+    bones = bones.view(-1,B,10)
+    pts = pts.view(-1,N,3)
+    rts = rts.view(-1,B,3,4)
+    bs = pts.shape[0]
+    print(bs)
+
+    pts_out = []
+    for i in range(0,bs,chunk):
+        pts_chunk = blend_skinning_chunk(bones[i:i+chunk], rts[i:i+chunk], 
+                                          skin[i:i+chunk], pts[i:i+chunk])
+        pts_out.append(pts_chunk)
+    pts = torch.cat(pts_out,0)
+    return pts
 
 def lbs(bones, rts_fw, skin, xyz_in, backward=True):
     """

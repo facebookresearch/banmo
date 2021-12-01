@@ -1,7 +1,7 @@
 gpus=$1
-seqname=adult5 # 630 frames
+seqname=adult6 # 630 frames
 num_epochs=120
-addname=b16
+addname=32bones
 addr=10004
 use_human=
 
@@ -18,6 +18,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
   --batch_size 16 --nsample 64 \
+  --num_bones 32 \
   --flow_dp \
   --${use_human}use_human
 
@@ -29,6 +30,20 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --model_path logdir/$loadname/params_$num_epochs.pth \
   --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0.2 --bound_reset 0.2 \
   --dskin_steps 0.2 --fine_steps 0.2 --noanneal_freq --nouse_resize \
+  --num_bones 32 \
+  --flow_dp \
+  --${use_human}use_human
+  #--fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
+
+loadname=${model_prefix}-ft1
+savename=${model_prefix}-ft2
+bash scripts/template-mgpu.sh $gpus $savename \
+    $seqname $addr --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+  --pose_cnn_path $pose_cnn_path \
+  --model_path logdir/$loadname/params_$num_epochs.pth \
+  --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0.2 --bound_reset 0.2 \
+  --dskin_steps 0.2 --fine_steps 0.2 --noanneal_freq --nouse_resize \
+  --num_bones 32 \
   --flow_dp \
   --${use_human}use_human
   #--fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \

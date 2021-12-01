@@ -195,6 +195,11 @@ flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
 # for retarget
 flags.DEFINE_string('retarget_path', '', 'load source model path for regargeting')
 
+flags.DEFINE_float('total_wt', 1, 'by default, multiple total loss by 1')
+flags.DEFINE_float('feat_wt', 1, 'by default, multiple feat loss by 1')
+flags.DEFINE_float('proj_wt', 1, 'by default, multiple proj loss by 1')
+flags.DEFINE_float('flow_wt', 1, 'by default, multiple flow loss by 1')
+
 class v2s_net(nn.Module):
     def __init__(self, opts, data_info):
         super(v2s_net, self).__init__()
@@ -1117,9 +1122,9 @@ class v2s_net(nn.Module):
 
             flo_loss_samp = rendered['flo_loss_samp']
             # eval on valid pts
-            flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() * 10
-            #flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() * 2
+            flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean() * 2
             #flo_loss = flo_loss_samp[sil_at_samp_flo[...,0]].mean()
+            flo_loss = flo_loss * opts.flow_wt
     
             # warm up by only using flow loss to optimize root pose
             if self.pose_update == 0:
@@ -1172,9 +1177,8 @@ class v2s_net(nn.Module):
                     print('removing invalid idx from feat')
                     print(self.frameid[invalid_idx])
 
-            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.1
-            #feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.5
+            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
+            feat_loss = feat_loss * opts.feat_wt
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
@@ -1188,8 +1192,8 @@ class v2s_net(nn.Module):
                 self.latest_vars['fp_err'][self.frameid.long(),1] = proj_err
                 rendered['proj_err'][invalid_idx] *= 0.
 
-            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.02
-            #proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
+            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
+            proj_loss = proj_loss * opts.proj_wt
             aux_out['proj_loss'] = proj_loss
             if opts.freeze_proj:
                 total_loss = total_loss + proj_loss
@@ -1200,7 +1204,7 @@ class v2s_net(nn.Module):
                 if (self.progress > opts.proj_start and \
                     self.progress < opts.proj_end):
                     total_loss = total_loss*warmup_weight + \
-                               10*proj_loss*(1-warmup_weight)
+                               20*proj_loss*(1-warmup_weight)
             elif self.progress > (opts.warmup_init_steps + opts.warmup_steps):
                 # only add it after feature volume is trained well
                 total_loss = total_loss + proj_loss
@@ -1316,6 +1320,8 @@ class v2s_net(nn.Module):
         if opts.lbs:
             aux_out['skin_scale'] = self.skin_aux[0].clone().detach()
             aux_out['skin_const'] = self.skin_aux[1].clone().detach()
+        
+        total_loss = total_loss * opts.total_wt
         aux_out['total_loss'] = total_loss
         aux_out['beta'] = self.nerf_coarse.beta.clone().detach()[0]
         if opts.debug:
@@ -1364,7 +1370,7 @@ class v2s_net(nn.Module):
         elif opts.cnn_type=='cls':
             scores, grid = self.nerf_root_rts(dp_feats_rd)
             total_loss = rtk_cls_loss(scores, grid, rtk_raw, aux_out)
-        
+       
         aux_out['total_loss'] = total_loss
 
         return total_loss, aux_out

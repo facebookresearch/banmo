@@ -183,6 +183,7 @@ flags.DEFINE_bool('use_accu',False, 'whether to use gradient accumulation')
 flags.DEFINE_bool('freeze_coarse', False, 'whether to freeze coarse posec of MLP')
 flags.DEFINE_integer('loadid0', -1, 'frame id to load (for ft)')
 flags.DEFINE_integer('loadvid', -1, 'video id to load (for ft)')
+flags.DEFINE_bool('scaled_code', False, 'whether to use scaled code')
 
 # for preloading
 flags.DEFINE_bool('preload', True, 'whether to use pre-computed data')
@@ -220,7 +221,8 @@ class v2s_net(nn.Module):
                                       # have to be consistent with dataloader, 
                                       # eval/train has different size
         embed_net = nn.Embedding
-        #embed_net = ScaledEmbed
+        if opts.scaled_code:
+            embed_net = ScaledEmbed
         
         # multi-video mode
         self.num_vid =  len(self.config.sections())-1
@@ -859,6 +861,7 @@ class v2s_net(nn.Module):
         dpfs = 112
         self.dp_feats     = batch['dp_feat']     .view(bs,-1,dpfd,dpfs,dpfs).permute(1,0,2,3,4).reshape(-1,dpfd,dpfs,dpfs).to(device)
         self.dp_bbox      = batch['dp_bbox']     .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
+        #self.dp_feats_rsmp= batch['dp_feat_rsmp'].view(bs,-1,dpfd,h,w).permute(1,0,2,3,4).reshape(-1,dpfd,h,w).to(device)
         if opts.use_viser and opts.ft_cse and (not self.is_warmup_pose):
             self.dp_feats_mask = self.dp_feats.abs().sum(1)>0
             self.csepre_feats = self.dp_feats.clone()

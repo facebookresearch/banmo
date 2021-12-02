@@ -29,6 +29,7 @@ from scipy.ndimage import binary_erosion
 from ext_utils.util_flow import readPFM
 from ext_utils import image as image_utils
 from ext_utils.flowlib import warp_flow
+from nnutils.geom_utils import resample_dp
 
 def read_json(filepath, mask):
     import json
@@ -201,6 +202,13 @@ class BaseDataset(Dataset):
         # Finally transpose the image to 3xHxW
         img = np.transpose(img, (2, 0, 1))
         mask = (mask>0).astype(float)
+        
+        #TODO transform dp feat to same size as img
+        dp_feat_rsmp = resample_dp(F.normalize(torch.Tensor(dp_feat)[None],2,1),
+                                               torch.Tensor(dp_bbox)[None], 
+                                               torch.Tensor(kaug   )[None], 
+                                               self.img_size)
+        
 
         rt_dict = {}
         rt_dict['img']   = img     
@@ -210,6 +218,7 @@ class BaseDataset(Dataset):
         rt_dict['dp']    = dp    
         rt_dict['vis2d'] = vis2d 
         rt_dict['dp_feat'] = dp_feat
+        rt_dict['dp_feat_rsmp'] = dp_feat_rsmp
         rt_dict['dp_bbox'] = dp_bbox
         rt_dict['rtk'] = rtk
         return rt_dict, kaug, hp0, A,B
@@ -329,6 +338,7 @@ class BaseDataset(Dataset):
         dp_feat = rt_dict['dp_feat']
         dp_bbox = rt_dict['dp_bbox'] 
         rtk     = rt_dict['rtk'] 
+        dp_feat_rsmp = rt_dict['dp_feat_rsmp']
         frameid = im0idx
         is_canonical = self.can_frame == im0idx
             
@@ -346,6 +356,7 @@ class BaseDataset(Dataset):
             dp_featn = rt_dictn['dp_feat']
             dp_bboxn = rt_dictn['dp_bbox'] 
             rtkn     = rt_dictn['rtk'] 
+            dp_featn_rsmp = rt_dictn['dp_feat_rsmp']
             is_canonicaln = self.can_frame == im1idx
 
             #print('before process:%f'%(time.time()-ss))
@@ -362,6 +373,7 @@ class BaseDataset(Dataset):
             dp  = np.stack([dp, dpn])
             vis2d= np.stack([vis2d, vis2dn])
             dp_feat= np.stack([dp_feat, dp_featn])
+            dp_feat_rsmp= np.stack([dp_feat_rsmp, dp_featn_rsmp])
             dp_bbox = np.stack([dp_bbox, dp_bboxn])
             rtk= np.stack([rtk, rtkn])         
             kaug= np.stack([kaug,kaugn])
@@ -376,6 +388,7 @@ class BaseDataset(Dataset):
         elem['occ']           =  occ        # s 
         elem['dp']            =  dp         # x
         elem['dp_feat']       =  dp_feat    # y
+        elem['dp_feat_rsmp']  =  dp_feat_rsmp    # y
         elem['dp_bbox']       =  dp_bbox    
         elem['vis2d']         =  vis2d      # y
         elem['rtk']           =  rtk

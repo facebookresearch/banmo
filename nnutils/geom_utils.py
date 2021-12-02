@@ -11,7 +11,6 @@ import soft_renderer as sr
 from scipy.spatial.transform import Rotation as R
 
 from nnutils.nerf import evaluate_mlp
-from utils.io import draw_cams, load_root
 
 import sys
 sys.path.insert(0, 'third_party')
@@ -1001,6 +1000,7 @@ def process_so3_seq(rtk_seq, vis=False, smooth=True):
     rtk_seq, bs, N, 13 including
     {scoresx1, rotationsx9, translationsx3}
     """
+    from utils.io import draw_cams
     scores =rtk_seq[...,0]
     bs,N = scores.shape
     rmat =  rtk_seq[...,1:10]
@@ -1128,6 +1128,7 @@ def align_sim3(rootlist_a, rootlist_b, is_inlier=None, err_valid=None):
     return rootlist_b
 
 def align_sfm_sim3(aux_seq, datasets):
+    from utils.io import draw_cams, load_root
     for dataset in datasets:
         seqname = dataset.imglist[0].split('/')[-2]
 

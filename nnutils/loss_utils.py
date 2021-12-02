@@ -362,6 +362,11 @@ def grad_update_bone(bones,embedding_xyz, nerf_vis, learning_rate):
     return bone_loc_loss
 
 def loss_filter(g_floerr, flo_loss_samp, sil_at_samp_flo, scale_factor=10):
+    """
+    g_floerr:       T,
+    flo_loss_samp:  bs,N,1
+    sil_at_samp_flo:bs,N,1
+    """
     bs = sil_at_samp_flo.shape[0] 
     # find history meidan
     g_floerr = g_floerr[g_floerr>0]

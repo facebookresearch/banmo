@@ -240,9 +240,9 @@ class v2s_net(nn.Module):
         self.latest_vars['mesh_rest'] = trimesh.Trimesh()
         self.latest_vars['fp_err'] = np.zeros((self.data_offset[-1],2)) # feat, proj
         #TODO todo, this should be a list of 1,2,4,8,16,32
-        self.latest_vars['flo_err'] = np.zeros((self.data_offset[-1],)) 
+        self.latest_vars['flo_err'] = np.zeros((self.data_offset[-1],6)) 
         self.latest_vars['sil_err'] = np.zeros((self.data_offset[-1],)) 
-        self.latest_vars['flo_err_hist'] = np.zeros((self.data_offset[-1],10)) 
+        self.latest_vars['flo_err_hist'] = np.zeros((self.data_offset[-1],6,10))
 
         # get near-far plane
         if opts.unit_nf:
@@ -878,7 +878,7 @@ class v2s_net(nn.Module):
         self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1).cpu()
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1).cpu()
       
-        self.frameid_sub = self.frameid.clone()
+        self.frameid_sub = self.frameid.clone() # id within a video
         self.embedid = self.frameid + self.data_offset[self.dataid.long()]
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]
         self.rt_raw  = self.rtk.clone()[:,:3]
@@ -1090,33 +1090,41 @@ class v2s_net(nn.Module):
             
         # flow loss
         if opts.use_corresp:
-            flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'], 
-                                            rendered['flo_loss_samp']*2,
-                                            #rendered['flo_loss_samp'],
-                                            sil_at_samp_flo)
-            self.latest_vars['flo_err'][self.frameid.long()] = flo_err
-                
-            # TODO update history
-            for idx,frameid in enumerate(self.frameid.long()):
-                queue = self.latest_vars['flo_err_hist'][frameid]
+            #TODO 
+            # find flow window
+            dframe = (self.frameid.view(2,-1).flip(0).reshape(-1) - \
+                      self.frameid).abs()
+            didxs = dframe.log2().long()
+            for idx,didx in enumerate(didxs):
+                frameid = self.frameid.long()[idx]
+                # update flow error 
+                flo_err, invalid_idx = loss_filter(
+                                        self.latest_vars['flo_err'][:,didx], 
+                                rendered['flo_loss_samp'][idx:idx+1],
+                                          sil_at_samp_flo[idx:idx+1])
+                self.latest_vars['flo_err'][frameid,didx] = flo_err[0]
+                    
+                # update history
+                queue = self.latest_vars['flo_err_hist'][frameid,didx]
                 queue = np.roll(queue,1)
-                queue[0] = flo_err[idx]
-                self.latest_vars['flo_err_hist'][frameid] = queue
-            flo_err_ave = self.latest_vars['flo_err_hist'].sum(1)/\
-                   (1e-9+(self.latest_vars['flo_err_hist']>0).sum(1))
-            flo_err_global = np.median(flo_err_ave[flo_err_ave>0])
-            invalid_idx_hist = flo_err_ave[self.frameid.long()] > \
-                                10* flo_err_global
-            invalid_idx = np.logical_or(invalid_idx, invalid_idx_hist)
-            if invalid_idx_hist.sum()>0:
-                print('remove from flow history:')
-                print(self.frameid[invalid_idx_hist])
+                queue[0] = flo_err[0]
+                self.latest_vars['flo_err_hist'][frameid,didx] = queue
+                
+                flo_err_ave = self.latest_vars['flo_err_hist'][:,didx].sum(1)/\
+                       (1e-9+(self.latest_vars['flo_err_hist'][:,didx]>0).sum(1))
+                flo_err_global = np.median(flo_err_ave[flo_err_ave>0])
+                invalid_idx_hist = flo_err_ave[frameid:frameid+1] > 10* flo_err_global
 
-            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-                rendered['flo_loss_samp'][invalid_idx] *= 0.
-                if invalid_idx.sum()>0:
-                    print('removing invalid idx from flo')
-                    print(self.frameid[invalid_idx])
+                # zero out invalid loss
+                invalid_idx = np.logical_or(invalid_idx, invalid_idx_hist)
+                if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+                    if invalid_idx_hist.sum()>0:
+                        print('remove from flow history:')
+                        print(frameid)
+                    if invalid_idx.sum()>0:
+                        rendered['flo_loss_samp'][idx] *= 0.
+                        print('removing invalid idx from flo')
+                        print(frameid)
 
             flo_loss_samp = rendered['flo_loss_samp']
             # eval on valid pts

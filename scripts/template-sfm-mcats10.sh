@@ -1,7 +1,7 @@
 gpus=$1
 seqname=sfm-mcats10
 num_epochs=90
-addname=baseline
+addname=reject
 addr=10004
 use_human=no
 
@@ -13,13 +13,13 @@ else
 fi
 echo $pose_cnn_path
 
-#savename=${model_prefix}-init
-#bash scripts/template-mgpu.sh $gpus $savename \
-#    $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
-#  --pose_cnn_path $pose_cnn_path \
-#  --batch_size 16 --nsample 64 \
-#  --${use_human}use_human
-#  #--flow_dp \
+savename=${model_prefix}-init
+bash scripts/template-mgpu.sh $gpus $savename \
+    $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
+  --pose_cnn_path $pose_cnn_path \
+  --batch_size 16 --nsample 64 \
+  --${use_human}use_human
+  #--flow_dp \
 
 loadname=${model_prefix}-init
 savename=${model_prefix}-ft1

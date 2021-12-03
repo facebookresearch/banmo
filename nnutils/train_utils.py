@@ -133,6 +133,10 @@ class v2s_trainer(Trainer):
                 opts_dict['rtk_path'] = cam_dir
 
         self.dataloader = frameloader.data_loader(opts_dict)
+        if opts.lineload:
+            opts_dict['lineload'] = True
+            self.lineloader = frameloader.data_loader(opts_dict)
+            opts_dict['lineload'] = False
         opts_dict['img_size'] = opts.render_size
         self.evalloader = frameloader.eval_loader(opts_dict)
 
@@ -688,13 +692,15 @@ class v2s_trainer(Trainer):
                 self.save_network(str(epoch+1))
 
     @staticmethod
-    def save_cams(aux_seq, save_prefix, datasets, evalsets, obj_scale):
+    def save_cams(aux_seq, save_prefix, datasets, evalsets, obj_scale,lineloader=None):
         """
         save cameras to dir and modify dataset 
         """
         mkdir_p(save_prefix)
         dataset_dict={dataset.imglist[0].split('/')[-2]:dataset for dataset in datasets}
         evalset_dict={dataset.imglist[0].split('/')[-2]:dataset for dataset in evalsets}
+        if lineloader is not None:
+            line_dict={dataset.imglist[0].split('/')[-2]:dataset for dataset in lineloader}
 
         length = len(aux_seq['impath'])
         valid_ids = aux_seq['is_valid']
@@ -722,6 +728,8 @@ class v2s_trainer(Trainer):
             np.savetxt(save_path, rtk)
             rtklist[idx] = save_path
             evalset_dict[seqname].rtklist[idx] = save_path
+            if lineloader is not None:
+                line_dict[seqname].rtklist[idx] = save_path
 
             if idx==len(rtklist)-2:
                 # to cover the last
@@ -730,6 +738,8 @@ class v2s_trainer(Trainer):
                 np.savetxt(save_path, rtk)
                 rtklist[idx+1] = save_path
                 evalset_dict[seqname].rtklist[idx+1] = save_path
+                if lineloader is not None:
+                    line_dict[seqname].rtklist[idx+1] = save_path
         
         
     def extract_cams(self, full_loader):
@@ -756,10 +766,12 @@ class v2s_trainer(Trainer):
             align_sfm_sim3(aux_seq, full_loader.dataset.datasets)
 
         save_prefix = '%s/init-cam'%(self.save_dir)
+        if opts.lineload:   lineloader=self.lineloader.dataset.datasets
+        else:               lineloader=None
         self.save_cams(aux_seq, save_prefix,
                     full_loader.dataset.datasets,
                 self.evalloader.dataset.datasets,
-                self.model.obj_scale)
+                self.model.obj_scale, lineloader=lineloader)
         
         dist.barrier() # wait untail all have finished
         if opts.local_rank==0:
@@ -836,7 +848,12 @@ class v2s_trainer(Trainer):
         """
         opts = self.opts
         self.model.train()
-        for i, batch in enumerate(self.dataloader):
+        if opts.lineload:
+            dataloader = self.lineloader
+        else:
+            dataloader = self.dataloader
+
+        for i, batch in enumerate(dataloader):
             self.model.module.progress = float(self.model.total_steps) /\
                                                self.model.final_steps
             if not warmup:
@@ -1395,4 +1412,6 @@ class v2s_trainer(Trainer):
             crop_factor = min(max(maxc-factor*(maxc-minc), minc), maxc)
             self.dataloader.dataset.datasets[i].crop_factor = crop_factor
             self.evalloader.dataset.datasets[i].crop_factor = crop_factor
+            if self.opts.lineload:
+                self.lineloader.dataset.datasets[i].crop_factor = crop_factor
 

@@ -1,8 +1,8 @@
 gpus=$1
 seqname=nerfies_cat_807
 num_epochs=30
-addname=b128line
-addr=10004
+addname=b16batch
+addr=10005
 use_human=no
 
 model_prefix=$seqname-lbs-rkopt-$num_epochs-$addname
@@ -18,9 +18,10 @@ savename=${model_prefix}-init
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
-  --lineload --batch_size 128 --nsample 8\
+  --batch_size 16 --nsample 64 \
+  --nouse_resize \
   --${use_human}use_human
-  #--batch_size 16 --nsample 64 \
+  #--lineload --batch_size 256 --nsample 4\
   #--flow_dp \
 
 #loadname=${model_prefix}-init

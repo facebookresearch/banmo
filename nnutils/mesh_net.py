@@ -187,6 +187,7 @@ flags.DEFINE_bool('scaled_code', False, 'whether to use scaled code')
 
 # for preloading
 flags.DEFINE_bool('preload', True, 'whether to use pre-computed data')
+flags.DEFINE_bool('lineload',False,'whether to use pre-computed data per line')
 
 # for match
 flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
@@ -536,7 +537,7 @@ class v2s_net(nn.Module):
         # sample 1x points, sample 4x points for further selection
         nsample_a = 4*nsample
         rand_inds, xys = sample_xy(self.img_size, bs, nsample+nsample_a, self.device, 
-                               return_all= not(self.training))
+                               return_all= not(self.training), lineid=self.lineid)
         if self.training:
             rand_inds_a, xys_a = rand_inds[:,nsample:].clone(), xys[:,nsample:].clone()
             rand_inds, xys     = rand_inds[:,:nsample].clone(), xys[:,:nsample].clone()
@@ -599,8 +600,11 @@ class v2s_net(nn.Module):
         rays['cfd_at_samp'] = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]]\
                                 for i in range(bs)],0) # bs,ns,1
         if opts.use_viser:
-            dp_feats_rsmp = resample_dp(self.dp_feats, 
-                    self.dp_bbox, kaug, self.img_size)
+            if opts.lineload and self.training:
+                dp_feats_rsmp = self.dp_feats
+            else:
+                dp_feats_rsmp = resample_dp(self.dp_feats, 
+                        self.dp_bbox, kaug, self.img_size)
             feats_at_samp = [dp_feats_rsmp[i].view(self.num_feat,-1).T\
                              [rand_inds[i].long()] for i in range(bs)]
             feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
@@ -835,6 +839,42 @@ class v2s_net(nn.Module):
             #if self.dataid[idx]==self.dataid[jdx]:
             #    self.dp_conf[idx] = self.dp_thrd
         self.dp_conf[self.dp_conf>self.dp_thrd] = self.dp_thrd
+    
+    def convert_line_input(self, batch):
+        device = self.device
+        opts = self.opts
+        # convert to float
+        for k,v in batch.items():
+            batch[k] = batch[k].float()
+
+        bs=batch['dataid'].shape[0]
+
+        self.imgs         = batch['img']         .view(bs,2,3, -1).permute(1,0,2,3).reshape(bs*2,3, -1,1).to(device)
+        self.masks        = batch['mask']        .view(bs,2,1, -1).permute(1,0,2,3).reshape(bs*2,1, -1,1).to(device)
+        self.vis2d        = batch['vis2d']       .view(bs,2,1, -1).permute(1,0,2,3).reshape(bs*2,1, -1,1).to(device)
+        self.flow         = batch['flow']        .view(bs,2,2, -1).permute(1,0,2,3).reshape(bs*2,2, -1,1).to(device)
+        self.occ          = batch['occ']         .view(bs,2,1, -1).permute(1,0,2,3).reshape(bs*2,1, -1,1).to(device)
+        self.dps          = batch['dp']          .view(bs,2,1, -1).permute(1,0,2,3).reshape(bs*2,1, -1,1).to(device)
+        self.dp_feats     = batch['dp_feat_rsmp'].view(bs,2,16,-1).permute(1,0,2,3).reshape(bs*2,16,-1,1).to(device)
+        self.dp_feats     = F.normalize(self.dp_feats, 2,1)
+        self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
+        self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
+        self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1).cpu()
+        self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1).cpu()
+        self.lineid       = batch['lineid']      .view(bs,-1).permute(1,0).reshape(-1).to(device)
+      
+        self.frameid_sub = self.frameid.clone() # id within a video
+        self.embedid = self.frameid + self.data_offset[self.dataid.long()]
+        self.frameid = self.frameid + self.data_offset[self.dataid.long()]
+        self.rt_raw  = self.rtk.clone()[:,:3]
+
+        # process silhouette
+        self.sils = self.masks.clone()
+        if self.opts.bg: self.masks[:] = 1
+        self.masks = (self.masks*self.vis2d)>0
+        self.masks = self.masks.float()
+        self.sils = (self.sils*self.vis2d)>0
+        self.sils =  self.sils.float()
 
     def convert_batch_input(self, batch):
         device = self.device
@@ -878,7 +918,6 @@ class v2s_net(nn.Module):
         self.rtk          = batch['rtk']         .view(bs,-1,4,4).permute(1,0,2,3).reshape(-1,4,4)    .to(device)
         self.kaug         = batch['kaug']        .view(bs,-1,4).permute(1,0,2).reshape(-1,4)          .to(device)
         self.frameid      = batch['frameid']     .view(bs,-1).permute(1,0).reshape(-1).cpu()
-        self.is_canonical = batch['is_canonical'].view(bs,-1).permute(1,0).reshape(-1).cpu()
         self.dataid       = batch['dataid']      .view(bs,-1).permute(1,0).reshape(-1).cpu()
       
         self.frameid_sub = self.frameid.clone() # id within a video
@@ -898,6 +937,7 @@ class v2s_net(nn.Module):
 #        self.flow = batch['flow'].view(bs,-1,3,h,w).permute(1,0,2,3,4).reshape(-1,3,h,w).to(device)
 #        self.flow = self.flow[:,:2]
         self.occ  = batch['occ'].view(bs,-1,h,w).permute(1,0,2,3).reshape(-1,h,w)     .to(device)
+        self.lineid = None
     
     def convert_root_pose_mhp(self):
         """
@@ -1020,14 +1060,17 @@ class v2s_net(nn.Module):
             self.latest_vars['j2c'][self.frameid.long()] = \
                     self.sim3_j2c.detach().cpu().numpy()[self.dataid.long()]
         self.latest_vars['idk'][self.frameid.long()] = 1
-        if self.training:
-            self.latest_vars['vis'][self.frameid.long()] = self.vis2d.cpu().numpy()
+        #if self.training:
+        #    self.latest_vars['vis'][self.frameid.long()] = self.vis2d.cpu().numpy()
 
-    def set_input(self, batch):
+    def set_input(self, batch, load_line=False):
         device = self.device
         opts = self.opts
 
-        self.convert_batch_input(batch)
+        if load_line:
+            self.convert_line_input(batch)
+        else:
+            self.convert_batch_input(batch)
         bs = self.imgs.shape[0]
         
         if self.is_flow_dp:
@@ -1053,7 +1096,10 @@ class v2s_net(nn.Module):
         if opts.debug:
             torch.cuda.synchronize()
             start_time = time.time()
-        bs = self.set_input(batch)
+        if opts.lineload:
+            bs = self.set_input(batch, load_line=True)
+        else:
+            bs = self.set_input(batch)
         
         if opts.debug:
             torch.cuda.synchronize()

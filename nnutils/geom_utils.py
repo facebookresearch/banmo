@@ -506,7 +506,7 @@ def raycast(xys, Rmat, Tmat, Kinv, near_far):
           }
     return rays
 
-def sample_xy(img_size, bs, nsample, device, return_all=False):
+def sample_xy(img_size, bs, nsample, device, return_all=False, lineid=None):
     """
     rand_inds:  bs, ns
     xys:        bs, ns, 2
@@ -522,13 +522,17 @@ def sample_xy(img_size, bs, nsample, device, return_all=False):
         rand_inds=rand_inds[None].repeat(bs,1)
         xys = xygrid
     else:
-        probs = torch.ones(img_size**2).to(device) # 512*512 vs 128*64
-        rand_inds = torch.multinomial(probs, bs*nsample, replacement=False)
-        rand_inds = rand_inds.view(bs,nsample)
-        #rand_inds = [np.random.choice(img_size**2, size=nsample, replace=False)\
-        #             for i in range(bs)]
-        #rand_inds = torch.LongTensor(rand_inds).to(device) # bs, ns
-        xys = torch.stack([xygrid[0][rand_inds[i]] for i in range(bs)],0) # bs,ns,2
+        if lineid is None:
+            probs = torch.ones(img_size**2).to(device) # 512*512 vs 128*64
+            rand_inds = torch.multinomial(probs, bs*nsample, replacement=False)
+            rand_inds = rand_inds.view(bs,nsample)
+            xys = torch.stack([xygrid[0][rand_inds[i]] for i in range(bs)],0) # bs,ns,2
+        else:
+            probs = torch.ones(img_size).to(device) # 512*512 vs 128*64
+            rand_inds = torch.multinomial(probs, bs*nsample, replacement=True)
+            rand_inds = rand_inds.view(bs,nsample)
+            xys = torch.stack([xygrid[0][rand_inds[i]] for i in range(bs)],0) # bs,ns,2
+            xys[...,1] = xys[...,1] + lineid[:,None]
    
     rand_inds = rand_inds.long()
     return rand_inds, xys

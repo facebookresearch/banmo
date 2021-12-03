@@ -11,6 +11,7 @@ import glob
 import matplotlib.cm
 import torch.nn.functional as F
 from scipy.spatial.transform import Rotation as R
+from torch.utils.data import Dataset
 
 import sys
 sys.path.insert(0,'third_party')
@@ -331,24 +332,113 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
     if end_frame >0:
         imglist = imglist[:end_frame]
     print('init:%d, end:%d'%(init_frame, end_frame))
+    # load dataset
     datasets = []
     for df in dframe:
-        try:
-            dataset = VidDataset(opts, imglist = imglist, can_frame = can_frame, 
-                          dframe=df, init_frame=init_frame, 
-                          dataid=dataid, numvid=numvid, flip=flip, is_eval=is_eval,
-                          rtk_path=rtk_path)
-        except: continue
-        if rtk_path is None:
-            dataset.has_prior_cam = False
+        if 'lineload' in opts.keys() and opts['lineload']:
+            # per-line loader
+            #TODO
+            dataset= LineDataset(opts, imglist = imglist, can_frame = can_frame, 
+                              dframe=df, init_frame=init_frame, 
+                              dataid=dataid, numvid=numvid, flip=flip, is_eval=is_eval,
+                              rtk_path=rtk_path)
         else:
-            dataset.has_prior_cam = True
-        if 'preload' in opts.keys():
-            dataset.preload = opts['preload']
-        else:
-            dataset.preload = False
+            # per-image loader
+            try:
+                dataset = VidDataset(opts, imglist = imglist, can_frame = can_frame, 
+                              dframe=df, init_frame=init_frame, 
+                              dataid=dataid, numvid=numvid, flip=flip, is_eval=is_eval,
+                              rtk_path=rtk_path)
+            except: continue
+            if rtk_path is None:
+                dataset.has_prior_cam = False
+            else:
+                dataset.has_prior_cam = True
+            # whether to use preloaded data
+            if 'preload' in opts.keys():
+                dataset.preload = opts['preload']
+            else:
+                dataset.preload = False
+
         datasets.append(dataset)
     return datasets
+
+class LineDataset(Dataset):
+    '''
+    '''
+
+    def __init__(self, opts, filter_key=None, imglist=None, can_frame=0,
+                    dframe=1,init_frame=0, dataid=0, numvid=1, flip=0, 
+                    is_eval=False, rtk_path=None):
+        super(LineDataset, self).__init__()
+        self.crop_factor = 1.2
+        self.imglist = imglist
+        self.img_size = opts['img_size']
+        self.num_lines = (len(imglist)-1) * self.img_size # last img not saved
+
+        seqname = imglist[0].split('/')[-2]
+        if rtk_path is not None:
+            self.rtklist =['%s-%05d.txt'%(rtk_path, i) for i in range(len(self.imglist))]
+        else:
+            self.rtklist =[i.replace('JPEGImages', 'Cameras').replace('.jpg', '.txt') for i in self.imglist]
+
+        # Load the annotation file.
+        self.dataid = dataid
+        print('%d lines' % self.num_lines)
+
+    def __len__(self):
+        return self.num_lines
+
+    def __getitem__(self, index):
+        try:dataid = self.dataid
+        except: dataid=0
+        #TODO lolalize file
+        idt = index // self.img_size# idt, idy
+        idy = index %  self.img_size# idt, idy
+
+        save_dir  = self.imglist[0].replace('JPEGImages', 'Pixels').rsplit('/',1)[0]
+        
+        dframe_list = [2,4,8,16,32]
+        max_id = len(self.imglist)-1
+        dframe_list = [1] + [i for i in dframe_list if (idt%i==0) and \
+                             int(idt+i) <= max_id]
+        dframe = np.random.choice(dframe_list)
+
+        data_path = '%s/%d_%05d/%04d.npy'%(save_dir, dframe, idt, idy)
+        elem = np.load(data_path,allow_pickle=True).item()
+        # modify dataid according to training time ones
+
+        # reload rtk based on rtk predictions
+        # add RTK: [R_3x3|T_3x1]
+        #          [fx,fy,px,py], to the ndc space
+        # always forward flow
+        idtn = idt + dframe 
+        try:
+            rtk_path = self.rtklist[idt]
+            rtk = np.loadtxt(rtk_path)
+            rtkn_path = self.rtklist[idtn]
+            rtkn = np.loadtxt(rtkn_path)
+            rtk = np.stack([rtk, rtkn])         
+        except:
+            print('warning: loading empty camera')
+            print(rtk_path)
+            rtk = np.zeros((4,4))
+            rtk[:3,:3] = np.eye(3)
+            rtk[:3, 3] = np.asarray([0,0,10])
+            rtk[3, :]  = np.asarray([512,512,256,256]) 
+            rtkn = rtk.copy()
+            rtk = np.stack([rtk, rtkn])         
+        
+        kaug_path = '%s/%d_%05d/rtk.npy'%(save_dir, dframe, idt)
+        kaug = np.load(kaug_path,allow_pickle=True).item()['kaug']
+        
+        #TODO fill elems
+        elem['rtk']           = rtk[None]                         # 1,2,x
+        elem['kaug']          = kaug                             
+        elem['dataid']        = np.stack([dataid, dataid])[None] 
+        elem['frameid']       = np.stack([idt,    idtn])[None]   
+        elem['lineid']        = np.stack([idy,    idy])[None]   
+        return elem
     
 class VidDataset(base_data.BaseDataset):
     '''

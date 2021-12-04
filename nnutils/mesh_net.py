@@ -522,6 +522,20 @@ class v2s_net(nn.Module):
             [float(i) for i in config.get('data_%d'%nvid, 'near_far').split(',')]
         return near_far
 
+    @staticmethod
+    def prepare_ray_cams(rtk, kaug):
+        """ 
+        in: rtk, kaug
+        out: Rmat, Tmat, Kinv
+        """
+        Rmat = rtk[:,:3,:3]
+        Tmat = rtk[:,:3,3]
+        Kmat = K2mat(rtk[:,3,:])
+        Kaug = K2inv(kaug) # p = Kaug Kmat P
+        Kinv = Kmatinv(Kaug.matmul(Kmat))
+        return Rmat, Tmat, Kinv
+
+
     def nerf_render(self, rtk, kaug, embedid, nsample=256, ndepth=128):
         opts=self.opts
         # render rays
@@ -529,26 +543,16 @@ class v2s_net(nn.Module):
             torch.cuda.synchronize()
             start_time = time.time()
 
-        Rmat = rtk[:,:3,:3]
-        Tmat = rtk[:,:3,3]
-        Kmat = K2mat(rtk[:,3,:])
-        Kaug = K2inv(kaug) # p = Kaug Kmat P
-        Kinv = Kmatinv(Kaug.matmul(Kmat))
-
+        Rmat, Tmat, Kinv = self.prepare_ray_cams(rtk, kaug)
         bs = Kinv.shape[0]
-        embedid = embedid.long().to(self.device)[:,None]
 
         # sample 1x points, sample 4x points for further selection
         nsample_a = 4*nsample
-        rand_inds, xys = sample_xy(self.img_size, bs, nsample+nsample_a, self.device, 
+        rand_inds, xys = sample_xy(self.img_size, bs, nsample+nsample_a, self.device,
                                return_all= not(self.training), lineid=self.lineid)
         if self.training:
             rand_inds_a, xys_a = rand_inds[:,nsample:].clone(), xys[:,nsample:].clone()
             rand_inds, xys     = rand_inds[:,:nsample].clone(), xys[:,:nsample].clone()
-        
-        if opts.debug:
-            torch.cuda.synchronize()
-            print('initial xy sample time: %.2f'%(time.time()-start_time))
 
         # importance sampling
         if self.training and opts.use_unc and \
@@ -561,7 +565,7 @@ class v2s_net(nn.Module):
                 ts = ts[:,None,None].repeat(1,nsample_a,1)
                 dataid = self.dataid.long().to(self.device)
                 vid_code = self.vid_code(dataid)[:,None].repeat(1,nsample_a,1)
-                
+
                 # convert to normalized coords
                 xysn = torch.cat([xys_a, torch.ones_like(xys_a[...,:1])],2)
                 xysn = xysn.matmul(Kinv.permute(0,2,1))[...,:2]
@@ -570,7 +574,7 @@ class v2s_net(nn.Module):
                 xyt_embedded = self.embedding_xyz(xyt)
                 xyt_code = torch.cat([xyt_embedded, vid_code],-1)
                 unc_pred = self.nerf_unc(xyt_code)[...,0]
-        
+
                 ## preprocess to format 2,bs,w
                 #if opts.lineload:
                 #    unc_pred = unc_pred.view(2,-1)
@@ -599,6 +603,14 @@ class v2s_net(nn.Module):
             #for i in range(bs):
             #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
             #self.imgs_samp = torch.stack(self.imgs_samp,0)
+
+        ## in: nsample, 
+        ## out: rand_inds, xys
+        #rand_inds, xys = self.sample_pxs(opts, bs, nsample, self.img_size, 
+        #                                self.device,self.training, self.progress,
+        #                 self.vid_code, self.dataid,
+        #                 self.frameid_sub, self.max_ts, Kinv, self.lineid,
+        #                                    )
         
         if opts.debug:
             torch.cuda.synchronize()
@@ -649,6 +661,7 @@ class v2s_net(nn.Module):
         # 
 
         # update rays
+        embedid = embedid.long().to(self.device)[:,None]
         if bs>1:
             rtk_vec = rays['rtk_vec'] # bs, N, 21
             rtk_vec_target = rtk_vec.view(2,-1).flip(0)
@@ -746,7 +759,7 @@ class v2s_net(nn.Module):
             else:
                 v = torch.cat(v, 0)
                 if self.training:
-                    v = v.view(bs,nsample,-1)
+                    v = v.view(bs,rays['nsample'],-1)
                 else:
                     v = v.view(bs,self.img_size, self.img_size, -1)
             results[k] = v

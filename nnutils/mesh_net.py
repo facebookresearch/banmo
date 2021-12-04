@@ -535,17 +535,13 @@ class v2s_net(nn.Module):
         Kinv = Kmatinv(Kaug.matmul(Kmat))
         return Rmat, Tmat, Kinv
 
-
-    def nerf_render(self, rtk, kaug, embedid, nsample=256, ndepth=128):
-        opts=self.opts
-        # render rays
-        if opts.debug:
-            torch.cuda.synchronize()
-            start_time = time.time()
-
-        Rmat, Tmat, Kinv = self.prepare_ray_cams(rtk, kaug)
-        bs = Kinv.shape[0]
-
+    def sample_pxs(self, bs, nsample, Kinv):
+        """
+        make sure self. is not modified
+        xys:    bs, nsample, 2
+        rand_inds: bs, nsample
+        """
+        opts = self.opts
         # sample 1x points, sample 4x points for further selection
         nsample_a = 4*nsample
         rand_inds, xys = sample_xy(self.img_size, bs, nsample+nsample_a, self.device,
@@ -596,30 +592,17 @@ class v2s_net(nn.Module):
                 rand_inds = torch.cat([rand_inds,rand_inds_a],1)
                 nsample = nsample + nsample_s
 
-
             # TODO visualize samples
             #pdb.set_trace()
             #self.imgs_samp = []
             #for i in range(bs):
             #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
             #self.imgs_samp = torch.stack(self.imgs_samp,0)
-
-        ## in: nsample, 
-        ## out: rand_inds, xys
-        #rand_inds, xys = self.sample_pxs(opts, bs, nsample, self.img_size, 
-        #                                self.device,self.training, self.progress,
-        #                 self.vid_code, self.dataid,
-        #                 self.frameid_sub, self.max_ts, Kinv, self.lineid,
-        #                                    )
-        
-        if opts.debug:
-            torch.cuda.synchronize()
-            print('importance sampling time: %.2f'%(time.time()-start_time))
-
-        # need to update to bs, (nsample), ... format for all
-        near_far = self.near_far[self.frameid.long()]
-        rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
-       
+        return rand_inds, xys
+     
+    def obs_to_rays(self, rays, kaug, rand_inds):
+        opts = self.opts
+        bs = self.imgs.shape[0]
         # update rays
         # rays: input to renderer
         # 2,-1,bs,h
@@ -646,20 +629,9 @@ class v2s_net(nn.Module):
                              [rand_inds[i].long()] for i in range(bs)]
             feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
             rays['feats_at_samp'] = feats_at_samp
-       
-        # for line inputs
-        # convert 2*bs,-1,h,1 to 2,-1,bs,h
-        # for all inputs, support
-        # further modify cameras: 2,bs,4,4
-        # further modify frameid: 2,bs,1
-        # xys in format 2*xyt-samples,1
-        # rand_inds not needed => set to all zeros
-        # use a 2*bs*nsample matrix for indexing
-        # rays should be in format 2*xyt-samples,1,-1
-        # todo so, rmat, tmat,kinv,near_far should be re-indexed 
-        # imgs,masks,... also needs to be reindexed
-        # 
 
+    def update_rays(self, rays, bs, embedid, xys, Kinv):
+        opts = self.opts
         # update rays
         embedid = embedid.long().to(self.device)[:,None]
         if bs>1:
@@ -687,11 +659,6 @@ class v2s_net(nn.Module):
                 elif opts.lbs and self.num_bone_used>0:
                     bone_rts_dentrg = self.nerf_bone_rts(embedid_dentrg) #bsxbs,x 
                     rays['bone_rts_dentrg'] = bone_rts_dentrg.repeat(1,rays['nsample'],1)
-
-                if opts.use_sim3:
-                    dataid_dentrg = self.dataid[self.rand_dentrg]
-                    rays['sim3_j2c_dentrg'] = sim3_j2c[dataid_dentrg.long()]
-                    rays['sim3_j2c_dentrg'] = rays['sim3_j2c_dentrg'][:,None].repeat(1,rays['nsample'],1)
                  
         # pass time-dependent inputs
         time_embedded = self.pose_code(embedid)
@@ -721,6 +688,28 @@ class v2s_net(nn.Module):
             xysn = torch.cat([xys, torch.ones_like(xys[...,:1])],2)
             xysn = xysn.matmul(Kinv.permute(0,2,1))[...,:2]
             rays['xysn'] = xysn
+
+    def nerf_render(self, rtk, kaug, embedid, nsample=256, ndepth=128):
+        opts=self.opts
+        # render rays
+        if opts.debug:
+            torch.cuda.synchronize()
+            start_time = time.time()
+
+        Rmat, Tmat, Kinv = self.prepare_ray_cams(rtk, kaug)
+        bs = Kinv.shape[0]
+
+        rand_inds, xys = self.sample_pxs(bs, nsample, Kinv)
+        
+        if opts.debug:
+            torch.cuda.synchronize()
+            print('importance sampling time: %.2f'%(time.time()-start_time))
+
+        # need to update to bs, (nsample), ... format for all
+        near_far = self.near_far[self.frameid.long()]
+        rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
+        self.obs_to_rays(rays, kaug, rand_inds)
+        self.update_rays(rays, bs, embedid, xys, Kinv)
         
         if opts.debug:
             torch.cuda.synchronize()
@@ -780,25 +769,11 @@ class v2s_net(nn.Module):
             results['pts_pred'] = results['pts_pred'].clamp(0,1)
             results['pts_exp']  = results['pts_exp'].clamp(0,1)
         del results['xyz_coarse_frame']
+        del results['joint_render']
 
-        if opts.debug:
-            torch.cuda.synchronize()
-            print('feature mtaching time: %.2f'%(time.time()-start_time))
-
-        results['joint_render_vis'] = (results['joint_render']-\
-                       torch.Tensor(self.vis_min[None,None]).to(self.device))/\
-                       torch.Tensor(self.vis_len[None,None]).to(self.device)
-        results['joint_render_vis'] = results['joint_render_vis'].clamp(0,1)
-        #    pdb.set_trace() 
-        #    trimesh.Trimesh(self.dp_verts.cpu(), self.dp_faces,
-        #            vertex_colors=self.dp_vis.cpu()).export('0.obj')
-        #    trimesh.Trimesh(dp_pts[0].view(-1,3).cpu(),
-        # vertex_colors=dp_vis_pred[0].view(-1,3).cpu()).export('1.obj')
         if opts.debug:
             torch.cuda.synchronize()
             print('compute flow time: %.2f'%(time.time()-start_time))
-               
-        
         return results, rand_inds
 
     def compute_dp_flow(self, bs):

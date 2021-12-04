@@ -19,9 +19,9 @@ bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
   --lineload --batch_size 128 --nsample 8\
+  --warmup_init_steps 0 --warmup_steps 0 \
+  --fine_steps 0.0 --noanneal_freq --nouse_resize \
   --${use_human}use_human
-  #--warmup_init_steps 0 --warmup_steps 0 \
-  #--fine_steps 0.0 --noanneal_freq --nouse_resize \
   #--batch_size 16 --nsample 64 \
   #--flow_dp \
 

@@ -1,7 +1,7 @@
 gpus=$1
 seqname=nerfies_cat_807
 num_epochs=30
-addname=b16batch
+addname=b16batch-2
 addr=10005
 use_human=no
 

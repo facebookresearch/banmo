@@ -536,7 +536,7 @@ class v2s_net(nn.Module):
         return Rmat, Tmat, Kinv
 
     def sample_pxs(self, bs, nsample, Rmat, Tmat, Kinv,
-                   dataid, frameid, frameid_sub, embedid, lineid,
+                   dataid, frameid, frameid_sub, embedid, lineid,errid,
                    imgs, masks, flow, occ, dp_feats):
         """
         make sure self. is not modified
@@ -560,6 +560,7 @@ class v2s_net(nn.Module):
                 frameid_a=frameid[...,None].repeat(1,nsample_a)
                 frameid_sub_a=frameid_sub[...,None].repeat(1,nsample_a)
                 dataid_a=dataid[...,None].repeat(1,nsample_a)
+                errid_a=errid[...,None].repeat(1,nsample_a)
                 Rmat_a = Rmat[:,None].repeat(1,nsample_a,1,1)
                 Tmat_a = Tmat[:,None].repeat(1,nsample_a,1)
                 Kinv_a = Kinv[:,None].repeat(1,nsample_a,1,1)
@@ -567,9 +568,14 @@ class v2s_net(nn.Module):
                 frameid = frameid[:,None].repeat(1,nsample)
                 frameid_sub = frameid_sub[:,None].repeat(1,nsample)
                 dataid = dataid[:,None].repeat(1,nsample)
+                errid = errid[:,None].repeat(1,nsample)
                 Rmat = Rmat[:,None].repeat(1,nsample,1,1)
                 Tmat = Tmat[:,None].repeat(1,nsample,1)
                 Kinv = Kinv[:,None].repeat(1,nsample,1,1)
+
+                batch_map   = torch.Tensor(range(bs)).to(self.device)[:,None].long()
+                batch_map_a = batch_map.repeat(1,nsample_a)
+                batch_map   = batch_map.repeat(1,nsample)
 
         # importance sampling
         if self.training and opts.use_unc and \
@@ -605,6 +611,10 @@ class v2s_net(nn.Module):
                     frameid_sub_a = frameid_sub_a.view(2,-1)
                     dataid   = dataid.view(2,-1)
                     dataid_a = dataid_a.view(2,-1)
+                    errid   = errid.view(2,-1)
+                    errid_a   = errid_a.view(2,-1)
+                    batch_map   = batch_map.view(2,-1)
+                    batch_map_a = batch_map_a.view(2,-1)
                     Rmat   = Rmat.view(2,-1,3,3)
                     Rmat_a = Rmat_a.view(2,-1,3,3)
                     Tmat   = Tmat.view(2,-1,3)
@@ -623,6 +633,8 @@ class v2s_net(nn.Module):
                     frameid_a =   torch.stack(  [frameid_a[i][topk_samp[i]] for i in range(bs)],0)
                     frameid_sub_a =   torch.stack(  [frameid_sub_a[i][topk_samp[i]] for i in range(bs)],0)
                     dataid_a =   torch.stack(  [dataid_a[i][topk_samp[i]] for i in range(bs)],0)
+                    errid_a =   torch.stack(  [errid_a[i][topk_samp[i]] for i in range(bs)],0)
+                    batch_map_a =   torch.stack(  [batch_map_a[i][topk_samp[i]] for i in range(bs)],0)
                     Rmat_a =      torch.stack(  [Rmat_a[i][topk_samp[i]] for i in range(bs)],0)
                     Tmat_a =      torch.stack(  [Tmat_a[i][topk_samp[i]] for i in range(bs)],0)
                     Kinv_a =      torch.stack(  [Kinv_a[i][topk_samp[i]] for i in range(bs)],0)
@@ -631,6 +643,8 @@ class v2s_net(nn.Module):
                     frameid = torch.cat([frameid,frameid_a],1)
                     frameid_sub = torch.cat([frameid_sub,frameid_sub_a],1)
                     dataid = torch.cat([dataid,dataid_a],1)
+                    errid = torch.cat([errid,errid_a],1)
+                    batch_map = torch.cat([batch_map,batch_map_a],1)
                     Rmat = torch.cat([Rmat,Rmat_a],1)
                     Tmat = torch.cat([Tmat,Tmat_a],1)
                     Kinv = torch.cat([Kinv,Kinv_a],1)
@@ -641,6 +655,8 @@ class v2s_net(nn.Module):
             frameid = frameid.view(-1)
             frameid_sub = frameid_sub.view(-1)
             dataid = dataid.view(-1)
+            errid = errid.view(-1)
+            batch_map = batch_map.view(-1)
             xys = xys.view(-1,1,2)
             rand_inds = rand_inds.view(-1,1)
             Rmat = Rmat.view(-1,3,3)
@@ -655,7 +671,11 @@ class v2s_net(nn.Module):
         # for line: 2bs*nsamp,1
         # for batch:2bs,nsamp
         #TODO reshape imgs, masks, etc.
-        self.obs_to_rays(rays, rand_inds, imgs, masks, flow, occ, dp_feats)
+        if self.training and opts.lineload:
+            self.obs_to_rays_line(rays, rand_inds, imgs, masks, flow, occ, dp_feats, 
+                    batch_map)
+        else:
+            self.obs_to_rays(rays, rand_inds, imgs, masks, flow, occ, dp_feats)
 
         # TODO visualize samples
         #pdb.set_trace()
@@ -663,7 +683,29 @@ class v2s_net(nn.Module):
         #for i in range(bs):
         #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
         #self.imgs_samp = torch.stack(self.imgs_samp,0)
-        return rand_inds, rays
+        return rand_inds, rays, frameid, errid
+    
+    def obs_to_rays_line(self, rays, rand_inds, imgs, masks, flow, occ, dp_feats,
+            batch_map):
+        """
+        convert imgs, masks, flow, occ, dp_feats to rays
+        rand_map: map pixel index to original batch index
+        """
+        opts = self.opts
+        bs = rand_inds.shape[0]
+        rays['img_at_samp'] = torch.stack([imgs[batch_map[i]].view(3,-1).T[rand_inds[i]]\
+                                for i in range(bs)],0) # bs,ns,3
+        rays['sil_at_samp'] = torch.stack([masks[batch_map[i]].view(-1,1)[rand_inds[i]]\
+                                for i in range(bs)],0) # bs,ns,1
+        rays['flo_at_samp'] = torch.stack([flow[batch_map[i]].view(2,-1).T[rand_inds[i]]\
+                                for i in range(bs)],0) # bs,ns,2
+        rays['cfd_at_samp'] = torch.stack([occ[batch_map[i]].view(-1,1)[rand_inds[i]]\
+                                for i in range(bs)],0) # bs,ns,1
+        if opts.use_viser:
+            feats_at_samp = [dp_feats[batch_map[i]].view(16,-1).T\
+                             [rand_inds[i].long()] for i in range(bs)]
+            feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
+            rays['feats_at_samp'] = feats_at_samp
      
     def obs_to_rays(self, rays, rand_inds, imgs, masks, flow, occ, dp_feats):
         """
@@ -754,10 +796,13 @@ class v2s_net(nn.Module):
         
         # for batch:2bs,            nsample+x
         # for line: 2bs*(nsample+x),1
-        rand_inds, rays = self.sample_pxs(bs, nsample, Rmat, Tmat, Kinv,
-        self.dataid, self.frameid, self.frameid_sub, self.embedid,self.lineid,
+        rand_inds, rays, frameid, errid = self.sample_pxs(bs, nsample, Rmat, Tmat, Kinv,
+        self.dataid, self.frameid, self.frameid_sub, self.embedid,self.lineid,self.errid,
         self.imgs, self.masks, self.flow, self.occ, self.dp_feats)
-        
+        self.frameid = frameid
+        self.errid = errid
+
+
         if opts.debug:
             torch.cuda.synchronize()
             print('prepare rays time: %.2f'%(time.time()-start_time))
@@ -795,7 +840,7 @@ class v2s_net(nn.Module):
             else:
                 v = torch.cat(v, 0)
                 if self.training:
-                    v = v.view(bs,rays['nsample'],-1)
+                    v = v.view(rays['bs'],rays['nsample'],-1)
                 else:
                     v = v.view(bs,self.img_size, self.img_size, -1)
             results[k] = v

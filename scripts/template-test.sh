@@ -1,7 +1,7 @@
 gpus=$1
 seqname=nerfies_cat_807
 num_epochs=30
-addname=b128line-xyt
+addname=b128line-xyt-2
 addr=10004
 use_human=no
 
@@ -19,11 +19,11 @@ bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
   --lineload --batch_size 128 --nsample 8\
-  --warmup_init_steps 0 --warmup_steps 0 \
-  --fine_steps 0.0 --noanneal_freq --nouse_resize \
   --${use_human}use_human
   #--batch_size 16 --nsample 64 \
   #--flow_dp \
+  #--warmup_init_steps 0 --warmup_steps 0 \
+  #--fine_steps 0.0 --noanneal_freq --nouse_resize \
 
 #loadname=${model_prefix}-init
 #savename=${model_prefix}-ft1

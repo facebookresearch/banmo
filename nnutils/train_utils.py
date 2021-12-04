@@ -147,7 +147,13 @@ class v2s_trainer(Trainer):
     def init_training(self):
         opts = self.opts
         # set as module attributes since they do not change across gpus
-        self.model.module.final_steps = self.num_epochs * len(self.dataloader)
+        if opts.lineload:
+            self.model.module.final_steps = self.num_epochs * \
+                                                min(200,len(self.lineloader))
+        else:
+            self.model.module.final_steps = self.num_epochs * \
+                                                min(200,len(self.dataloader))
+        # ideally should be greater than 200 batches
 
         params_nerf_coarse=[]
         params_nerf_beta=[]
@@ -853,7 +859,10 @@ class v2s_trainer(Trainer):
         else:
             dataloader = self.dataloader
 
+        dataloader.sampler.set_epoch(epoch) # necessary for shuffling
         for i, batch in enumerate(dataloader):
+            if i==200:
+                break
             self.model.module.progress = float(self.model.total_steps) /\
                                                self.model.final_steps
             if not warmup:

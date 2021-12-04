@@ -1,7 +1,7 @@
 gpus=$1
 seqname=sfm-mcats10
 num_epochs=90
-addname=b16
+addname=b128line
 addr=10004
 use_human=no
 
@@ -17,9 +17,9 @@ savename=${model_prefix}-init
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
-  --batch_size 16 --nsample 64 \
+  --lineload --batch_size 128 --nsample 8 --nouse_resize \
   --${use_human}use_human
-  #--lineload --batch_size 128 --nsample 8 --nouse_resize \
+  #--batch_size 16 --nsample 64 \
   #--flow_dp \
 
 loadname=${model_prefix}-init
@@ -30,8 +30,8 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --model_path logdir/$loadname/params_$num_epochs.pth \
   --warmup_init_steps 0 --warmup_steps 0 --nf_reset 0.2 --bound_reset 0.2 \
   --dskin_steps 0.2 --fine_steps 0.2 --noanneal_freq --nouse_resize \
+  --lineload --batch_size 128 --nsample 8\
   --${use_human}use_human
-#  --lineload --batch_size 128 --nsample 8\
 #  --flow_dp \
 #  --dskin_steps 0.2 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
 

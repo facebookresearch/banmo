@@ -1,7 +1,7 @@
 gpus=$1
 seqname=nerfies_cat_807
 num_epochs=30
-addname=b128line
+addname=b128line-fast
 addr=10004
 use_human=no
 

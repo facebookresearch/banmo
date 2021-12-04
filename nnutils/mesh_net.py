@@ -241,11 +241,17 @@ class v2s_net(nn.Module):
         self.latest_vars['vis'] = np.zeros((self.data_offset[-1],
                                  self.img_size,self.img_size)).astype(bool)
         self.latest_vars['mesh_rest'] = trimesh.Trimesh()
-        self.latest_vars['fp_err'] = np.zeros((self.data_offset[-1],2)) # feat, proj
-        #TODO todo, this should be a list of 1,2,4,8,16,32
-        self.latest_vars['flo_err'] = np.zeros((self.data_offset[-1],6)) 
-        self.latest_vars['sil_err'] = np.zeros((self.data_offset[-1],)) 
-        self.latest_vars['flo_err_hist'] = np.zeros((self.data_offset[-1],6,10))
+        if opts.lineload:
+            #TODO todo, this should be idx512,-1
+            self.latest_vars['fp_err'] =       np.zeros((self.data_offset[-1]*opts.img_size,2)) # feat, proj
+            self.latest_vars['flo_err'] =      np.zeros((self.data_offset[-1]*opts.img_size,6)) 
+            self.latest_vars['sil_err'] =      np.zeros((self.data_offset[-1]*opts.img_size,)) 
+            self.latest_vars['flo_err_hist'] = np.zeros((self.data_offset[-1]*opts.img_size,6,10))
+        else:
+            self.latest_vars['fp_err'] =       np.zeros((self.data_offset[-1],2)) # feat, proj
+            self.latest_vars['flo_err'] =      np.zeros((self.data_offset[-1],6)) 
+            self.latest_vars['sil_err'] =      np.zeros((self.data_offset[-1],)) 
+            self.latest_vars['flo_err_hist'] = np.zeros((self.data_offset[-1],6,10))
 
         # get near-far plane
         if opts.unit_nf:
@@ -866,6 +872,7 @@ class v2s_net(nn.Module):
         self.frameid_sub = self.frameid.clone() # id within a video
         self.embedid = self.frameid + self.data_offset[self.dataid.long()]
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]
+        self.errid = self.frameid*opts.img_size + self.lineid.cpu() # for err filter
         self.rt_raw  = self.rtk.clone()[:,:3]
 
         # process silhouette
@@ -923,6 +930,7 @@ class v2s_net(nn.Module):
         self.frameid_sub = self.frameid.clone() # id within a video
         self.embedid = self.frameid + self.data_offset[self.dataid.long()]
         self.frameid = self.frameid + self.data_offset[self.dataid.long()]
+        self.errid = self.frameid # for err filter
         self.rt_raw  = self.rtk.clone()[:,:3]
 
         # process silhouette
@@ -1121,11 +1129,11 @@ class v2s_net(nn.Module):
         sil_at_samp = rendered['sil_at_samp']
         sil_at_samp_flo = rendered['sil_at_samp_flo']
 
+        sil_err, invalid_idx = loss_filter(self.latest_vars['sil_err'], 
+                                     rendered['sil_loss_samp']*opts.sil_wt,
+                                     sil_at_samp>-1)
+        self.latest_vars['sil_err'][self.errid.long()] = sil_err
         if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-            sil_err, invalid_idx = loss_filter(self.latest_vars['sil_err'], 
-                                         rendered['sil_loss_samp']*opts.sil_wt,
-                                         sil_at_samp>-1)
-            self.latest_vars['sil_err'][self.frameid.long()] = sil_err
             rendered['sil_loss_samp'][invalid_idx] *= 0.
         
         img_loss_samp = rendered['img_loss_samp']
@@ -1139,41 +1147,51 @@ class v2s_net(nn.Module):
             
         # flow loss
         if opts.use_corresp:
-            #TODO 
             # find flow window
             dframe = (self.frameid.view(2,-1).flip(0).reshape(-1) - \
                       self.frameid).abs()
             didxs = dframe.log2().long()
-            for idx,didx in enumerate(didxs):
-                frameid = self.frameid.long()[idx]
-                # update flow error 
-                flo_err, invalid_idx = loss_filter(
-                                        self.latest_vars['flo_err'][:,didx], 
-                                rendered['flo_loss_samp'][idx:idx+1],
-                                          sil_at_samp_flo[idx:idx+1])
-                self.latest_vars['flo_err'][frameid,didx] = flo_err[0]
-                    
-                # update history
-                queue = self.latest_vars['flo_err_hist'][frameid,didx]
-                queue = np.roll(queue,1)
-                queue[0] = flo_err[0]
-                self.latest_vars['flo_err_hist'][frameid,didx] = queue
-                
-                flo_err_ave = self.latest_vars['flo_err_hist'][:,didx].sum(1)/\
-                       (1e-9+(self.latest_vars['flo_err_hist'][:,didx]>0).sum(1))
-                flo_err_global = np.median(flo_err_ave[flo_err_ave>0])
-                invalid_idx_hist = flo_err_ave[frameid:frameid+1] > 10* flo_err_global
-
-                # zero out invalid loss
-                invalid_idx = np.logical_or(invalid_idx, invalid_idx_hist)
+            for didx in range(6):
+                subidx = didxs==didx
+                flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'][:,didx], 
+                                                rendered['flo_loss_samp'][subidx],
+                                                sil_at_samp_flo[subidx])
+                self.latest_vars['flo_err'][self.errid.long()[subidx],didx] = flo_err
                 if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-                    if invalid_idx_hist.sum()>0:
-                        print('remove from flow history:')
-                        print(frameid)
-                    if invalid_idx.sum()>0:
-                        rendered['flo_loss_samp'][idx] *= 0.
-                        print('removing invalid idx from flo')
-                        print(frameid)
+                    flo_loss_samp_sub = rendered['flo_loss_samp'][subidx]
+                    flo_loss_samp_sub[invalid_idx] *= 0.
+                    rendered['flo_loss_samp'][subidx] = flo_loss_samp_sub
+            ##TODO 
+            #for idx,didx in enumerate(didxs):
+            #    frameid = self.errid.long()[idx]
+            #    # update flow error 
+            #    flo_err, invalid_idx = loss_filter(
+            #                            self.latest_vars['flo_err'][:,didx], 
+            #                    rendered['flo_loss_samp'][idx:idx+1],
+            #                              sil_at_samp_flo[idx:idx+1])
+            #    self.latest_vars['flo_err'][frameid,didx] = flo_err[0]
+            #        
+            #    # update history
+            #    queue = self.latest_vars['flo_err_hist'][frameid,didx]
+            #    queue = np.roll(queue,1)
+            #    queue[0] = flo_err[0]
+            #    self.latest_vars['flo_err_hist'][frameid,didx] = queue
+            #    
+            #    flo_err_ave = self.latest_vars['flo_err_hist'][:,didx].sum(1)/\
+            #           (1e-9+(self.latest_vars['flo_err_hist'][:,didx]>0).sum(1))
+            #    flo_err_global = np.median(flo_err_ave[flo_err_ave>0])
+            #    invalid_idx_hist = flo_err_ave[frameid:frameid+1] > 10* flo_err_global
+
+            #    # zero out invalid loss
+            #    invalid_idx = np.logical_or(invalid_idx, invalid_idx_hist)
+            #    if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+            #        #if invalid_idx_hist.sum()>0:
+            #        #    print('remove from flow history:')
+            #        #    print(frameid)
+            #        if invalid_idx.sum()>0:
+            #            rendered['flo_loss_samp'][idx] *= 0.
+            #            #print('removing invalid idx from flo')
+            #            #print(frameid)
 
             flo_loss_samp = rendered['flo_loss_samp']
             # eval on valid pts
@@ -1221,16 +1239,12 @@ class v2s_net(nn.Module):
         
         # viser loss
         if opts.use_viser:
+            feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
+                                            rendered['feat_err']*0.2,
+                                            sil_at_samp>0)
+            self.latest_vars['fp_err'][self.errid.long(),0] = feat_err
             if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-                feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
-                                                rendered['feat_err']*0.2,
-                                                #rendered['feat_err']*0.1,
-                                                sil_at_samp>0)
-                self.latest_vars['fp_err'][self.frameid.long(),0] = feat_err
                 rendered['feat_err'][invalid_idx] *= 0.
-                if invalid_idx.sum()>0:
-                    print('removing invalid idx from feat')
-                    print(self.frameid[invalid_idx])
 
             feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
             feat_loss = feat_loss * opts.feat_wt
@@ -1240,11 +1254,11 @@ class v2s_net(nn.Module):
 
         
         if opts.use_proj:
+            proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
+                                            rendered['proj_err']*0.01,
+                                            sil_at_samp>0)
+            self.latest_vars['fp_err'][self.errid.long(),1] = proj_err
             if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-                proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
-                                                rendered['proj_err']*0.01,
-                                                sil_at_samp>0)
-                self.latest_vars['fp_err'][self.frameid.long(),1] = proj_err
                 rendered['proj_err'][invalid_idx] *= 0.
 
             proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01

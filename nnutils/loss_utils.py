@@ -371,17 +371,22 @@ def loss_filter(g_floerr, flo_loss_samp, sil_at_samp_flo, scale_factor=10):
     # find history meidan
     g_floerr = g_floerr[g_floerr>0]
 
-    # update history value
-    flo_err = []
-    for i in range(bs):
-        flo_err_sub =flo_loss_samp[i][sil_at_samp_flo[i]]
-        if len(flo_err_sub) >0:
-            flo_err_sub = flo_err_sub.median().detach().cpu().numpy()
-            #flo_err_sub = flo_err_sub.mean().detach().cpu().numpy()
-        else: 
-            flo_err_sub = 0
-        flo_err.append(flo_err_sub)
-    flo_err = np.stack(flo_err)
+    # tb updated as history value
+    #flo_err = []
+    #for i in range(bs):
+    #    flo_err_sub =flo_loss_samp[i][sil_at_samp_flo[i]]
+    #    if len(flo_err_sub) >0:
+    #        #flo_err_sub = flo_err_sub.median().detach().cpu().numpy()
+    #        flo_err_sub = flo_err_sub.mean().detach().cpu().numpy()
+    #    else: 
+    #        flo_err_sub = 0
+    #    flo_err.append(flo_err_sub)
+    #flo_err = np.stack(flo_err)
+    
+    # vectorized version but uses mean to update
+    flo_err = (flo_loss_samp * sil_at_samp_flo).sum(1) /\
+              (1e-9+sil_at_samp_flo.sum(1)) # bs, N, 1
+    flo_err = flo_err.detach().cpu().numpy()[...,0]
 
     # find invalid idx
     invalid_idx = flo_err > np.median(g_floerr)*scale_factor

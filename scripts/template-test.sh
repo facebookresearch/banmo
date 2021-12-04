@@ -1,7 +1,7 @@
 gpus=$1
 seqname=nerfies_cat_807
 num_epochs=30
-addname=b128line-fast
+addname=b128line-xyt
 addr=10004
 use_human=no
 
@@ -20,6 +20,8 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --pose_cnn_path $pose_cnn_path \
   --lineload --batch_size 128 --nsample 8\
   --${use_human}use_human
+  #--warmup_init_steps 0 --warmup_steps 0 \
+  #--fine_steps 0.0 --noanneal_freq --nouse_resize \
   #--batch_size 16 --nsample 64 \
   #--flow_dp \
 

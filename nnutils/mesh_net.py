@@ -131,7 +131,7 @@ flags.DEFINE_bool('flow_dp', False, 'replace flow with densepose flow')
 flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
 flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
-flags.DEFINE_bool('use_sim3', False, 'whether to use sim3 transformation')
+flags.DEFINE_bool('use_sim3', False, 'whether to use sim3 transformation (deprecated)')
 flags.DEFINE_float('rot_angle', 0.0, 'angle of initial rotation * pi')
 flags.DEFINE_integer('num_bones', 25, 'maximum number of bones')
 flags.DEFINE_float('warmup_init_steps', 0.2, 'steps before using sil loss')
@@ -528,17 +528,15 @@ class v2s_net(nn.Module):
         if opts.debug:
             torch.cuda.synchronize()
             start_time = time.time()
+
         Rmat = rtk[:,:3,:3]
         Tmat = rtk[:,:3,3]
         Kmat = K2mat(rtk[:,3,:])
         Kaug = K2inv(kaug) # p = Kaug Kmat P
         Kinv = Kmatinv(Kaug.matmul(Kmat))
+
         bs = Kinv.shape[0]
         embedid = embedid.long().to(self.device)[:,None]
-        if opts.use_sim3:
-            # don't update the canonical frame sim3
-            sim3_j2c = torch.cat([self.sim3_j2c[:1].detach(),  
-                                  self.sim3_j2c[1:]],0)
 
         # sample 1x points, sample 4x points for further selection
         nsample_a = 4*nsample
@@ -554,7 +552,7 @@ class v2s_net(nn.Module):
 
         # importance sampling
         if self.training and opts.use_unc and \
-                self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+                self.progress >= (opts.warmup_init_steps + opts.warmup_steps):
             with torch.no_grad():
                 # select .2x points
                 nsample_s = nsample//5
@@ -572,7 +570,20 @@ class v2s_net(nn.Module):
                 xyt_embedded = self.embedding_xyz(xyt)
                 xyt_code = torch.cat([xyt_embedded, vid_code],-1)
                 unc_pred = self.nerf_unc(xyt_code)[...,0]
-            
+        
+                ## preprocess to format 2,bs,w
+                #if opts.lineload:
+                #    unc_pred = unc_pred.view(2,-1)
+                #    xys = xys.view(2,-1,2)
+                #    xys_a = xys_a.view(2,-1,2)
+                #    rand_inds = rand_inds.view(2,-1)
+                #    rand_inds_a = rand_inds_a.view(2,-1)
+                #    nsample_s = nsample_s * bs
+                #    nsample = nsample * bs
+                #    bs=2
+                #    # 2*nsample
+                #    self.expand_frame_input()
+
                 # merge top nsamples
                 topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
                 xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
@@ -580,6 +591,7 @@ class v2s_net(nn.Module):
                 xys = torch.cat([xys,xys_a],1)
                 rand_inds = torch.cat([rand_inds,rand_inds_a],1)
                 nsample = nsample + nsample_s
+
 
             # TODO visualize samples
             #pdb.set_trace()
@@ -591,12 +603,19 @@ class v2s_net(nn.Module):
         if opts.debug:
             torch.cuda.synchronize()
             print('importance sampling time: %.2f'%(time.time()-start_time))
-        
+
+        # need to update to bs, (nsample), ... format for all
         near_far = self.near_far[self.frameid.long()]
         rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
        
         # update rays
         # rays: input to renderer
+        # 2,-1,bs,h
+        # 2,nsample
+        #if opts.lineload:
+        #    
+        #    rand_inds = rand_inds.view(2,-1) # TODO assuming converted 
+        #    xys = xys.view(2,-1,2)
         rays['img_at_samp'] = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]]\
                                 for i in range(bs)],0) # bs,ns,3
         rays['sil_at_samp'] = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]]\
@@ -615,6 +634,19 @@ class v2s_net(nn.Module):
                              [rand_inds[i].long()] for i in range(bs)]
             feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
             rays['feats_at_samp'] = feats_at_samp
+       
+        # for line inputs
+        # convert 2*bs,-1,h,1 to 2,-1,bs,h
+        # for all inputs, support
+        # further modify cameras: 2,bs,4,4
+        # further modify frameid: 2,bs,1
+        # xys in format 2*xyt-samples,1
+        # rand_inds not needed => set to all zeros
+        # use a 2*bs*nsample matrix for indexing
+        # rays should be in format 2*xyt-samples,1,-1
+        # todo so, rmat, tmat,kinv,near_far should be re-indexed 
+        # imgs,masks,... also needs to be reindexed
+        # 
 
         # update rays
         if bs>1:
@@ -883,6 +915,39 @@ class v2s_net(nn.Module):
         self.sils = (self.sils*self.vis2d)>0
         self.sils =  self.sils.float()
 
+
+    def reshape_line_input(self):
+        """
+        rand_inds: bs,ns
+        """
+        # 2bs,-1,h,1 => 2,-1,bs,h
+        bs = self.imgs.shape[0]//2
+        h  = self.imgs.shape[2]
+        self.imgs  =      self.imgs.view(2,bs,-1,h).permute(0,2,1,3)
+        self.masks =     self.masks.view(2,bs,-1,h).permute(0,2,1,3)
+        self.sils  =      self.sils.view(2,bs,-1,h).permute(0,2,1,3)
+        self.vis2d =     self.vis2d.view(2,bs,-1,h).permute(0,2,1,3)
+        self.flow  =      self.flow.view(2,bs,-1,h).permute(0,2,1,3)
+        self.occ   =       self.occ.view(2,bs,-1,h).permute(0,2,1,3)
+        self.dps   =       self.dps.view(2,bs,-1,h).permute(0,2,1,3)
+        self.dp_feats=self.dp_feats.view(2,bs,-1,h).permute(0,2,1,3)
+
+    def expand_frame_input(self):
+        """
+        """
+        # 2*bs,... => 2*bs*h,...
+        bs = self.dataid.shape[0]//2
+        h=self.opts.img_size
+        self.rtk             = self.rtk.view(2,bs,1,4,4) .repeat(1,1,h,1,1).reshape(-1,4,4)
+        self.rt_raw       = self.rt_raw.view(2,bs,1,3,4) .repeat(1,1,h,1,1).reshape(-1,3,4)
+        self.kaug           = self.kaug.view(2,bs,1,4)   .repeat(1,1,h,1).reshape(-1,4)
+        self.dataid            = self.dataid.view(2,bs,1).repeat(1,1,h).view(-1)
+        self.frameid_sub  = self.frameid_sub.view(2,bs,1).repeat(1,1,h).view(-1)
+        self.embedid          = self.embedid.view(2,bs,1).repeat(1,1,h).view(-1)
+        self.frameid          = self.frameid.view(2,bs,1).repeat(1,1,h).view(-1)
+        self.lineid          = self.lineid.view(2,bs,1).repeat(1,1,h).view(-1)
+        self.errid              = self.errid.view(2,bs,1).repeat(1,1,h).view(-1)
+
     def convert_batch_input(self, batch):
         device = self.device
         opts = self.opts
@@ -1077,6 +1142,8 @@ class v2s_net(nn.Module):
 
         if load_line:
             self.convert_line_input(batch)
+            #self.reshape_line_input()
+            #self.expand_frame_input()
         else:
             self.convert_batch_input(batch)
         bs = self.imgs.shape[0]

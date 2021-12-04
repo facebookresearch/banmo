@@ -535,20 +535,41 @@ class v2s_net(nn.Module):
         Kinv = Kmatinv(Kaug.matmul(Kmat))
         return Rmat, Tmat, Kinv
 
-    def sample_pxs(self, bs, nsample, Rmat, Tmat, Kinv):
+    def sample_pxs(self, bs, nsample, Rmat, Tmat, Kinv,
+                   dataid, frameid, frameid_sub, embedid, lineid,
+                   imgs, masks, flow, occ, dp_feats):
         """
         make sure self. is not modified
         xys:    bs, nsample, 2
         rand_inds: bs, nsample
         """
         opts = self.opts
+        Kinv_in=Kinv.clone()
+        dataid_in=dataid.clone()
+        frameid_sub_in = frameid_sub.clone()
         # sample 1x points, sample 4x points for further selection
         nsample_a = 4*nsample
         rand_inds, xys = sample_xy(self.img_size, bs, nsample+nsample_a, self.device,
-                               return_all= not(self.training), lineid=self.lineid)
+                               return_all= not(self.training), lineid=lineid)
         if self.training:
             rand_inds_a, xys_a = rand_inds[:,nsample:].clone(), xys[:,nsample:].clone()
             rand_inds, xys     = rand_inds[:,:nsample].clone(), xys[:,:nsample].clone()
+
+            if opts.lineload:
+                # expand frameid, Rmat,Tmat, Kinv
+                frameid_a=frameid[...,None].repeat(1,nsample_a)
+                frameid_sub_a=frameid_sub[...,None].repeat(1,nsample_a)
+                dataid_a=dataid[...,None].repeat(1,nsample_a)
+                Rmat_a = Rmat[:,None].repeat(1,nsample_a,1,1)
+                Tmat_a = Tmat[:,None].repeat(1,nsample_a,1)
+                Kinv_a = Kinv[:,None].repeat(1,nsample_a,1,1)
+                # expand         
+                frameid = frameid[:,None].repeat(1,nsample)
+                frameid_sub = frameid_sub[:,None].repeat(1,nsample)
+                dataid = dataid[:,None].repeat(1,nsample)
+                Rmat = Rmat[:,None].repeat(1,nsample,1,1)
+                Tmat = Tmat[:,None].repeat(1,nsample,1)
+                Kinv = Kinv[:,None].repeat(1,nsample,1,1)
 
         # importance sampling
         if self.training and opts.use_unc and \
@@ -557,75 +578,109 @@ class v2s_net(nn.Module):
                 # select .2x points
                 nsample_s = nsample//5
                 # run uncertainty estimation
-                ts = self.frameid_sub.to(self.device) / self.max_ts * 2 -1
+                ts = frameid_sub_in.to(self.device) / self.max_ts * 2 -1
                 ts = ts[:,None,None].repeat(1,nsample_a,1)
-                dataid = self.dataid.long().to(self.device)
-                vid_code = self.vid_code(dataid)[:,None].repeat(1,nsample_a,1)
+                dataid_in = dataid_in.long().to(self.device)
+                vid_code = self.vid_code(dataid_in)[:,None].repeat(1,nsample_a,1)
 
                 # convert to normalized coords
                 xysn = torch.cat([xys_a, torch.ones_like(xys_a[...,:1])],2)
-                xysn = xysn.matmul(Kinv.permute(0,2,1))[...,:2]
+                xysn = xysn.matmul(Kinv_in.permute(0,2,1))[...,:2]
 
                 xyt = torch.cat([xysn, ts],-1)
                 xyt_embedded = self.embedding_xyz(xyt)
                 xyt_code = torch.cat([xyt_embedded, vid_code],-1)
                 unc_pred = self.nerf_unc(xyt_code)[...,0]
 
-                ## preprocess to format 2,bs,w
-                #if opts.lineload:
-                #    unc_pred = unc_pred.view(2,-1)
-                #    xys = xys.view(2,-1,2)
-                #    xys_a = xys_a.view(2,-1,2)
-                #    rand_inds = rand_inds.view(2,-1)
-                #    rand_inds_a = rand_inds_a.view(2,-1)
-                #    nsample_s = nsample_s * bs
-                #    nsample = nsample * bs
-                #    bs=2
-                #    # 2*nsample
-                #    self.expand_frame_input()
+                # preprocess to format 2,bs,w
+                if opts.lineload:
+                    unc_pred = unc_pred.view(2,-1)
+                    xys = xys.view(2,-1,2)
+                    xys_a = xys_a.view(2,-1,2)
+                    rand_inds = rand_inds.view(2,-1)
+                    rand_inds_a = rand_inds_a.view(2,-1)
+                    frameid   = frameid.view(2,-1)
+                    frameid_a = frameid_a.view(2,-1)
+                    frameid_sub   = frameid_sub.view(2,-1)
+                    frameid_sub_a = frameid_sub_a.view(2,-1)
+                    dataid   = dataid.view(2,-1)
+                    dataid_a = dataid_a.view(2,-1)
+                    Rmat   = Rmat.view(2,-1,3,3)
+                    Rmat_a = Rmat_a.view(2,-1,3,3)
+                    Tmat   = Tmat.view(2,-1,3)
+                    Tmat_a = Tmat_a.view(2,-1,3)
+                    Kinv   = Kinv.view(2,-1,3,3)
+                    Kinv_a = Kinv_a.view(2,-1,3,3)
+
+                    nsample_s = nsample_s * bs
+                    bs=2
 
                 # merge top nsamples
                 topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
                 xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
                 rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
-                xys = torch.cat([xys,xys_a],1)
-                rand_inds = torch.cat([rand_inds,rand_inds_a],1)
-                nsample = nsample + nsample_s
+                if opts.lineload:
+                    frameid_a =   torch.stack(  [frameid_a[i][topk_samp[i]] for i in range(bs)],0)
+                    frameid_sub_a =   torch.stack(  [frameid_sub_a[i][topk_samp[i]] for i in range(bs)],0)
+                    dataid_a =   torch.stack(  [dataid_a[i][topk_samp[i]] for i in range(bs)],0)
+                    Rmat_a =      torch.stack(  [Rmat_a[i][topk_samp[i]] for i in range(bs)],0)
+                    Tmat_a =      torch.stack(  [Tmat_a[i][topk_samp[i]] for i in range(bs)],0)
+                    Kinv_a =      torch.stack(  [Kinv_a[i][topk_samp[i]] for i in range(bs)],0)
+                    xys = torch.cat([xys,xys_a],1)
+                    rand_inds = torch.cat([rand_inds,rand_inds_a],1)
+                    frameid = torch.cat([frameid,frameid_a],1)
+                    frameid_sub = torch.cat([frameid_sub,frameid_sub_a],1)
+                    dataid = torch.cat([dataid,dataid_a],1)
+                    Rmat = torch.cat([Rmat,Rmat_a],1)
+                    Tmat = torch.cat([Tmat,Tmat_a],1)
+                    Kinv = torch.cat([Kinv,Kinv_a],1)
+        
 
-            # TODO visualize samples
-            #pdb.set_trace()
-            #self.imgs_samp = []
-            #for i in range(bs):
-            #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
-            #self.imgs_samp = torch.stack(self.imgs_samp,0)
-        near_far = self.near_far[self.frameid.long()]
+        # for line: reshape to 2*bs, 1,...
+        if self.training and opts.lineload:
+            frameid = frameid.view(-1)
+            frameid_sub = frameid_sub.view(-1)
+            dataid = dataid.view(-1)
+            xys = xys.view(-1,1,2)
+            rand_inds = rand_inds.view(-1,1)
+            Rmat = Rmat.view(-1,3,3)
+            Tmat = Tmat.view(-1,3)
+            Kinv = Kinv.view(-1,3,3)
+        near_far = self.near_far[frameid.long()]
         rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
-        return rand_inds, xys, rays
+       
+        # need to reshape dataid, frameid_sub, embedid #TODO embedid equiv to frameid
+        self.update_rays(rays, bs>1, dataid, frameid_sub, frameid, xys, Kinv)
+        
+        # for line: 2bs*nsamp,1
+        # for batch:2bs,nsamp
+        #TODO reshape imgs, masks, etc.
+        self.obs_to_rays(rays, rand_inds, imgs, masks, flow, occ, dp_feats)
+
+        # TODO visualize samples
+        #pdb.set_trace()
+        #self.imgs_samp = []
+        #for i in range(bs):
+        #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
+        #self.imgs_samp = torch.stack(self.imgs_samp,0)
+        return rand_inds, rays
      
-    def obs_to_rays(self, rays, rand_inds):
+    def obs_to_rays(self, rays, rand_inds, imgs, masks, flow, occ, dp_feats):
         """
         convert imgs, masks, flow, occ, dp_feats to rays
         """
         opts = self.opts
-        bs = self.imgs.shape[0]
-        # update rays
-        # rays: input to renderer
-        # 2,-1,bs,h
-        # 2,nsample
-        #if opts.lineload:
-        #    
-        #    rand_inds = rand_inds.view(2,-1) # TODO assuming converted 
-        #    xys = xys.view(2,-1,2)
-        rays['img_at_samp'] = torch.stack([self.imgs[i].view(3,-1).T[rand_inds[i]]\
+        bs = imgs.shape[0]
+        rays['img_at_samp'] = torch.stack([imgs[i].view(3,-1).T[rand_inds[i]]\
                                 for i in range(bs)],0) # bs,ns,3
-        rays['sil_at_samp'] = torch.stack([self.masks[i].view(-1,1)[rand_inds[i]]\
+        rays['sil_at_samp'] = torch.stack([masks[i].view(-1,1)[rand_inds[i]]\
                                 for i in range(bs)],0) # bs,ns,1
-        rays['flo_at_samp'] = torch.stack([self.flow[i].view(2,-1).T[rand_inds[i]]\
+        rays['flo_at_samp'] = torch.stack([flow[i].view(2,-1).T[rand_inds[i]]\
                                 for i in range(bs)],0) # bs,ns,2
-        rays['cfd_at_samp'] = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]]\
+        rays['cfd_at_samp'] = torch.stack([occ[i].view(-1,1)[rand_inds[i]]\
                                 for i in range(bs)],0) # bs,ns,1
         if opts.use_viser:
-            feats_at_samp = [self.dp_feats[i].view(self.num_feat,-1).T\
+            feats_at_samp = [dp_feats[i].view(16,-1).T\
                              [rand_inds[i].long()] for i in range(bs)]
             feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
             rays['feats_at_samp'] = feats_at_samp
@@ -699,15 +754,9 @@ class v2s_net(nn.Module):
         
         # for batch:2bs,            nsample+x
         # for line: 2bs*(nsample+x),1
-        rand_inds, xys, rays = self.sample_pxs(bs, nsample, Rmat, Tmat, Kinv)
-        
-        # need to reshape dataid, frameid_sub, embedid
-        self.update_rays(rays, bs>1, self.dataid, self.frameid_sub, embedid, 
-                xys, Kinv)
-        
-        # need to reshape obs and rays
-        # 2,-1,bs,w
-        self.obs_to_rays(rays, rand_inds)
+        rand_inds, rays = self.sample_pxs(bs, nsample, Rmat, Tmat, Kinv,
+        self.dataid, self.frameid, self.frameid_sub, self.embedid,self.lineid,
+        self.imgs, self.masks, self.flow, self.occ, self.dp_feats)
         
         if opts.debug:
             torch.cuda.synchronize()

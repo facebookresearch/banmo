@@ -459,6 +459,7 @@ def array2tensor(adict, device='cpu'):
 
 def raycast(xys, Rmat, Tmat, Kinv, near_far):
     """
+    assuming xys and Rmat have same num of bs
     xys: bs, N, 3
     Rmat:bs, ...,3,3 
     Tmat:bs, ...,3, camera to root coord transform 

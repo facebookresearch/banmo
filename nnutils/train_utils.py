@@ -528,7 +528,6 @@ class v2s_trainer(Trainer):
                 rendered_seq['occ'] += [self.model.occ[...,None]      [:hbs]]
                 rendered_seq['feat']+= [self.model.dp_feats.std(1)[...,None][:hbs]]
                 rendered_seq['flo_coarse'][-1]       *= sil_rszd 
-                rendered_seq['joint_render_vis'][-1] *= sil_rszd 
                 if opts.use_viser:
                     rendered_seq['pts_pred'][-1] *= sil_rszd 
                     rendered_seq['pts_exp'] [-1] *= rendered_seq['sil_coarse'][-1]

@@ -535,7 +535,7 @@ class v2s_net(nn.Module):
         Kinv = Kmatinv(Kaug.matmul(Kmat))
         return Rmat, Tmat, Kinv
 
-    def sample_pxs(self, bs, nsample, Kinv):
+    def sample_pxs(self, bs, nsample, Rmat, Tmat, Kinv):
         """
         make sure self. is not modified
         xys:    bs, nsample, 2
@@ -598,9 +598,14 @@ class v2s_net(nn.Module):
             #for i in range(bs):
             #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
             #self.imgs_samp = torch.stack(self.imgs_samp,0)
-        return rand_inds, xys
+        near_far = self.near_far[self.frameid.long()]
+        rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
+        return rand_inds, xys, rays
      
-    def obs_to_rays(self, rays, kaug, rand_inds):
+    def obs_to_rays(self, rays, rand_inds):
+        """
+        convert imgs, masks, flow, occ, dp_feats to rays
+        """
         opts = self.opts
         bs = self.imgs.shape[0]
         # update rays
@@ -620,21 +625,18 @@ class v2s_net(nn.Module):
         rays['cfd_at_samp'] = torch.stack([self.occ[i].view(-1,1)[rand_inds[i]]\
                                 for i in range(bs)],0) # bs,ns,1
         if opts.use_viser:
-            if opts.lineload and self.training:
-                dp_feats_rsmp = self.dp_feats
-            else:
-                dp_feats_rsmp = resample_dp(self.dp_feats, 
-                        self.dp_bbox, kaug, self.img_size)
-            feats_at_samp = [dp_feats_rsmp[i].view(self.num_feat,-1).T\
+            feats_at_samp = [self.dp_feats[i].view(self.num_feat,-1).T\
                              [rand_inds[i].long()] for i in range(bs)]
             feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
             rays['feats_at_samp'] = feats_at_samp
 
-    def update_rays(self, rays, bs, embedid, xys, Kinv):
+    def update_rays(self, rays, is_pair, dataid, frameid_sub, embedid, xys, Kinv):
+        """
+        """
         opts = self.opts
-        # update rays
+        # append target frame rtk
         embedid = embedid.long().to(self.device)[:,None]
-        if bs>1:
+        if is_pair:
             rtk_vec = rays['rtk_vec'] # bs, N, 21
             rtk_vec_target = rtk_vec.view(2,-1).flip(0)
             rays['rtk_vec_target'] = rtk_vec_target.reshape(rays['rtk_vec'].shape)
@@ -667,21 +669,16 @@ class v2s_net(nn.Module):
             bone_rts = self.nerf_bone_rts(embedid)
             rays['bone_rts'] = bone_rts.repeat(1,rays['nsample'],1)
 
-        if opts.use_sim3:
-            # pass the canonical to joint space transforms
-            rays['sim3_j2c'] = sim3_j2c[self.dataid.long()]
-            rays['sim3_j2c'] = rays['sim3_j2c'][:,None].repeat(1,rays['nsample'],1)
-
         if opts.env_code:
-            rays['env_code'] = self.env_code(self.dataid.long().to(self.device))
+            rays['env_code'] = self.env_code(dataid.long().to(self.device))
             rays['env_code'] = rays['env_code'][:,None].repeat(1,rays['nsample'],1)
 
         if opts.use_unc:
-            ts = self.frameid_sub.to(self.device) / self.max_ts * 2 -1
+            ts = frameid_sub.to(self.device) / self.max_ts * 2 -1
             ts = ts[:,None,None].repeat(1,rays['nsample'],1)
             rays['ts'] = ts
         
-            dataid = self.dataid.long().to(self.device)
+            dataid = dataid.long().to(self.device)
             vid_code = self.vid_code(dataid)[:,None].repeat(1,rays['nsample'],1)
             rays['vid_code'] = vid_code
             
@@ -696,20 +693,21 @@ class v2s_net(nn.Module):
             torch.cuda.synchronize()
             start_time = time.time()
 
+        # 2bs,...
         Rmat, Tmat, Kinv = self.prepare_ray_cams(rtk, kaug)
         bs = Kinv.shape[0]
-
-        rand_inds, xys = self.sample_pxs(bs, nsample, Kinv)
         
-        if opts.debug:
-            torch.cuda.synchronize()
-            print('importance sampling time: %.2f'%(time.time()-start_time))
-
-        # need to update to bs, (nsample), ... format for all
-        near_far = self.near_far[self.frameid.long()]
-        rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
-        self.obs_to_rays(rays, kaug, rand_inds)
-        self.update_rays(rays, bs, embedid, xys, Kinv)
+        # for batch:2bs,            nsample+x
+        # for line: 2bs*(nsample+x),1
+        rand_inds, xys, rays = self.sample_pxs(bs, nsample, Rmat, Tmat, Kinv)
+        
+        # need to reshape dataid, frameid_sub, embedid
+        self.update_rays(rays, bs>1, self.dataid, self.frameid_sub, embedid, 
+                xys, Kinv)
+        
+        # need to reshape obs and rays
+        # 2,-1,bs,w
+        self.obs_to_rays(rays, rand_inds)
         
         if opts.debug:
             torch.cuda.synchronize()
@@ -1143,6 +1141,12 @@ class v2s_net(nn.Module):
         self.convert_root_pose()
       
         self.save_latest_vars()
+        
+        if opts.lineload and self.training:
+            self.dp_feats = self.dp_feats
+        else:
+            self.dp_feats = resample_dp(self.dp_feats, 
+                    self.dp_bbox, self.kaug, self.img_size)
         
         if self.training and self.opts.anneal_freq:
             alpha = self.num_freqs * \

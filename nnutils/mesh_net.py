@@ -557,18 +557,18 @@ class v2s_net(nn.Module):
 
             if opts.lineload:
                 # expand frameid, Rmat,Tmat, Kinv
-                frameid_a=frameid[...,None].repeat(1,nsample_a)
-                frameid_sub_a=frameid_sub[...,None].repeat(1,nsample_a)
-                dataid_a=dataid[...,None].repeat(1,nsample_a)
-                errid_a=errid[...,None].repeat(1,nsample_a)
+                frameid_a=        frameid[:,None].repeat(1,nsample_a)
+                frameid_sub_a=frameid_sub[:,None].repeat(1,nsample_a)
+                dataid_a=          dataid[:,None].repeat(1,nsample_a)
+                errid_a=            errid[:,None].repeat(1,nsample_a)
                 Rmat_a = Rmat[:,None].repeat(1,nsample_a,1,1)
                 Tmat_a = Tmat[:,None].repeat(1,nsample_a,1)
                 Kinv_a = Kinv[:,None].repeat(1,nsample_a,1,1)
                 # expand         
-                frameid = frameid[:,None].repeat(1,nsample)
+                frameid =         frameid[:,None].repeat(1,nsample)
                 frameid_sub = frameid_sub[:,None].repeat(1,nsample)
-                dataid = dataid[:,None].repeat(1,nsample)
-                errid = errid[:,None].repeat(1,nsample)
+                dataid =           dataid[:,None].repeat(1,nsample)
+                errid =             errid[:,None].repeat(1,nsample)
                 Rmat = Rmat[:,None].repeat(1,nsample,1,1)
                 Tmat = Tmat[:,None].repeat(1,nsample,1)
                 Kinv = Kinv[:,None].repeat(1,nsample,1,1)
@@ -601,25 +601,25 @@ class v2s_net(nn.Module):
                 # preprocess to format 2,bs,w
                 if opts.lineload:
                     unc_pred = unc_pred.view(2,-1)
-                    xys = xys.view(2,-1,2)
+                    xys =     xys.view(2,-1,2)
                     xys_a = xys_a.view(2,-1,2)
-                    rand_inds = rand_inds.view(2,-1)
+                    rand_inds =     rand_inds.view(2,-1)
                     rand_inds_a = rand_inds_a.view(2,-1)
-                    frameid   = frameid.view(2,-1)
+                    frameid   =   frameid.view(2,-1)
                     frameid_a = frameid_a.view(2,-1)
-                    frameid_sub   = frameid_sub.view(2,-1)
+                    frameid_sub   =   frameid_sub.view(2,-1)
                     frameid_sub_a = frameid_sub_a.view(2,-1)
-                    dataid   = dataid.view(2,-1)
+                    dataid   =   dataid.view(2,-1)
                     dataid_a = dataid_a.view(2,-1)
-                    errid   = errid.view(2,-1)
+                    errid   =     errid.view(2,-1)
                     errid_a   = errid_a.view(2,-1)
-                    batch_map   = batch_map.view(2,-1)
+                    batch_map   =   batch_map.view(2,-1)
                     batch_map_a = batch_map_a.view(2,-1)
-                    Rmat   = Rmat.view(2,-1,3,3)
+                    Rmat   =   Rmat.view(2,-1,3,3)
                     Rmat_a = Rmat_a.view(2,-1,3,3)
-                    Tmat   = Tmat.view(2,-1,3)
+                    Tmat   =   Tmat.view(2,-1,3)
                     Tmat_a = Tmat_a.view(2,-1,3)
-                    Kinv   = Kinv.view(2,-1,3,3)
+                    Kinv   =   Kinv.view(2,-1,3,3)
                     Kinv_a = Kinv_a.view(2,-1,3,3)
 
                     nsample_s = nsample_s * bs
@@ -630,38 +630,40 @@ class v2s_net(nn.Module):
                 xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
                 rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
                 if opts.lineload:
-                    frameid_a =   torch.stack(  [frameid_a[i][topk_samp[i]] for i in range(bs)],0)
-                    frameid_sub_a =   torch.stack(  [frameid_sub_a[i][topk_samp[i]] for i in range(bs)],0)
-                    dataid_a =   torch.stack(  [dataid_a[i][topk_samp[i]] for i in range(bs)],0)
-                    errid_a =   torch.stack(  [errid_a[i][topk_samp[i]] for i in range(bs)],0)
+                    frameid_a =       torch.stack(  [frameid_a[i][topk_samp[i]] for i in range(bs)],0)
+                    frameid_sub_a=torch.stack(  [frameid_sub_a[i][topk_samp[i]] for i in range(bs)],0)
+                    dataid_a =         torch.stack(  [dataid_a[i][topk_samp[i]] for i in range(bs)],0)
+                    errid_a =           torch.stack(  [errid_a[i][topk_samp[i]] for i in range(bs)],0)
                     batch_map_a =   torch.stack(  [batch_map_a[i][topk_samp[i]] for i in range(bs)],0)
-                    Rmat_a =      torch.stack(  [Rmat_a[i][topk_samp[i]] for i in range(bs)],0)
-                    Tmat_a =      torch.stack(  [Tmat_a[i][topk_samp[i]] for i in range(bs)],0)
-                    Kinv_a =      torch.stack(  [Kinv_a[i][topk_samp[i]] for i in range(bs)],0)
-                    xys = torch.cat([xys,xys_a],1)
+                    Rmat_a =             torch.stack(  [Rmat_a[i][topk_samp[i]] for i in range(bs)],0)
+                    Tmat_a =             torch.stack(  [Tmat_a[i][topk_samp[i]] for i in range(bs)],0)
+                    Kinv_a =             torch.stack(  [Kinv_a[i][topk_samp[i]] for i in range(bs)],0)
+
+                    xys =       torch.cat([xys,xys_a],1)
                     rand_inds = torch.cat([rand_inds,rand_inds_a],1)
-                    frameid = torch.cat([frameid,frameid_a],1)
-                    frameid_sub = torch.cat([frameid_sub,frameid_sub_a],1)
-                    dataid = torch.cat([dataid,dataid_a],1)
-                    errid = torch.cat([errid,errid_a],1)
+                    frameid =   torch.cat([frameid,frameid_a],1)
+                    frameid_sub=torch.cat([frameid_sub,frameid_sub_a],1)
+                    dataid =    torch.cat([dataid,dataid_a],1)
+                    errid =     torch.cat([errid,errid_a],1)
                     batch_map = torch.cat([batch_map,batch_map_a],1)
-                    Rmat = torch.cat([Rmat,Rmat_a],1)
-                    Tmat = torch.cat([Tmat,Tmat_a],1)
-                    Kinv = torch.cat([Kinv,Kinv_a],1)
+                    Rmat =      torch.cat([Rmat,Rmat_a],1)
+                    Tmat =      torch.cat([Tmat,Tmat_a],1)
+                    Kinv =      torch.cat([Kinv,Kinv_a],1)
         
 
         # for line: reshape to 2*bs, 1,...
         if self.training and opts.lineload:
-            frameid = frameid.view(-1)
+            frameid =         frameid.view(-1)
             frameid_sub = frameid_sub.view(-1)
-            dataid = dataid.view(-1)
-            errid = errid.view(-1)
-            batch_map = batch_map.view(-1)
-            xys = xys.view(-1,1,2)
+            dataid =           dataid.view(-1)
+            errid =             errid.view(-1)
+            batch_map =     batch_map.view(-1)
+            xys =           xys.view(-1,1,2)
             rand_inds = rand_inds.view(-1,1)
             Rmat = Rmat.view(-1,3,3)
             Tmat = Tmat.view(-1,3)
             Kinv = Kinv.view(-1,3,3)
+
         near_far = self.near_far[frameid.long()]
         rays = raycast(xys, Rmat, Tmat, Kinv, near_far)
        
@@ -683,6 +685,14 @@ class v2s_net(nn.Module):
         #for i in range(bs):
         #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
         #self.imgs_samp = torch.stack(self.imgs_samp,0)
+
+        ## TODO change back to original format
+        #if self.training and opts.lineload:
+        #    rays['nsample'] = 8
+        #    rays['bs'] = 256
+        #    rand_inds = rand_inds.view(256,8)
+        #    frameid = frameid.view(256,8)[:,0]
+        #    errid = errid.view(256,8)[:,0]
         return rand_inds, rays, frameid, errid
     
     def obs_to_rays_line(self, rays, rand_inds, imgs, masks, flow, occ, dp_feats,
@@ -690,22 +700,20 @@ class v2s_net(nn.Module):
         """
         convert imgs, masks, flow, occ, dp_feats to rays
         rand_map: map pixel index to original batch index
+        rand_inds: bs, 
         """
         opts = self.opts
-        bs = rand_inds.shape[0]
-        rays['img_at_samp'] = torch.stack([imgs[batch_map[i]].view(3,-1).T[rand_inds[i]]\
-                                for i in range(bs)],0) # bs,ns,3
-        rays['sil_at_samp'] = torch.stack([masks[batch_map[i]].view(-1,1)[rand_inds[i]]\
-                                for i in range(bs)],0) # bs,ns,1
-        rays['flo_at_samp'] = torch.stack([flow[batch_map[i]].view(2,-1).T[rand_inds[i]]\
-                                for i in range(bs)],0) # bs,ns,2
-        rays['cfd_at_samp'] = torch.stack([occ[batch_map[i]].view(-1,1)[rand_inds[i]]\
-                                for i in range(bs)],0) # bs,ns,1
+        rays['img_at_samp']=torch.gather(imgs[batch_map][...,0], 2, 
+                rand_inds[:,None].repeat(1,3,1))[:,None][...,0]
+        rays['sil_at_samp']=torch.gather(masks[batch_map][...,0], 2, 
+                rand_inds[:,None].repeat(1,1,1))[:,None][...,0]
+        rays['flo_at_samp']=torch.gather(flow[batch_map][...,0], 2, 
+                rand_inds[:,None].repeat(1,2,1))[:,None][...,0]
+        rays['cfd_at_samp']=torch.gather(occ[batch_map][...,0], 2, 
+                rand_inds[:,None].repeat(1,1,1))[:,None][...,0]
         if opts.use_viser:
-            feats_at_samp = [dp_feats[batch_map[i]].view(16,-1).T\
-                             [rand_inds[i].long()] for i in range(bs)]
-            feats_at_samp = torch.stack(feats_at_samp,0) # bs,ns,num_feat
-            rays['feats_at_samp'] = feats_at_samp
+            rays['feats_at_samp']=torch.gather(dp_feats[batch_map][...,0], 2, 
+                rand_inds[:,None].repeat(1,16,1))[:,None][...,0]
      
     def obs_to_rays(self, rays, rand_inds, imgs, masks, flow, occ, dp_feats):
         """
@@ -994,39 +1002,6 @@ class v2s_net(nn.Module):
         self.masks = self.masks.float()
         self.sils = (self.sils*self.vis2d)>0
         self.sils =  self.sils.float()
-
-
-    def reshape_line_input(self):
-        """
-        rand_inds: bs,ns
-        """
-        # 2bs,-1,h,1 => 2,-1,bs,h
-        bs = self.imgs.shape[0]//2
-        h  = self.imgs.shape[2]
-        self.imgs  =      self.imgs.view(2,bs,-1,h).permute(0,2,1,3)
-        self.masks =     self.masks.view(2,bs,-1,h).permute(0,2,1,3)
-        self.sils  =      self.sils.view(2,bs,-1,h).permute(0,2,1,3)
-        self.vis2d =     self.vis2d.view(2,bs,-1,h).permute(0,2,1,3)
-        self.flow  =      self.flow.view(2,bs,-1,h).permute(0,2,1,3)
-        self.occ   =       self.occ.view(2,bs,-1,h).permute(0,2,1,3)
-        self.dps   =       self.dps.view(2,bs,-1,h).permute(0,2,1,3)
-        self.dp_feats=self.dp_feats.view(2,bs,-1,h).permute(0,2,1,3)
-
-    def expand_frame_input(self):
-        """
-        """
-        # 2*bs,... => 2*bs*h,...
-        bs = self.dataid.shape[0]//2
-        h=self.opts.img_size
-        self.rtk             = self.rtk.view(2,bs,1,4,4) .repeat(1,1,h,1,1).reshape(-1,4,4)
-        self.rt_raw       = self.rt_raw.view(2,bs,1,3,4) .repeat(1,1,h,1,1).reshape(-1,3,4)
-        self.kaug           = self.kaug.view(2,bs,1,4)   .repeat(1,1,h,1).reshape(-1,4)
-        self.dataid            = self.dataid.view(2,bs,1).repeat(1,1,h).view(-1)
-        self.frameid_sub  = self.frameid_sub.view(2,bs,1).repeat(1,1,h).view(-1)
-        self.embedid          = self.embedid.view(2,bs,1).repeat(1,1,h).view(-1)
-        self.frameid          = self.frameid.view(2,bs,1).repeat(1,1,h).view(-1)
-        self.lineid          = self.lineid.view(2,bs,1).repeat(1,1,h).view(-1)
-        self.errid              = self.errid.view(2,bs,1).repeat(1,1,h).view(-1)
 
     def convert_batch_input(self, batch):
         device = self.device

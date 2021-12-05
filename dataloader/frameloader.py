@@ -30,8 +30,8 @@ from utils.io import config_to_dataloader
 opts = flags.FLAGS
     
 def _init_fn(worker_id):
-    np.random.seed()
-    random.seed()
+    np.random.seed(0)
+    random.seed(0)
 
 #----------- Data Loader ----------#
 #----------------------------------#

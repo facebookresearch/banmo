@@ -1,7 +1,7 @@
 gpus=$1
 seqname=sfm-mcats10
 num_epochs=90
-addname=b128line
+addname=b128line-xyt
 addr=10004
 use_human=no
 

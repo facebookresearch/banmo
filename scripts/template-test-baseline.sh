@@ -21,6 +21,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --batch_size 16 --nsample 64 \
   --nouse_resize \
   --${use_human}use_human
+  #--debug \
   #--lineload --batch_size 256 --nsample 4\
   #--flow_dp \
 

@@ -1,8 +1,8 @@
 gpus=$1
 seqname=nerfies_cat_807
 num_epochs=30
-addname=nolossfilt
-addr=10004
+addname=b128-xyt-3
+addr=10006
 use_human=no
 
 model_prefix=$seqname-lbs-rkopt-$num_epochs-$addname
@@ -19,13 +19,14 @@ bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
   --lineload --batch_size 128 --nsample 8\
-  --nouse_unc \
+  --nouse_resize \
   --${use_human}use_human
+  #--warmup_init_steps 0 --warmup_steps 0 \
+  #--fine_steps 0.0 --noanneal_freq --nouse_resize \
+  #--nouse_unc \
   #--debug \
   #--batch_size 16 --nsample 64 \
   #--flow_dp \
-  #--warmup_init_steps 0 --warmup_steps 0 \
-  #--fine_steps 0.0 --noanneal_freq --nouse_resize \
 
 #loadname=${model_prefix}-init
 #savename=${model_prefix}-ft1

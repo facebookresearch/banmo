@@ -626,18 +626,20 @@ class v2s_net(nn.Module):
                     bs=2
 
                 # merge top nsamples
-                topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
-                xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
-                rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
                 if opts.lineload:
-                    frameid_a =       torch.stack(  [frameid_a[i][topk_samp[i]] for i in range(bs)],0)
-                    frameid_sub_a=torch.stack(  [frameid_sub_a[i][topk_samp[i]] for i in range(bs)],0)
-                    dataid_a =         torch.stack(  [dataid_a[i][topk_samp[i]] for i in range(bs)],0)
-                    errid_a =           torch.stack(  [errid_a[i][topk_samp[i]] for i in range(bs)],0)
-                    batch_map_a =   torch.stack(  [batch_map_a[i][topk_samp[i]] for i in range(bs)],0)
-                    Rmat_a =             torch.stack(  [Rmat_a[i][topk_samp[i]] for i in range(bs)],0)
-                    Tmat_a =             torch.stack(  [Tmat_a[i][topk_samp[i]] for i in range(bs)],0)
-                    Kinv_a =             torch.stack(  [Kinv_a[i][topk_samp[i]] for i in range(bs)],0)
+                    topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
+                    
+                    # use the first imgs (in a pair) sampled index
+                    xys_a =       torch.stack(          [xys_a[i][topk_samp[0]] for i in range(bs)],0)
+                    rand_inds_a = torch.stack(    [rand_inds_a[i][topk_samp[0]] for i in range(bs)],0)
+                    frameid_a =       torch.stack(  [frameid_a[i][topk_samp[0]] for i in range(bs)],0)
+                    frameid_sub_a=torch.stack(  [frameid_sub_a[i][topk_samp[0]] for i in range(bs)],0)
+                    dataid_a =         torch.stack(  [dataid_a[i][topk_samp[0]] for i in range(bs)],0)
+                    errid_a =           torch.stack(  [errid_a[i][topk_samp[0]] for i in range(bs)],0)
+                    batch_map_a =   torch.stack(  [batch_map_a[i][topk_samp[0]] for i in range(bs)],0)
+                    Rmat_a =             torch.stack(  [Rmat_a[i][topk_samp[0]] for i in range(bs)],0)
+                    Tmat_a =             torch.stack(  [Tmat_a[i][topk_samp[0]] for i in range(bs)],0)
+                    Kinv_a =             torch.stack(  [Kinv_a[i][topk_samp[0]] for i in range(bs)],0)
 
                     xys =       torch.cat([xys,xys_a],1)
                     rand_inds = torch.cat([rand_inds,rand_inds_a],1)
@@ -649,6 +651,14 @@ class v2s_net(nn.Module):
                     Rmat =      torch.cat([Rmat,Rmat_a],1)
                     Tmat =      torch.cat([Tmat,Tmat_a],1)
                     Kinv =      torch.cat([Kinv,Kinv_a],1)
+                else:
+                    topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
+                    
+                    xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
+                    rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
+                    
+                    xys =       torch.cat([xys,xys_a],1)
+                    rand_inds = torch.cat([rand_inds,rand_inds_a],1)
         
 
         # for line: reshape to 2*bs, 1,...

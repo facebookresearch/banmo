@@ -686,13 +686,6 @@ class v2s_net(nn.Module):
         #    self.imgs_samp.append(draw_pts(self.imgs[i], xys_a[i]))
         #self.imgs_samp = torch.stack(self.imgs_samp,0)
 
-        ## TODO change back to original format
-        #if self.training and opts.lineload:
-        #    rays['nsample'] = 8
-        #    rays['bs'] = 256
-        #    rand_inds = rand_inds.view(256,8)
-        #    frameid = frameid.view(256,8)[:,0]
-        #    errid = errid.view(256,8)[:,0]
         return rand_inds, rays, frameid, errid
     
     def obs_to_rays_line(self, rays, rand_inds, imgs, masks, flow, occ, dp_feats,
@@ -807,7 +800,7 @@ class v2s_net(nn.Module):
         rand_inds, rays, frameid, errid = self.sample_pxs(bs, nsample, Rmat, Tmat, Kinv,
         self.dataid, self.frameid, self.frameid_sub, self.embedid,self.lineid,self.errid,
         self.imgs, self.masks, self.flow, self.occ, self.dp_feats)
-        self.frameid = frameid
+        self.frameid = frameid # only used in loss filter
         self.errid = errid
 
 
@@ -1257,12 +1250,12 @@ class v2s_net(nn.Module):
         sil_at_samp = rendered['sil_at_samp']
         sil_at_samp_flo = rendered['sil_at_samp_flo']
 
-        sil_err, invalid_idx = loss_filter(self.latest_vars['sil_err'], 
-                                     rendered['sil_loss_samp']*opts.sil_wt,
-                                     sil_at_samp>-1)
-        self.latest_vars['sil_err'][self.errid.long()] = sil_err
-        if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-            rendered['sil_loss_samp'][invalid_idx] *= 0.
+        #sil_err, invalid_idx = loss_filter(self.latest_vars['sil_err'], 
+        #                             rendered['sil_loss_samp']*opts.sil_wt,
+        #                             sil_at_samp>-1)
+        #self.latest_vars['sil_err'][self.errid.long()] = sil_err
+        #if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+        #    rendered['sil_loss_samp'][invalid_idx] *= 0.
         
         img_loss_samp = rendered['img_loss_samp']
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
@@ -1275,20 +1268,20 @@ class v2s_net(nn.Module):
             
         # flow loss
         if opts.use_corresp:
-            # find flow window
-            dframe = (self.frameid.view(2,-1).flip(0).reshape(-1) - \
-                      self.frameid).abs()
-            didxs = dframe.log2().long()
-            for didx in range(6):
-                subidx = didxs==didx
-                flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'][:,didx], 
-                                                rendered['flo_loss_samp'][subidx],
-                                                sil_at_samp_flo[subidx])
-                self.latest_vars['flo_err'][self.errid.long()[subidx],didx] = flo_err
-                if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-                    flo_loss_samp_sub = rendered['flo_loss_samp'][subidx]
-                    flo_loss_samp_sub[invalid_idx] *= 0.
-                    rendered['flo_loss_samp'][subidx] = flo_loss_samp_sub
+            ## find flow window
+            #dframe = (self.frameid.view(2,-1).flip(0).reshape(-1) - \
+            #          self.frameid).abs()
+            #didxs = dframe.log2().long()
+            #for didx in range(6):
+            #    subidx = didxs==didx
+            #    flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'][:,didx], 
+            #                                    rendered['flo_loss_samp'][subidx],
+            #                                    sil_at_samp_flo[subidx])
+            #    self.latest_vars['flo_err'][self.errid.long()[subidx],didx] = flo_err
+            #    if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+            #        flo_loss_samp_sub = rendered['flo_loss_samp'][subidx]
+            #        flo_loss_samp_sub[invalid_idx] *= 0.
+            #        rendered['flo_loss_samp'][subidx] = flo_loss_samp_sub
             ##TODO 
             #for idx,didx in enumerate(didxs):
             #    frameid = self.errid.long()[idx]
@@ -1367,12 +1360,12 @@ class v2s_net(nn.Module):
         
         # viser loss
         if opts.use_viser:
-            feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
-                                            rendered['feat_err']*0.2,
-                                            sil_at_samp>0)
-            self.latest_vars['fp_err'][self.errid.long(),0] = feat_err
-            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-                rendered['feat_err'][invalid_idx] *= 0.
+            #feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
+            #                                rendered['feat_err']*0.2,
+            #                                sil_at_samp>0)
+            #self.latest_vars['fp_err'][self.errid.long(),0] = feat_err
+            #if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+            #    rendered['feat_err'][invalid_idx] *= 0.
 
             feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
             feat_loss = feat_loss * opts.feat_wt
@@ -1382,12 +1375,12 @@ class v2s_net(nn.Module):
 
         
         if opts.use_proj:
-            proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
-                                            rendered['proj_err']*0.01,
-                                            sil_at_samp>0)
-            self.latest_vars['fp_err'][self.errid.long(),1] = proj_err
-            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-                rendered['proj_err'][invalid_idx] *= 0.
+            #proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
+            #                                rendered['proj_err']*0.01,
+            #                                sil_at_samp>0)
+            #self.latest_vars['fp_err'][self.errid.long(),1] = proj_err
+            #if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+            #    rendered['proj_err'][invalid_idx] *= 0.
 
             proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
             proj_loss = proj_loss * opts.proj_wt

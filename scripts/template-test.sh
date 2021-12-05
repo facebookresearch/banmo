@@ -1,7 +1,7 @@
 gpus=$1
 seqname=nerfies_cat_807
 num_epochs=30
-addname=t1
+addname=nolossfilt
 addr=10004
 use_human=no
 

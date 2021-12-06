@@ -342,6 +342,10 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
                               dframe=df, init_frame=init_frame, 
                               dataid=dataid, numvid=numvid, flip=flip, is_eval=is_eval,
                               rtk_path=rtk_path)
+            # duplicate such that it goes more than 200 iters
+            dup_num = int(200/(len(dataset)/opts['ngpu']/opts['batch_size']))+1
+            for i in range(dup_num):
+                datasets.append(dataset)
         else:
             # per-image loader
             try:
@@ -360,7 +364,7 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
             else:
                 dataset.preload = False
 
-        datasets.append(dataset)
+            datasets.append(dataset)
     return datasets
 
 class LineDataset(Dataset):

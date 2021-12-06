@@ -1,7 +1,7 @@
 gpus=$1
 seqname=sfm-mcats10
 num_epochs=90
-addname=test4
+addname=b16-xy
 addr=10004
 use_human=no
 
@@ -18,6 +18,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
   --batch_size 16 --nsample 64 \
+  --nouse_resize \
   --${use_human}use_human
   #--lineload --batch_size 128 --nsample 8 --nouse_resize \
   #--flow_dp \

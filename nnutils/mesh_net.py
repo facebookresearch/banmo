@@ -598,67 +598,66 @@ class v2s_net(nn.Module):
                 xyt_code = torch.cat([xyt_embedded, vid_code],-1)
                 unc_pred = self.nerf_unc(xyt_code)[...,0]
 
-                # preprocess to format 2,bs,w
-                if opts.lineload:
-                    unc_pred = unc_pred.view(2,-1)
-                    xys =     xys.view(2,-1,2)
-                    xys_a = xys_a.view(2,-1,2)
-                    rand_inds =     rand_inds.view(2,-1)
-                    rand_inds_a = rand_inds_a.view(2,-1)
-                    frameid   =   frameid.view(2,-1)
-                    frameid_a = frameid_a.view(2,-1)
-                    frameid_sub   =   frameid_sub.view(2,-1)
-                    frameid_sub_a = frameid_sub_a.view(2,-1)
-                    dataid   =   dataid.view(2,-1)
-                    dataid_a = dataid_a.view(2,-1)
-                    errid   =     errid.view(2,-1)
-                    errid_a   = errid_a.view(2,-1)
-                    batch_map   =   batch_map.view(2,-1)
-                    batch_map_a = batch_map_a.view(2,-1)
-                    Rmat   =   Rmat.view(2,-1,3,3)
-                    Rmat_a = Rmat_a.view(2,-1,3,3)
-                    Tmat   =   Tmat.view(2,-1,3)
-                    Tmat_a = Tmat_a.view(2,-1,3)
-                    Kinv   =   Kinv.view(2,-1,3,3)
-                    Kinv_a = Kinv_a.view(2,-1,3,3)
+            # preprocess to format 2,bs,w
+            if opts.lineload:
+                unc_pred = unc_pred.view(2,-1)
+                xys =     xys.view(2,-1,2)
+                xys_a = xys_a.view(2,-1,2)
+                rand_inds =     rand_inds.view(2,-1)
+                rand_inds_a = rand_inds_a.view(2,-1)
+                frameid   =   frameid.view(2,-1)
+                frameid_a = frameid_a.view(2,-1)
+                frameid_sub   =   frameid_sub.view(2,-1)
+                frameid_sub_a = frameid_sub_a.view(2,-1)
+                dataid   =   dataid.view(2,-1)
+                dataid_a = dataid_a.view(2,-1)
+                errid   =     errid.view(2,-1)
+                errid_a   = errid_a.view(2,-1)
+                batch_map   =   batch_map.view(2,-1)
+                batch_map_a = batch_map_a.view(2,-1)
+                Rmat   =   Rmat.view(2,-1,3,3)
+                Rmat_a = Rmat_a.view(2,-1,3,3)
+                Tmat   =   Tmat.view(2,-1,3)
+                Tmat_a = Tmat_a.view(2,-1,3)
+                Kinv   =   Kinv.view(2,-1,3,3)
+                Kinv_a = Kinv_a.view(2,-1,3,3)
 
-                    nsample_s = nsample_s * bs
-                    bs=2
+                nsample_s = nsample_s * bs
+                bs=2
 
                 # merge top nsamples
-                if opts.lineload:
-                    topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
-                    
-                    # use the first imgs (in a pair) sampled index
-                    xys_a =       torch.stack(          [xys_a[i][topk_samp[0]] for i in range(bs)],0)
-                    rand_inds_a = torch.stack(    [rand_inds_a[i][topk_samp[0]] for i in range(bs)],0)
-                    frameid_a =       torch.stack(  [frameid_a[i][topk_samp[0]] for i in range(bs)],0)
-                    frameid_sub_a=torch.stack(  [frameid_sub_a[i][topk_samp[0]] for i in range(bs)],0)
-                    dataid_a =         torch.stack(  [dataid_a[i][topk_samp[0]] for i in range(bs)],0)
-                    errid_a =           torch.stack(  [errid_a[i][topk_samp[0]] for i in range(bs)],0)
-                    batch_map_a =   torch.stack(  [batch_map_a[i][topk_samp[0]] for i in range(bs)],0)
-                    Rmat_a =             torch.stack(  [Rmat_a[i][topk_samp[0]] for i in range(bs)],0)
-                    Tmat_a =             torch.stack(  [Tmat_a[i][topk_samp[0]] for i in range(bs)],0)
-                    Kinv_a =             torch.stack(  [Kinv_a[i][topk_samp[0]] for i in range(bs)],0)
+                topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
+                
+                # use the first imgs (in a pair) sampled index
+                xys_a =       torch.stack(          [xys_a[i][topk_samp[0]] for i in range(bs)],0)
+                rand_inds_a = torch.stack(    [rand_inds_a[i][topk_samp[0]] for i in range(bs)],0)
+                frameid_a =       torch.stack(  [frameid_a[i][topk_samp[0]] for i in range(bs)],0)
+                frameid_sub_a=torch.stack(  [frameid_sub_a[i][topk_samp[0]] for i in range(bs)],0)
+                dataid_a =         torch.stack(  [dataid_a[i][topk_samp[0]] for i in range(bs)],0)
+                errid_a =           torch.stack(  [errid_a[i][topk_samp[0]] for i in range(bs)],0)
+                batch_map_a =   torch.stack(  [batch_map_a[i][topk_samp[0]] for i in range(bs)],0)
+                Rmat_a =             torch.stack(  [Rmat_a[i][topk_samp[0]] for i in range(bs)],0)
+                Tmat_a =             torch.stack(  [Tmat_a[i][topk_samp[0]] for i in range(bs)],0)
+                Kinv_a =             torch.stack(  [Kinv_a[i][topk_samp[0]] for i in range(bs)],0)
 
-                    xys =       torch.cat([xys,xys_a],1)
-                    rand_inds = torch.cat([rand_inds,rand_inds_a],1)
-                    frameid =   torch.cat([frameid,frameid_a],1)
-                    frameid_sub=torch.cat([frameid_sub,frameid_sub_a],1)
-                    dataid =    torch.cat([dataid,dataid_a],1)
-                    errid =     torch.cat([errid,errid_a],1)
-                    batch_map = torch.cat([batch_map,batch_map_a],1)
-                    Rmat =      torch.cat([Rmat,Rmat_a],1)
-                    Tmat =      torch.cat([Tmat,Tmat_a],1)
-                    Kinv =      torch.cat([Kinv,Kinv_a],1)
-                else:
-                    topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
-                    
-                    xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
-                    rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
-                    
-                    xys =       torch.cat([xys,xys_a],1)
-                    rand_inds = torch.cat([rand_inds,rand_inds_a],1)
+                xys =       torch.cat([xys,xys_a],1)
+                rand_inds = torch.cat([rand_inds,rand_inds_a],1)
+                frameid =   torch.cat([frameid,frameid_a],1)
+                frameid_sub=torch.cat([frameid_sub,frameid_sub_a],1)
+                dataid =    torch.cat([dataid,dataid_a],1)
+                errid =     torch.cat([errid,errid_a],1)
+                batch_map = torch.cat([batch_map,batch_map_a],1)
+                Rmat =      torch.cat([Rmat,Rmat_a],1)
+                Tmat =      torch.cat([Tmat,Tmat_a],1)
+                Kinv =      torch.cat([Kinv,Kinv_a],1)
+            else:
+                topk_samp = unc_pred.topk(nsample_s,dim=-1)[1] # bs,nsamp
+                
+                xys_a =       torch.stack(      [xys_a[i][topk_samp[i]] for i in range(bs)],0)
+                rand_inds_a = torch.stack([rand_inds_a[i][topk_samp[i]] for i in range(bs)],0)
+                
+                xys =       torch.cat([xys,xys_a],1)
+                rand_inds = torch.cat([rand_inds,rand_inds_a],1)
         
 
         # for line: reshape to 2*bs, 1,...

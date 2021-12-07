@@ -1261,10 +1261,11 @@ class v2s_net(nn.Module):
 
         #sil_err, invalid_idx = loss_filter(self.latest_vars['sil_err'], 
         #                             rendered['sil_loss_samp']*opts.sil_wt,
-        #                             sil_at_samp>-1)
+        #                             sil_at_samp>-1, scale_factor=100)
         #self.latest_vars['sil_err'][self.errid.long()] = sil_err
         #if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
         #    rendered['sil_loss_samp'][invalid_idx] *= 0.
+        #    print('%d removed from sil'%(invalid_idx.sum()))
         
         img_loss_samp = rendered['img_loss_samp']
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
@@ -1277,20 +1278,21 @@ class v2s_net(nn.Module):
             
         # flow loss
         if opts.use_corresp:
-            ## find flow window
-            #dframe = (self.frameid.view(2,-1).flip(0).reshape(-1) - \
-            #          self.frameid).abs()
-            #didxs = dframe.log2().long()
-            #for didx in range(6):
-            #    subidx = didxs==didx
-            #    flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'][:,didx], 
-            #                                    rendered['flo_loss_samp'][subidx],
-            #                                    sil_at_samp_flo[subidx])
-            #    self.latest_vars['flo_err'][self.errid.long()[subidx],didx] = flo_err
-            #    if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-            #        flo_loss_samp_sub = rendered['flo_loss_samp'][subidx]
-            #        flo_loss_samp_sub[invalid_idx] *= 0.
-            #        rendered['flo_loss_samp'][subidx] = flo_loss_samp_sub
+            # find flow window
+            dframe = (self.frameid.view(2,-1).flip(0).reshape(-1) - \
+                      self.frameid).abs()
+            didxs = dframe.log2().long()
+            for didx in range(6):
+                subidx = didxs==didx
+                flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'][:,didx], 
+                                                rendered['flo_loss_samp'][subidx],
+                                                sil_at_samp_flo[subidx], scale_factor=20)
+                self.latest_vars['flo_err'][self.errid.long()[subidx],didx] = flo_err
+                if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+                    print('%d removed from flow'%(invalid_idx.sum()))
+                    flo_loss_samp_sub = rendered['flo_loss_samp'][subidx]
+                    flo_loss_samp_sub[invalid_idx] *= 0.
+                    rendered['flo_loss_samp'][subidx] = flo_loss_samp_sub
             ##TODO 
             #for idx,didx in enumerate(didxs):
             #    frameid = self.errid.long()[idx]
@@ -1369,12 +1371,13 @@ class v2s_net(nn.Module):
         
         # viser loss
         if opts.use_viser:
-            #feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
-            #                                rendered['feat_err']*0.2,
-            #                                sil_at_samp>0)
-            #self.latest_vars['fp_err'][self.errid.long(),0] = feat_err
-            #if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-            #    rendered['feat_err'][invalid_idx] *= 0.
+            feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
+                                            rendered['feat_err']*0.2,
+                                            sil_at_samp>0)
+            self.latest_vars['fp_err'][self.errid.long(),0] = feat_err
+            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+                rendered['feat_err'][invalid_idx] *= 0.
+                print('%d removed from feat'%(invalid_idx.sum()))
 
             feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
             feat_loss = feat_loss * opts.feat_wt
@@ -1384,12 +1387,13 @@ class v2s_net(nn.Module):
 
         
         if opts.use_proj:
-            #proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
-            #                                rendered['proj_err']*0.01,
-            #                                sil_at_samp>0)
-            #self.latest_vars['fp_err'][self.errid.long(),1] = proj_err
-            #if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-            #    rendered['proj_err'][invalid_idx] *= 0.
+            proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
+                                            rendered['proj_err']*0.01,
+                                            sil_at_samp>0)
+            self.latest_vars['fp_err'][self.errid.long(),1] = proj_err
+            if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
+                rendered['proj_err'][invalid_idx] *= 0.
+                print('%d removed from proj'%(invalid_idx.sum()))
 
             proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
             proj_loss = proj_loss * opts.proj_wt

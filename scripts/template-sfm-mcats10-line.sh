@@ -1,7 +1,7 @@
 gpus=$1
 seqname=sfm-mcats10
-num_epochs=90
-addname=b128-xyt
+num_epochs=90 # 750 frames, 128 * 8 = 1024
+addname=b128-xyt-20f10fp
 addr=10004
 use_human=no
 

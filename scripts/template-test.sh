@@ -1,7 +1,7 @@
 gpus=$1
 seqname=nerfies_cat_807
 num_epochs=30
-addname=b128-100f10fp2 # 120 frames, can 8*16 is sufficient
+addname=test # 120 frames, can 8*16 is sufficient
 addr=10007
 use_human=no
 

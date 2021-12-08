@@ -196,8 +196,8 @@ flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
 flags.DEFINE_string('retarget_path', '', 'load source model path for regargeting')
 
 flags.DEFINE_float('total_wt', 1, 'by default, multiple total loss by 1')
-flags.DEFINE_float('feat_wt', 1, 'by default, multiple feat loss by 1')
-flags.DEFINE_float('proj_wt', 1, 'by default, multiple proj loss by 1')
+flags.DEFINE_float('feat_wt', 0.2, 'by default, multiple feat loss by 1')
+flags.DEFINE_float('proj_wt', 0.01, 'by default, multiple proj loss by 1')
 flags.DEFINE_float('flow_wt', 1, 'by default, multiple flow loss by 1')
 
 class v2s_net(nn.Module):
@@ -1371,32 +1371,33 @@ class v2s_net(nn.Module):
         
         # viser loss
         if opts.use_viser:
+            feat_err_samp = rendered['feat_err']* opts.feat_wt
+            # loss filter
             feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
-                                            rendered['feat_err']*0.2,
+                                            feat_err_samp,
                                             sil_at_samp>0)
             self.latest_vars['fp_err'][self.errid.long(),0] = feat_err
             if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-                rendered['feat_err'][invalid_idx] *= 0.
+                feat_err_samp[invalid_idx] *= 0.
                 print('%d removed from feat'%(invalid_idx.sum()))
-
-            feat_loss = rendered['feat_err'][sil_at_samp>0].mean()*0.2
-            feat_loss = feat_loss * opts.feat_wt
+            
+            feat_loss = feat_err_samp[sil_at_samp>0].mean()
             total_loss = total_loss + feat_loss
             aux_out['feat_loss'] = feat_loss
             aux_out['beta_feat'] = self.nerf_feat.beta.clone().detach()[0]
 
         
         if opts.use_proj:
+            proj_err_samp = rendered['proj_err']* opts.proj_wt
             proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
-                                            rendered['proj_err']*0.01,
+                                            proj_err_samp,
                                             sil_at_samp>0)
             self.latest_vars['fp_err'][self.errid.long(),1] = proj_err
             if self.progress > (opts.warmup_init_steps + opts.warmup_steps):
-                rendered['proj_err'][invalid_idx] *= 0.
+                proj_err_samp[invalid_idx] *= 0.
                 print('%d removed from proj'%(invalid_idx.sum()))
 
-            proj_loss = rendered['proj_err'][sil_at_samp>0].mean()*0.01
-            proj_loss = proj_loss * opts.proj_wt
+            proj_loss = proj_err_samp[sil_at_samp>0].mean()
             aux_out['proj_loss'] = proj_loss
             if opts.freeze_proj:
                 total_loss = total_loss + proj_loss
@@ -1481,9 +1482,13 @@ class v2s_net(nn.Module):
         if opts.use_unc:
             # add uncertainty MLP loss, loss = | |img-img_r|*sil - unc_pred |
             unc_pred = rendered['unc_pred']
-            unc_rgb = sil_at_samp[...,0]*img_loss_samp.sum(-1)
+            unc_rgb = sil_at_samp[...,0]*img_loss_samp.mean(-1)
+            unc_feat= (sil_at_samp*feat_err_samp)[...,0]
+            unc_proj= (sil_at_samp*proj_err_samp)[...,0]
             unc_sil = sil_loss_samp[...,0]
-            unc_accumulated = unc_rgb
+            #unc_accumulated = unc_feat + unc_proj
+            unc_accumulated = unc_feat + unc_proj + unc_rgb*0.1
+#            unc_accumulated = unc_rgb
 #            unc_accumulated = unc_rgb + unc_sil
 
             unc_loss = (unc_accumulated.detach() - unc_pred[...,0]).pow(2)

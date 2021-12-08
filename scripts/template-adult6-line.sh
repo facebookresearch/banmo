@@ -1,7 +1,7 @@
 gpus=$1
 seqname=adult6 # 630 frames
 num_epochs=120
-addname=b128
+addname=b128-uncfpr
 addr=10004
 use_human=
 

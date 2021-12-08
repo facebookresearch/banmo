@@ -1005,6 +1005,8 @@ class v2s_trainer(Trainer):
                          epoch==int(self.num_epochs*opts.warmup_init_steps)):
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
+            #TODO freeze weights of root pose in the following epoch
+            #TODO reset error stats
 
         # need to add bones back at 2nd opt
         if opts.model_path!='':

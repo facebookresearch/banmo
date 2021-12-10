@@ -528,12 +528,16 @@ class v2s_trainer(Trainer):
                 rendered_seq['occ'] += [self.model.occ[...,None]      [:hbs]]
                 rendered_seq['feat']+= [self.model.dp_feats.std(1)[...,None][:hbs]]
                 rendered_seq['flo_coarse'][-1]       *= sil_rszd 
+                rendered_seq['img_loss_samp'][-1]    *= sil_rszd 
                 if opts.use_viser:
                     rendered_seq['pts_pred'][-1] *= sil_rszd 
                     rendered_seq['pts_exp'] [-1] *= rendered_seq['sil_coarse'][-1]
                     rendered_seq['feat_err'][-1] *= sil_rszd*20
                 if opts.use_proj:
                     rendered_seq['proj_err'][-1] *= sil_rszd*4
+                if opts.use_unc:
+                    rendered_seq['unc_pred'][-1] = F.relu(rendered_seq['unc_pred'][-1])
+                    rendered_seq['unc_pred'][-1] *= 255/rendered_seq['unc_pred'][-1].max()
                 if self.model.is_flow_dp:
                     rendered_seq['fdp'] += [self.model.dp_flow.permute(0,2,3,1)[:hbs]]
                     rendered_seq['dcf'] += [self.model.dp_conf[...,None][:hbs]/\

@@ -543,6 +543,8 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             xyt_embedded = embedding_xyz(xyt)
             xyt_code = torch.cat([xyt_embedded, vid_code],-1)
             unc_pred = nerf_unc(xyt_code)
+            #TODO add activation function
+            unc_pred = F.softplus(unc_pred)
             result['unc_pred'] = unc_pred
         
         if 'img_at_samp' in rays.keys():

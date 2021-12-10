@@ -147,7 +147,6 @@ def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
     #topk, indices = mdis.topk(max_bone, 2, largest=True)
     #mdis = torch.zeros_like(mdis).fill_(-np.inf)
     #mdis = mdis.scatter(2, indices, topk)
-    
     skin = mdis.softmax(2)
     return skin
     

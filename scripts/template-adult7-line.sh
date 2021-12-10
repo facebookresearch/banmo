@@ -1,7 +1,7 @@
 gpus=$1
-seqname=adult6 # 630 frames
+seqname=adult7 # 630 frames
 num_epochs=120
-addname=b128-sp-1xa-eq2
+addname=b128-eq2
 addr=10004
 use_human=
 

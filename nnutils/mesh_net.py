@@ -148,7 +148,6 @@ flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
 flags.DEFINE_bool('full_mesh', False, 'extract surface without visibility check')
 flags.DEFINE_bool('nerf_skin', True, 'use mlp skinning function')
 flags.DEFINE_float('init_beta', 1., 'initial value for transparency beta')
-flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 flags.DEFINE_bool('bone_loc_reg', True, 'use bone location regularization')
 flags.DEFINE_integer('nsample', 256, 'num of samples per image at optimization time')
 flags.DEFINE_integer('ndepth', 128, 'num of depth samples per px at optimization time')
@@ -196,9 +195,12 @@ flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
 flags.DEFINE_string('retarget_path', '', 'load source model path for regargeting')
 
 flags.DEFINE_float('total_wt', 1, 'by default, multiple total loss by 1')
+flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
+flags.DEFINE_float('img_wt',  1, 'weight for silhouette loss')
 flags.DEFINE_float('feat_wt', 0.2, 'by default, multiple feat loss by 1')
 flags.DEFINE_float('proj_wt', 0.01, 'by default, multiple proj loss by 1')
 flags.DEFINE_float('flow_wt', 1, 'by default, multiple flow loss by 1')
+flags.DEFINE_float('cyc_wt', 1, 'by default, multiple cyc loss by 1')
 
 class v2s_net(nn.Module):
     def __init__(self, opts, data_info):
@@ -582,7 +584,8 @@ class v2s_net(nn.Module):
                 self.progress >= (opts.warmup_init_steps + opts.warmup_steps):
             with torch.no_grad():
                 # select .2x points
-                nsample_s = nsample//5
+                nsample_s = nsample
+                #nsample_s = nsample//5
                 # run uncertainty estimation
                 ts = frameid_sub_in.to(self.device) / self.max_ts * 2 -1
                 ts = ts[:,None,None].repeat(1,nsample_a,1)
@@ -1267,7 +1270,7 @@ class v2s_net(nn.Module):
         #    rendered['sil_loss_samp'][invalid_idx] *= 0.
         #    print('%d removed from sil'%(invalid_idx.sum()))
         
-        img_loss_samp = rendered['img_loss_samp']
+        img_loss_samp = opts.img_wt*rendered['img_loss_samp']
         img_loss = img_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
         sil_loss_samp = opts.sil_wt*rendered['sil_loss_samp']
         sil_loss = sil_loss_samp.mean()
@@ -1416,7 +1419,7 @@ class v2s_net(nn.Module):
         # regularization 
         if 'frame_cyc_dis' in rendered.keys():
             # cycle loss
-            cyc_loss = rendered['frame_cyc_dis'].mean()
+            cyc_loss = rendered['frame_cyc_dis'].mean() * opts.cyc_wt
             total_loss = total_loss + cyc_loss
             #total_loss = total_loss + cyc_loss*0
             aux_out['cyc_loss'] = cyc_loss
@@ -1487,7 +1490,8 @@ class v2s_net(nn.Module):
             unc_proj= (sil_at_samp*proj_err_samp)[...,0]
             unc_sil = sil_loss_samp[...,0]
             #unc_accumulated = unc_feat + unc_proj
-            unc_accumulated = unc_feat + unc_proj + unc_rgb*0.1
+            #unc_accumulated = unc_feat + unc_proj + unc_rgb*0.1
+            unc_accumulated = unc_feat + unc_proj + unc_rgb
 #            unc_accumulated = unc_rgb
 #            unc_accumulated = unc_rgb + unc_sil
 

@@ -1276,7 +1276,9 @@ class v2s_trainer(Trainer):
                 if embedid is not None and not opts.queryfw:
                     query_xyz_chunk, mesh_dict = warp_bw(opts, model, mesh_dict, 
                                                    query_xyz_chunk, embedid)
-                    
+                if opts.symm_shape: 
+                    #TODO set to x-symmetric
+                    query_xyz_chunk[...,0] = query_xyz_chunk[...,0].abs()
                 xyz_embedded = model.embedding_xyz(query_xyz_chunk) # (N, embed_xyz_channels)
                 out_chunks += [model.nerf_coarse(xyz_embedded, sigma_only=True)]
             vol_o = torch.cat(out_chunks, 0)

@@ -160,6 +160,7 @@ flags.DEFINE_string('cnn_feature', 'embed', 'input to pose cnn')
 flags.DEFINE_string('cnn_type', 'reg', 'output of pose cnn')
 flags.DEFINE_bool('sfm_init', True, 'whether to maintain sfm relative trajectory')
 flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value (0-6)')
+flags.DEFINE_bool('symm_shape', False, 'whether to set geometry to x-symmetry')
 
 #viser
 flags.DEFINE_bool('ft_cse', False, 'whether to fine-tune cse features')

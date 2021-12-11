@@ -174,7 +174,8 @@ def render_rays(models,
     
 def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 
         N_rays, N_samples,chunk, noise_std,
-        env_code=None, weights_only=False, clip_bound = None, vis_pred=None):
+        env_code=None, weights_only=False, clip_bound = None, vis_pred=None,
+        symm_shape=False):
     """
     Helper function that performs model inference.
 
@@ -207,18 +208,11 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
 
     # Perform model inference to get rgb and raw sigma
     B = xyz_.shape[0]
-    #out_chunks = []
-    #for i in range(0, B, chunk):
-    #    # Embed positions by chunk
-    #    xyz_embedded = embedding_xyz(xyz_[i:i+chunk])
-    #    if not weights_only:
-    #        xyzdir_embedded = torch.cat([xyz_embedded,
-    #                                     dir_embedded[i:i+chunk]], 1)
-    #    else:
-    #        xyzdir_embedded = xyz_embedded
-    #    out_chunks += [model(xyzdir_embedded, sigma_only=weights_only)]
-    #out = torch.cat(out_chunks, 0)
-    out = evaluate_mlp(model, xyz_.view(N_rays,N_samples,3), 
+    xyz_input = xyz_.view(N_rays,N_samples,3)
+    if symm_shape:
+        ##TODO set to x-symmetric here
+        xyz_input = torch.cat([xyz_input[...,:1].abs(), xyz_input[...,1:3]],-1)
+    out = evaluate_mlp(model, xyz_input, 
             embed_xyz = embedding_xyz,
             dir_embedded = dir_embedded.view(N_rays,N_samples,-1),
             code=env_code,
@@ -406,7 +400,7 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
         inference(model_coarse, embedding_xyz, xyz_coarse_sampled, rays_d,
                 dir_embedded, z_vals, N_rays, N_samples, chunk, noise_std,
                 weights_only=False, env_code=env_code, 
-                clip_bound=clip_bound, vis_pred=vis_pred)
+                clip_bound=clip_bound, vis_pred=vis_pred, symm_shape=opts.symm_shape)
     sil_coarse =  weights_coarse[:,:-1].sum(1)
     result = {'img_coarse': rgb_coarse,
               'depth_rnd': depth_rnd,

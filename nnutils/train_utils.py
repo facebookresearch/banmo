@@ -879,9 +879,12 @@ class v2s_trainer(Trainer):
                     print('load time:%.2f'%(time.time()-start_time))
 
             # change near-far plane for all views, every 10 iters
+            rtk_all = self.model.module.compute_rts()
+            self.model.module.rtk_all = rtk_all
             if self.model.module.progress>=opts.nf_reset:
-                with torch.no_grad():
-                    rtk_all = self.model.module.compute_rts()
+                #with torch.no_grad():
+                #    rtk_all = self.model.module.compute_rts()
+                rtk_all = rtk_all.detach().cpu().numpy()
                 valid_rts = self.model.module.latest_vars['idk'].astype(bool)
                 self.model.module.latest_vars['rtk'][valid_rts,:3] = rtk_all[valid_rts]
                 self.model.module.near_far.data = get_near_far(

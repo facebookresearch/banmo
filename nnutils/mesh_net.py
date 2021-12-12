@@ -32,11 +32,11 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
                                 near_far_to_bound, compute_flow_geodist, \
                                 compute_flow_cse, fb_flow_check, pinhole_cam, \
                                 render_color, mask_aug, bbox_dp2rnd, resample_dp, \
-                                vrender_flo, get_near_far, array2tensor
+                                vrender_flo, get_near_far, array2tensor, rot_angle
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
                             feat_match_loss, kp_reproj_loss, grad_update_bone, \
-                            loss_filter, compute_xyz_wt_loss
+                            loss_filter, compute_xyz_wt_loss, compute_root_sm_loss
 from utils.io import vis_viser, draw_pts
 from nnutils.cse import CSENet
 
@@ -161,6 +161,7 @@ flags.DEFINE_string('cnn_type', 'reg', 'output of pose cnn')
 flags.DEFINE_bool('sfm_init', True, 'whether to maintain sfm relative trajectory')
 flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value (0-6)')
 flags.DEFINE_bool('symm_shape', False, 'whether to set geometry to x-symmetry')
+flags.DEFINE_bool('root_sm', False, 'whether to use smooth loss for root pose')
 
 #viser
 flags.DEFINE_bool('ft_cse', False, 'whether to fine-tune cse features')
@@ -1172,7 +1173,7 @@ class v2s_net(nn.Module):
             rmat = rmat.matmul(root_rmat)
             rt_raw[:,:3,:3] = rmat
             rt_raw[:,:3,3] = tmat
-        return rt_raw.cpu().numpy()
+        return rt_raw
 
     def save_latest_vars(self):
         """
@@ -1443,6 +1444,13 @@ class v2s_net(nn.Module):
                 elastic_loss = rendered['elastic_loss'].mean() * 1e-3
                 total_loss = total_loss + elastic_loss
                 aux_out['elastic_loss'] = elastic_loss
+
+        # regularization of root poses
+        if opts.root_sm:
+            root_sm_loss = compute_root_sm_loss(self.rtk_all, self.data_offset)
+            aux_out['root_sm_loss'] = root_sm_loss
+            total_loss = total_loss + root_sm_loss
+
 
         if opts.eikonal_loss and self.progress> opts.fine_steps:
             ekl_loss = 1e-6*eikonal_loss(self.nerf_coarse, self.embedding_xyz, 

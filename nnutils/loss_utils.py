@@ -399,3 +399,23 @@ def compute_xyz_wt_loss(gt_list, curr_list):
         loss.append( (gt_list[i].detach() - curr_list[i]).pow(2).mean() )
     loss = torch.stack(loss).mean()
     return loss
+
+
+def compute_root_sm_loss(rtk_all, data_offset):
+    rot_sm_loss = []
+    trans_sm_loss = []
+    for didx in range(len(data_offset)-1):
+        stt_idx = data_offset[didx]
+        end_idx = data_offset[didx+1]
+        rot_sm_sub = rtk_all[stt_idx:end_idx-1,:3,:3].matmul(
+                      rtk_all[stt_idx+1:end_idx,:3,:3].permute(0,2,1))
+        trans_sm_sub =  rtk_all[stt_idx:end_idx-1,:3,3] - \
+                        rtk_all[stt_idx+1:end_idx,:3,3]
+        rot_sm_loss.append(rot_sm_sub)
+        trans_sm_loss.append(trans_sm_sub)
+    rot_sm_loss = torch.cat(rot_sm_loss,0)
+    rot_sm_loss = rot_angle(rot_sm_loss).mean()*1e-3
+    trans_sm_loss = torch.cat(trans_sm_loss,0)
+    trans_sm_loss = trans_sm_loss.norm(2,-1).mean()
+    root_sm_loss = rot_sm_loss + trans_sm_loss 
+    return root_sm_loss

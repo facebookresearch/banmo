@@ -1,7 +1,7 @@
 gpus=$1
 seqname=adult7 # 630 frames
 num_epochs=120
-addname=b128-symm
+addname=b128-smt1x
 addr=10004
 use_human=
 
@@ -21,6 +21,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --img_wt 0.1 --sil_wt 0.1 --proj_wt 0.02\
   --num_bones 64 \
   --symm_shape \
+  --root_sm \
   --${use_human}use_human
   #--lineload --batch_size 128 --nsample 8 --nouse_resize \
   #--flow_dp \
@@ -37,6 +38,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --dskin_steps 0.2 --fine_steps 0.2 --noanneal_freq --nouse_resize \
   --num_bones 64 \
   --symm_shape \
+  --root_sm \
   --${use_human}use_human
   #--lineload --batch_size 128 --nsample 8 \
   #--flow_dp \

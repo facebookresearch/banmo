@@ -8,12 +8,12 @@ ishuman=$4 # y/n
 fps=$5
 #fps=10
 
-if [ "$suffix" = ".MOV" ]; then
-  # rename to upper case
-  cd $filedir
-  for file in ./*; do mv -- "$file" "${file^^}"; done
-  cd -
-fi
+## rename to upper case
+#if [ "$suffix" = ".MOV" ]; then
+#  cd $filedir
+#  for file in ./*; do mv -- "$file" "${file^^}"; done
+#  cd -
+#fi
 
 counter=0
 for infile in $filedir/*$suffix; do
@@ -30,12 +30,12 @@ for infile in $filedir/*$suffix; do
     seqname=$prefix$(printf "%02d" $counter)
     ## process videos
     # extract frames
-    rm $outdir/*
+    rm -i $outdir/*
     ffmpeg -i $infile -vf fps=$fps $outdir/%05d.jpg
 
     # segmentation
     todir=$tmpdir/$seqname
-    rm $todir -rf
+    rm -i $todir -rf
     mkdir $todir
     mkdir $todir/images/
     mkdir $todir/masks/
@@ -64,7 +64,7 @@ for infile in $filedir/*$suffix; do
 
   ## save to zips
   #cd database/DAVIS/
-  #rm  $rootdir/$seqname.zip
+  #rm -i  $rootdir/$seqname.zip
   #zip $rootdir/$seqname.zip -r  */Full-Resolution/$seqname/
   #cd -
 

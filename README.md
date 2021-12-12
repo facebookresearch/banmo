@@ -3,17 +3,15 @@
 ## Installation
 ### Build with conda
 ```
-conda env create -f vid2shape.yml
-conda activate vid2shape
+conda env create -f banmo.yml
+conda activate banmo
 # install softras
 cd third_party/softras; python setup.py install; cd -;
 # install detectron2
 python -m pip install detectron2 -f \
   https://dl.fbaipublicfiles.com/detectron2/wheels/cu110/torch1.7/index.html
-# marching cubes
-pip install --upgrade PyMCubes
 # clone detectron2 repo to ../
-# install healpy
+cd ../; git clone https://github.com/facebookresearch/detectron2
 ```
 
 ## Preprocess

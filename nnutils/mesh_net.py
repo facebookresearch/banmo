@@ -424,7 +424,7 @@ class v2s_net(nn.Module):
             
 
         # densepose
-        detbase='../detectron2/'
+        detbase='./third_party/detectron2/'
         if opts.use_human:
             canonical_mesh_name = 'smpl_27554'
             config_path = '%s/projects/DensePose/configs/cse/densepose_rcnn_R_101_FPN_DL_soft_s1x.yaml'%(detbase)

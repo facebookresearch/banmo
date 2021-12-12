@@ -8,7 +8,7 @@ import pdb
 import trimesh
 
 import sys
-sys.path.insert(0,'../detectron2//projects/DensePose/')
+sys.path.insert(0,'./third_party/detectron2//projects/DensePose/')
 
 from detectron2.config import get_cfg
 from detectron2.modeling import build_model

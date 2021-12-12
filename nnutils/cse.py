@@ -11,7 +11,7 @@ import torch.nn.functional as F
 import torchvision
 curr_dir = os.path.abspath(os.getcwd())
 sys.path.insert(0, curr_dir)
-detbase = '../detectron2/'
+detbase = './third_party/detectron2/'
 sys.path.insert(0, '%s/projects/DensePose/' % detbase)
 from detectron2.structures import Boxes
 from detectron2.config import get_cfg

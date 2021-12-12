@@ -17,7 +17,7 @@ import torchvision
 import sys
 curr_dir = os.path.abspath(os.getcwd())
 sys.path.insert(0,curr_dir)
-detbase='../detectron2/'
+detbase='./third_party/detectron2/'
 sys.path.insert(0,'%s/projects/PointRend/'%detbase)
 sys.path.insert(0,'%s/projects/DensePose/'%detbase)
 sys.path.insert(0,'third_party/ext_utils')

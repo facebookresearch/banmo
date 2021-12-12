@@ -1,3 +1,8 @@
+#
+# bash scripts/preprocess.sh ./raw/ Sultan .MOV no 10 
+#                            folder, folder, file ext, human or not, fps
+# file ext can be {.MOV, .mp4}
+
 rootdir=$1
 tmpdir=tmp/
 prefix=$2
@@ -25,7 +30,6 @@ for infile in $filedir/*$suffix; do
 #  fi
 
   echo $infile  
-
   if [ "$suffix" = ".MOV" ] || [ "$suffix" = ".mp4" ]; then
     seqname=$prefix$(printf "%02d" $counter)
     ## process videos

@@ -3,9 +3,9 @@ res=Full-Resolution
 seqname=$1
 testres=1
 
-rm ./$seqname -rf
-rm $davisdir/FlowFW*/$res/${seqname}* -rf
-rm $davisdir/FlowBW*/$res/${seqname}* -rf
+rm -i ./$seqname -rf
+rm -i $davisdir/FlowFW*/$res/${seqname}* -rf
+rm -i $davisdir/FlowBW*/$res/${seqname}* -rf
 
 array=(1 2 4 8 16 32)
 for i in "${array[@]}"
@@ -17,4 +17,4 @@ cp $seqname/FlowFW_$i/* -rf $davisdir/FlowFW_$i/$res/$seqname
 cp $seqname/FlowBW_$i/* -rf $davisdir/FlowBW_$i/$res/$seqname
 done
 
-rm ./$seqname -rf
+rm -i ./$seqname -rf

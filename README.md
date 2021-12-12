@@ -11,15 +11,15 @@ cd third_party/softras; python setup.py install; cd -;
 python -m pip install detectron2 -f \
   https://dl.fbaipublicfiles.com/detectron2/wheels/cu110/torch1.7/index.html
 # clone detectron2 repo
-cd third_party/; git clone https://github.com/facebookresearch/detectron2
+cd third_party/; git clone https://github.com/facebookresearch/detectron2; cd -
 ```
 
 ## Preprocess
 Download input cat videos to `./raw`
 ```
-mkdir raw
+mkdir -f raw/Sultan
 curl -L https://www.dropbox.com/sh/qbl88gmukegusy9/AAAi6JI-NTUtJGa_sNZ7IETza?dl=1 > ./raw/Sultan.zip
-unzip "./raw/Sultan.zip" -d ./raw
+unzip "./raw/Sultan.zip" -d ./raw/Sultan/
 ```
 Extract per-frame rgb, mask, flow images.
 ```

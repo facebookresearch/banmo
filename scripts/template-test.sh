@@ -1,7 +1,7 @@
 gpus=$1
 seqname=nerfies_cat_807
 num_epochs=30
-addname=test-sm # 120 frames, can 8*16 is sufficient
+addname=test-sm2nd-nosfm # 120 frames, can 8*16 is sufficient
 addr=10007
 use_human=no
 
@@ -17,10 +17,13 @@ savename=${model_prefix}-init
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr  --num_epochs $num_epochs --lbs --root_opt --ks_opt \
   --pose_cnn_path $pose_cnn_path \
-  --lineload --batch_size 128 --nsample 8\
+  --lineload --batch_size 128 --nsample 4\
   --nouse_resize \
+  --nosfm_init \
+  --root_sm \
   --${use_human}use_human
   #--nouse_unc \
+  #--lineload --batch_size 128 --nsample 8\
   #--warmup_init_steps 0 --warmup_steps 0 \
   #--fine_steps 0.0 --noanneal_freq --nouse_resize \
   #--debug \

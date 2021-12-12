@@ -400,6 +400,38 @@ def compute_xyz_wt_loss(gt_list, curr_list):
     loss = torch.stack(loss).mean()
     return loss
 
+def compute_root_sm_2nd_loss(rtk_all, data_offset):
+    """
+    2nd order loss
+    """
+    rot_sm_loss = []
+    trn_sm_loss = []
+    for didx in range(len(data_offset)-1):
+        stt_idx = data_offset[didx]
+        end_idx = data_offset[didx+1]
+
+        stt_rtk = rtk_all[stt_idx:end_idx-2]
+        mid_rtk = rtk_all[stt_idx+1:end_idx-1]
+        end_rtk = rtk_all[stt_idx+2:end_idx]
+
+        rot_sub1 = stt_rtk[:,:3,:3].matmul(mid_rtk[:,:3,:3].permute(0,2,1))
+        rot_sub2 = mid_rtk[:,:3,:3].matmul(end_rtk[:,:3,:3].permute(0,2,1))
+
+        trn_sub1 = stt_rtk[:,:3,3] - mid_rtk[:,:3,3]
+        trn_sub2 = mid_rtk[:,:3,3] - end_rtk[:,:3,3]
+
+        rot_sm_sub = rot_sub1.matmul(rot_sub2.permute(0,2,1))
+        trn_sm_sub = trn_sub1 - trn_sub2
+        
+        rot_sm_loss.append(rot_sm_sub)
+        trn_sm_loss.append(trn_sm_sub)
+    rot_sm_loss = torch.cat(rot_sm_loss,0)
+    rot_sm_loss = rot_angle(rot_sm_loss).mean()*1e-1
+    trn_sm_loss = torch.cat(trn_sm_loss,0)
+    trn_sm_loss = trn_sm_loss.norm(2,-1).mean()
+    root_sm_loss = rot_sm_loss + trn_sm_loss 
+    return root_sm_loss
+
 
 def compute_root_sm_loss(rtk_all, data_offset):
     rot_sm_loss = []
@@ -416,6 +448,6 @@ def compute_root_sm_loss(rtk_all, data_offset):
     rot_sm_loss = torch.cat(rot_sm_loss,0)
     rot_sm_loss = rot_angle(rot_sm_loss).mean()*1e-3
     trans_sm_loss = torch.cat(trans_sm_loss,0)
-    trans_sm_loss = trans_sm_loss.norm(2,-1).mean()
+    trans_sm_loss = trans_sm_loss.norm(2,-1).mean()*0.1
     root_sm_loss = rot_sm_loss + trans_sm_loss 
     return root_sm_loss

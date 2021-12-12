@@ -36,7 +36,7 @@ from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,
 from nnutils.rendering import render_rays
 from nnutils.loss_utils import eikonal_loss, nerf_gradient, rtk_loss, rtk_cls_loss,\
                             feat_match_loss, kp_reproj_loss, grad_update_bone, \
-                            loss_filter, compute_xyz_wt_loss, compute_root_sm_loss
+                            loss_filter, compute_xyz_wt_loss, compute_root_sm_2nd_loss
 from utils.io import vis_viser, draw_pts
 from nnutils.cse import CSENet
 
@@ -1447,7 +1447,7 @@ class v2s_net(nn.Module):
 
         # regularization of root poses
         if opts.root_sm:
-            root_sm_loss = compute_root_sm_loss(self.rtk_all, self.data_offset)
+            root_sm_loss = compute_root_sm_2nd_loss(self.rtk_all, self.data_offset)
             aux_out['root_sm_loss'] = root_sm_loss
             total_loss = total_loss + root_sm_loss
 

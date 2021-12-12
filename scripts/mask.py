@@ -34,12 +34,12 @@ odir='database/DAVIS/'
 imgdir= '%s/JPEGImages/Full-Resolution/%s'%(odir,seqname)
 maskdir='%s/Annotations/Full-Resolution/%s'%(odir,seqname)
 dpdir='%s/Densepose/Full-Resolution/%s'%(odir,seqname)
-if os.path.exists(imgdir): shutil.rmtree(imgdir)
-if os.path.exists(maskdir): shutil.rmtree(maskdir)
-if os.path.exists(dpdir): shutil.rmtree(dpdir)
-os.mkdir(imgdir)
-os.mkdir(maskdir)
-os.mkdir(dpdir)
+#if os.path.exists(imgdir): shutil.rmtree(imgdir)
+#if os.path.exists(maskdir): shutil.rmtree(maskdir)
+#if os.path.exists(dpdir): shutil.rmtree(dpdir)
+#os.mkdir(imgdir)
+#os.mkdir(maskdir)
+#os.mkdir(dpdir)
 
 
 cfg = get_cfg()

@@ -7,7 +7,8 @@ rootdir=$1
 tmpdir=tmp/
 prefix=$2
 filedir=$rootdir/$prefix
-outdir=$rootdir/output
+maskoutdir=$rootdir/output
+finaloutdir=database/DAVIS/
 suffix=$3
 ishuman=$4 # y/n
 fps=$5
@@ -34,8 +35,8 @@ for infile in $filedir/*$suffix; do
     seqname=$prefix$(printf "%02d" $counter)
     ## process videos
     # extract frames
-    rm -i $outdir/*
-    ffmpeg -i $infile -vf fps=$fps $outdir/%05d.jpg
+    rm -i $maskoutdir/*
+    ffmpeg -i $infile -vf fps=$fps $maskoutdir/%05d.jpg
 
     # segmentation
     todir=$tmpdir/$seqname
@@ -43,13 +44,17 @@ for infile in $filedir/*$suffix; do
     mkdir $todir
     mkdir $todir/images/
     mkdir $todir/masks/
-    cp $outdir/* $todir/images
-    python scripts/densepose.py $seqname $ishuman
+    cp $maskoutdir/* $todir/images
+    rm -i $finaloutdir/JPEGImages/Full-Resolution/$seqname
+    rm -i $finaloutdir/Annotations/Full-Resolution/$seqname
+    mkdir $finaloutdir/JPEGImages/Full-Resolution/$seqname
+    mkdir $finaloutdir/Annotations/Full-Resolution/$seqname
+    python scripts/mask.py $seqname $ishuman
   elif [ "$suffix" = ".zip" ]; then
     seqname=$(basename "$infile")
     seqname=${seqname::-4}
     # process segmented data
-    unzip -o $infile -d database/DAVIS/
+    unzip -o $infile -d $finaloutdir
   else
     echo 'directly processing sil/rgb'
     seqname=`echo $infile | sed -e 's/\/.*\///g'`
@@ -57,6 +62,8 @@ for infile in $filedir/*$suffix; do
     echo $seqname
   fi
 
+  rm -i $finaloutdir/DensePose/Full-Resolution/$seqname
+  mkdir $finaloutdir/DensePose/Full-Resolution/$seqname
   python scripts/compute_dp.py $seqname $ishuman
 
   # flow

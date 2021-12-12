@@ -15,13 +15,19 @@ cd ../; git clone https://github.com/facebookresearch/detectron2
 ```
 
 ## Preprocess
-Extract frames and masks
+Download input cat videos to `./raw`
 ```
-bash scripts/preprocess.sh video-folder dir-name
+mkdir raw
+curl -L https://www.dropbox.com/sh/qbl88gmukegusy9/AAAi6JI-NTUtJGa_sNZ7IETza?dl=1 > ./raw/Sultan.zip
+unzip "./raw/Sultan.zip" -d ./raw
 ```
-
+Extract per-frame rgb, mask, flow images.
 ```
-bash scripts/colmap_to_data.sh seqname
+bash scripts/preprocess.sh ./raw/ Sultan .MOV no 10 # folder name, file ext, is_human, fps
+```
+Optionally run SfM for initial root pose
+```
+# bash scripts/colmap_to_data.sh seqname
 ```
 
 ## Run

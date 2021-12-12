@@ -430,6 +430,7 @@ def compute_root_sm_2nd_loss(rtk_all, data_offset):
     trn_sm_loss = torch.cat(trn_sm_loss,0)
     trn_sm_loss = trn_sm_loss.norm(2,-1).mean()
     root_sm_loss = rot_sm_loss + trn_sm_loss 
+    root_sm_loss = root_sm_loss * 0.1
     return root_sm_loss
 
 

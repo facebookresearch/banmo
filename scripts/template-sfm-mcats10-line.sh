@@ -1,7 +1,7 @@
 gpus=$1
 seqname=sfm-mcats10
 num_epochs=90 # 750 frames, 128 * 8 = 1024
-addname=b128-sm2nd01
+addname=b128-sm2nd001-clip
 addr=10004
 use_human=no
 

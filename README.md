@@ -13,17 +13,19 @@ python -m pip install detectron2 -f \
 ```
 
 ## Preprocess
-See [here](./preprocess)
+See [here](./preprocess).
 
 ## Run
 Create tmp dirs
 ```
-ln -s /private/home/gengshany/data/ database
 mkdir tmp
-wget https://dl.fbaipublicfiles.com/densepose/meshes/geodists/geodists_sheep_5004.pkl
-mv geodists_sheep_5004.pkl ./mesh_material
+```
+Run optimization on cats
+```
+bash scripts/template-sfm-mcats10-line.sh 0,1,2,3,4,5,6,7
 ```
 
+## Synthetic data
 To render objects
 ```
 python scripts/render_synthetic.py --outdir syn-eagle-100 --model eagle --nframes 100 --alpha 1

@@ -1,7 +1,7 @@
 gpus=$1
 seqname=adult7 # 630 frames
 num_epochs=120
-addname=b128-sm2nd01
+addname=b128-sm2nd001-clip
 addr=10004
 use_human=
 

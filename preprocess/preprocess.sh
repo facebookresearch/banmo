@@ -14,6 +14,8 @@ ishuman=$4 # y/n
 fps=$5
 #fps=10
 
+mkdir -p trash # replace rm to mv -f trash
+
 ## rename to upper case
 #if [ "$suffix" = ".MOV" ]; then
 #  cd $filedir
@@ -35,20 +37,20 @@ for infile in $filedir/*$suffix; do
     seqname=$prefix$(printf "%02d" $counter)
     ## process videos
     # extract frames
-    mv -f $maskoutdir tmp/
+    mv -f $maskoutdir trash/
     mkdir -p $maskoutdir
     ffmpeg -i $infile -vf fps=$fps $maskoutdir/%05d.jpg
 
     # segmentation
     todir=$tmpdir/$seqname
-    mv -f $todir tmp/
+    mv -f $todir trash/
     mkdir $todir
     mkdir $todir/images/
     mkdir $todir/masks/
     cp $maskoutdir/* $todir/images
-    mv -f $finaloutdir/JPEGImages/Full-Resolution/$seqname  tmp/ 
-    mv -f $finaloutdir/Annotations/Full-Resolution/$seqname tmp/ 
-    mv -f $finaloutdir/Densepose/Full-Resolution/$seqname   tmp/ 
+    mv -f $finaloutdir/JPEGImages/Full-Resolution/$seqname  trash/ 
+    mv -f $finaloutdir/Annotations/Full-Resolution/$seqname trash/ 
+    mv -f $finaloutdir/Densepose/Full-Resolution/$seqname   trash/ 
     mkdir -p $finaloutdir/JPEGImages/Full-Resolution/$seqname
     mkdir -p $finaloutdir/Annotations/Full-Resolution/$seqname
     mkdir -p $finaloutdir/Densepose/Full-Resolution/$seqname

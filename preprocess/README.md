@@ -18,7 +18,7 @@ Extract per-frame rgb, mask, flow images.
 ```
 bash preprocess/preprocess.sh ./raw/ Sultan .MOV n 10 
 ```
-To speed data loading, we store images as lines
+To speed up data loading, we store images as lines
 ```
-python preprocess/img2lines.py --seqname Sultan
+python preprocess/img2lines.py --seqname sultan10
 ```

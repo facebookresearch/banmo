@@ -47,9 +47,11 @@ for infile in $filedir/*$suffix; do
     cp $maskoutdir/* $todir/images
     rm -i $finaloutdir/JPEGImages/Full-Resolution/$seqname
     rm -i $finaloutdir/Annotations/Full-Resolution/$seqname
-    mkdir $finaloutdir/JPEGImages/Full-Resolution/$seqname
-    mkdir $finaloutdir/Annotations/Full-Resolution/$seqname
-    python scripts/mask.py $seqname $ishuman
+    rm -i $finaloutdir/Densepose/Full-Resolution/$seqname
+    mkdir -p $finaloutdir/JPEGImages/Full-Resolution/$seqname
+    mkdir -p $finaloutdir/Annotations/Full-Resolution/$seqname
+    mkdir -p $finaloutdir/Densepose/Full-Resolution/$seqname
+    python preprocess/mask.py $seqname $ishuman
   elif [ "$suffix" = ".zip" ]; then
     seqname=$(basename "$infile")
     seqname=${seqname::-4}
@@ -62,16 +64,14 @@ for infile in $filedir/*$suffix; do
     echo $seqname
   fi
 
-  rm -i $finaloutdir/DensePose/Full-Resolution/$seqname
-  mkdir $finaloutdir/DensePose/Full-Resolution/$seqname
-  python scripts/compute_dp.py $seqname $ishuman
+  python preprocess/compute_dp.py $seqname $ishuman
 
   # flow
   cd third_party/vcnplus
   bash compute_flow.sh $seqname
   cd -
 
-#  bash scripts/colmap_to_data.sh $seqname
+  bash preprocess/colmap_to_data.sh $seqname
 
   ## save to zips
   #cd database/DAVIS/

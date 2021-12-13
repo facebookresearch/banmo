@@ -701,7 +701,8 @@ class v2s_trainer(Trainer):
                 self.save_network(str(epoch+1))
 
     @staticmethod
-    def save_cams(aux_seq, save_prefix, datasets, evalsets, obj_scale,lineloader=None):
+    def save_cams(aux_seq, save_prefix, datasets, evalsets, obj_scale,
+            lineloader=None, unc_filter=True):
         """
         save cameras to dir and modify dataset 
         """
@@ -717,15 +718,16 @@ class v2s_trainer(Trainer):
             impath = aux_seq['impath'][i]
             seqname = impath.split('/')[-2]
             rtk = aux_seq['rtk'][i]
-            
-            # in the same sequance find the closest valid frame and replace it
-            seq_idx = np.asarray([seqname == i.split('/')[-2] \
-                    for i in aux_seq['impath']])
-            valid_ids_seq = np.where(valid_ids * seq_idx)[0]
-            print('%s: %d frames are valid'%(seqname, len(valid_ids_seq)))
-            if len(valid_ids_seq)>0 and not aux_seq['is_valid'][i]:
-                closest_valid_idx = valid_ids_seq[np.abs(i-valid_ids_seq).argmin()]
-                rtk[:3,:3] = aux_seq['rtk'][closest_valid_idx][:3,:3]
+           
+            if unc_filter:
+                # in the same sequance find the closest valid frame and replace it
+                seq_idx = np.asarray([seqname == i.split('/')[-2] \
+                        for i in aux_seq['impath']])
+                valid_ids_seq = np.where(valid_ids * seq_idx)[0]
+                print('%s: %d frames are valid'%(seqname, len(valid_ids_seq)))
+                if len(valid_ids_seq)>0 and not aux_seq['is_valid'][i]:
+                    closest_valid_idx = valid_ids_seq[np.abs(i-valid_ids_seq).argmin()]
+                    rtk[:3,:3] = aux_seq['rtk'][closest_valid_idx][:3,:3]
 
             # rescale translation according to input near-far plane
             rtk[:3,3] = rtk[:3,3]*obj_scale
@@ -778,7 +780,8 @@ class v2s_trainer(Trainer):
         self.save_cams(aux_seq, save_prefix,
                     full_loader.dataset.datasets,
                 self.evalloader.dataset.datasets,
-                self.model.obj_scale, lineloader=lineloader)
+                self.model.obj_scale, lineloader=lineloader,
+                unc_filter=opts.unc_filter)
         
         dist.barrier() # wait untail all have finished
         if opts.local_rank==0:

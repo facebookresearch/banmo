@@ -1,7 +1,7 @@
 gpus=$1
 seqname=sfm-mcats10
 num_epochs=90 # 750 frames, 128 * 8 = 1024
-addname=b128-sm2nd001-clip
+addname=b128-nosfm
 addr=10004
 use_human=no
 
@@ -20,7 +20,9 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --lineload --batch_size 128 --nsample 4 --nouse_resize \
   --img_wt 0.1 --sil_wt 0.1 --proj_wt 0.02\
   --root_sm \
+  --nosfm_init \
   --${use_human}use_human
+  #--nounc_filter \
   #--batch_size 16 --nsample 64 \
   #--lineload --batch_size 128 --nsample 8 --nouse_resize \
   #--flow_dp \
@@ -36,7 +38,9 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --img_wt 0.1 --sil_wt 0.1 --proj_wt 0.02\
   --lineload --batch_size 128 --nsample 4\
   --root_sm \
+  --nosfm_init \
   --${use_human}use_human
+#  --nounc_filter \
 #  --flow_dp \
 #  --dskin_steps 0.2 --fine_steps 0.2 --noanneal_freq --freeze_proj --nouse_resize \
 #  --lineload --batch_size 128 --nsample 8\

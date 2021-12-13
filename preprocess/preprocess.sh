@@ -1,18 +1,17 @@
 #
-# bash preprocess/preprocess.sh ./raw/ Sultan .MOV no 10 
-#                            folder, folder, file ext, human or not, fps
+# bash preprocess/preprocess.sh Sultan .MOV no 10 
+#                             folder, file ext, human or not, fps
 # file ext can be {.MOV, .mp4}
 
-rootdir=$1
+rootdir=raw/
 tmpdir=tmp/
-prefix=$2
+prefix=$1
 filedir=$rootdir/$prefix
 maskoutdir=$rootdir/output
 finaloutdir=database/DAVIS/
-suffix=$3
-ishuman=$4 # y/n
-fps=$5
-#fps=10
+suffix=$2
+ishuman=$3 # y/n
+fps=$4
 
 mkdir -p trash # replace rm to mv -f trash
 
@@ -37,20 +36,20 @@ for infile in $filedir/*$suffix; do
     seqname=$prefix$(printf "%02d" $counter)
     ## process videos
     # extract frames
-    mv -f $maskoutdir trash/
+    rm -rf $maskoutdir
     mkdir -p $maskoutdir
     ffmpeg -i $infile -vf fps=$fps $maskoutdir/%05d.jpg
 
     # segmentation
     todir=$tmpdir/$seqname
-    mv -f $todir trash/
+    rm -rf $todir
     mkdir $todir
     mkdir $todir/images/
     mkdir $todir/masks/
     cp $maskoutdir/* $todir/images
-    mv -f $finaloutdir/JPEGImages/Full-Resolution/$seqname  trash/ 
-    mv -f $finaloutdir/Annotations/Full-Resolution/$seqname trash/ 
-    mv -f $finaloutdir/Densepose/Full-Resolution/$seqname   trash/ 
+    rm -rf $finaloutdir/JPEGImages/Full-Resolution/$seqname  
+    rm -rf $finaloutdir/Annotations/Full-Resolution/$seqname 
+    rm -rf $finaloutdir/Densepose/Full-Resolution/$seqname   
     mkdir -p $finaloutdir/JPEGImages/Full-Resolution/$seqname
     mkdir -p $finaloutdir/Annotations/Full-Resolution/$seqname
     mkdir -p $finaloutdir/Densepose/Full-Resolution/$seqname

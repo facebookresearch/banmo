@@ -16,7 +16,7 @@ gdown https://drive.google.com/uc?id=139S6pplPvMTB-_giI6V2dxpOHGqqAdHn -O ./lasr
 Extract per-frame rgb, mask, flow images. 
 (not tested yet, don't use) Optionally, you can extract initial SfM camera poses by uncommenting some lines in `preprocess.sh`.
 ```
-bash preprocess/preprocess.sh ./raw/ Sultan .MOV n 10 
+bash preprocess/preprocess.sh Sultan .MOV n 10 
 ```
 To speed up data loading, we store images as lines
 ```

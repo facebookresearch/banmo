@@ -3,9 +3,9 @@ res=Full-Resolution
 seqname=$1
 testres=1
 
-mv -f ./$seqname ../../trash
-mv -f $davisdir/FlowFW*/$res/${seqname}* ../../trash
-mv -f $davisdir/FlowBW*/$res/${seqname}* ../../trash
+#rm -rf ./$seqname 
+rm -rf $davisdir/FlowFW*/$res/${seqname}* 
+rm -rf $davisdir/FlowBW*/$res/${seqname}* 
 
 array=(1 2 4 8 16 32)
 for i in "${array[@]}"

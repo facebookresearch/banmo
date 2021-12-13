@@ -20,5 +20,5 @@ bash preprocess/preprocess.sh ./raw/ Sultan .MOV n 10
 ```
 To speed data loading, we store images as lines
 ```
-python preprocess/pixelize.py --seqname Sultan
+python preprocess/img2lines.py --seqname Sultan
 ```

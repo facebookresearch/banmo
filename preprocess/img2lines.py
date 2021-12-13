@@ -1,9 +1,10 @@
 """
-python pixelize.py --seqname xx
+python img2lines.py --seqname xx
 """
 from absl import flags, app
 import sys
 sys.path.insert(0,'third_party')
+sys.path.insert(0,'./')
 import numpy as np
 import torch
 import os

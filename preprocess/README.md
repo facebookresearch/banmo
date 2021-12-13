@@ -13,11 +13,8 @@ Download pre-trained VCN optical flow:
 mkdir ./lasr_vcn
 gdown https://drive.google.com/uc?id=139S6pplPvMTB-_giI6V2dxpOHGqqAdHn -O ./lasr_vcn/vcn_rob.pth
 ```
-Extract per-frame rgb, mask, flow images.
+Extract per-frame rgb, mask, flow images. 
+(not tested yet, don't use) Optionally, you can extract initial SfM camera poses by uncommenting some lines in `preprocess.sh`.
 ```
-bash scripts/preprocess.sh ./raw/ Sultan .MOV no 10 
-```
-Optionally run SfM for initial root pose
-```
-# bash scripts/colmap_to_data.sh seqname
+bash preprocess/preprocess.sh ./raw/ Sultan .MOV n 10 
 ```

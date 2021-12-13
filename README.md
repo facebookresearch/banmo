@@ -10,8 +10,6 @@ cd third_party/softras; python setup.py install; cd -;
 # install detectron2
 python -m pip install detectron2 -f \
   https://dl.fbaipublicfiles.com/detectron2/wheels/cu110/torch1.7/index.html
-# clone detectron2 repo
-cd third_party/; git clone https://github.com/facebookresearch/detectron2; cd detectron2; git checkout df6eac1814e7182625640d9168e4308bd3a6a8f8; cd ../../
 ```
 
 ## Preprocess

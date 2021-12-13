@@ -1,5 +1,5 @@
 #
-# bash scripts/preprocess.sh ./raw/ Sultan .MOV no 10 
+# bash preprocess/preprocess.sh ./raw/ Sultan .MOV no 10 
 #                            folder, folder, file ext, human or not, fps
 # file ext can be {.MOV, .mp4}
 
@@ -71,7 +71,8 @@ for infile in $filedir/*$suffix; do
   bash compute_flow.sh $seqname
   cd -
 
-  bash preprocess/colmap_to_data.sh $seqname
+  ## Optionally run SfM for initial root pose
+  #bash preprocess/colmap_to_data.sh $seqname
 
   ## save to zips
   #cd database/DAVIS/

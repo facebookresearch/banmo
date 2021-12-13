@@ -35,12 +35,13 @@ for infile in $filedir/*$suffix; do
     seqname=$prefix$(printf "%02d" $counter)
     ## process videos
     # extract frames
-    rm -i $maskoutdir/*
+    rm -Irf $maskoutdir
+    mkdir -p $maskoutdir
     ffmpeg -i $infile -vf fps=$fps $maskoutdir/%05d.jpg
 
     # segmentation
     todir=$tmpdir/$seqname
-    rm -i $todir -rf
+    rm $todir -Irf
     mkdir $todir
     mkdir $todir/images/
     mkdir $todir/masks/

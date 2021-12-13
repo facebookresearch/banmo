@@ -35,20 +35,20 @@ for infile in $filedir/*$suffix; do
     seqname=$prefix$(printf "%02d" $counter)
     ## process videos
     # extract frames
-    rm -Irf $maskoutdir
+    mv -f $maskoutdir tmp/
     mkdir -p $maskoutdir
     ffmpeg -i $infile -vf fps=$fps $maskoutdir/%05d.jpg
 
     # segmentation
     todir=$tmpdir/$seqname
-    rm $todir -Irf
+    mv -f $todir tmp/
     mkdir $todir
     mkdir $todir/images/
     mkdir $todir/masks/
     cp $maskoutdir/* $todir/images
-    rm -i $finaloutdir/JPEGImages/Full-Resolution/$seqname
-    rm -i $finaloutdir/Annotations/Full-Resolution/$seqname
-    rm -i $finaloutdir/Densepose/Full-Resolution/$seqname
+    mv -f $finaloutdir/JPEGImages/Full-Resolution/$seqname  tmp/ 
+    mv -f $finaloutdir/Annotations/Full-Resolution/$seqname tmp/ 
+    mv -f $finaloutdir/Densepose/Full-Resolution/$seqname   tmp/ 
     mkdir -p $finaloutdir/JPEGImages/Full-Resolution/$seqname
     mkdir -p $finaloutdir/Annotations/Full-Resolution/$seqname
     mkdir -p $finaloutdir/Densepose/Full-Resolution/$seqname

@@ -1,3 +1,4 @@
+third_party/kmeans_pytorch/
 trash/*
 raw
 mesh_material/geodists_smpl_27554.pkl

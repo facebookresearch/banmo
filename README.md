@@ -10,6 +10,9 @@ cd third_party/softras; python setup.py install; cd -;
 # install detectron2
 python -m pip install detectron2 -f \
   https://dl.fbaipublicfiles.com/detectron2/wheels/cu110/torch1.7/index.html
+# install kmeans-pytorch
+cd third_party; git clone https://github.com/subhadarship/kmeans_pytorch; 
+cd kmeans_pytorch; pip install --editable .; cd ../../
 ```
 
 ## Preprocess

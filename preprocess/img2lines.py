@@ -69,6 +69,7 @@ def main(_):
         dat.spec_dt = 1
     
     #TODO
+    #overwrite=False
     overwrite=True
 
     # hardcoded path 
@@ -86,6 +87,8 @@ def main(_):
         save_dir = '%s/%s'%(base_path, seqname_sub)
         save_dir_t = '%s/%d_%s'%(save_dir, dt, frameid_sub)
         print(save_dir_t)
+        if (not overwrite) and os.path.exists(save_dir_t):
+            continue
         mkdir_p(save_dir_t)
 
         dict_array = tensor2array(batch)
@@ -96,12 +99,8 @@ def main(_):
 
         for idy in range(opts.img_size):
             save_path = '%s/%04d.npy'%(save_dir_t, idy)
-
-            if (not overwrite) and os.path.exists(save_path_frame):
-                pass
-            else:
-                dict_px = dict2pix(dict_array, idy)
-                np.save(save_path, dict_px)
+            dict_px = dict2pix(dict_array, idy)
+            np.save(save_path, dict_px)
 
 
 

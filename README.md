@@ -1,7 +1,6 @@
-# vid2shape
+# BANMo
 
-## Installation
-### Build with conda
+## Build with conda
 ```
 conda env create -f banmo.yml
 conda activate banmo
@@ -15,7 +14,15 @@ cd third_party; git clone https://github.com/subhadarship/kmeans_pytorch;
 cd kmeans_pytorch; pip install --editable .; cd ../../
 ```
 
-## Preprocess
+## Data preparation
+### Download proprocessed data
+```
+mkdir database
+unzip "/private/home/gengshany/data/DAVIS-backup.zip" -d database/
+mv database/DAVIS-backup/ database/DAVIS
+python preprocess/img2lines.py --seqname sfm-mcats10
+```
+### Preprocess videos from scratch (optional, don't use for now)
 See [here](./preprocess).
 
 ## Run
@@ -24,9 +31,11 @@ Create tmp dirs and run optimization monitor
 mkdir tmp; mkdir logdir
 screen -dmS "tensorboard" bash -c "tensorboard --logdir=logdir --bind_all"
 ```
+Need to set up tunneling to view the monitor locally.
+
 Run optimization on cats
 ```
-bash scripts/template-sultan10.sh 0,1,2,3,4,5,6,7
+bash scripts/template-sfm-cats10-line.sh 0,1,2,3,4,5,6,7
 ```
 Extracted animated meshes and render
 ```

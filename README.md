@@ -16,9 +16,10 @@ python -m pip install detectron2 -f \
 See [here](./preprocess).
 
 ## Run
-Create tmp dirs
+Create tmp dirs and run optimization monitor
 ```
-mkdir tmp
+mkdir tmp; mkdir logdir
+screen -dmS "tensorboard" bash -c "tensorboard --logdir=logdir --bind_all"
 ```
 Run optimization on cats
 ```

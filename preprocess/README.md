@@ -14,7 +14,9 @@ mkdir ./lasr_vcn
 gdown https://drive.google.com/uc?id=139S6pplPvMTB-_giI6V2dxpOHGqqAdHn -O ./lasr_vcn/vcn_rob.pth
 ```
 Extract per-frame rgb, mask, flow images. 
-(not tested yet, don't use) Optionally, you can extract initial SfM camera poses by uncommenting some lines in `preprocess.sh`.
+Optionally, you can extract initial SfM camera poses by uncommenting some lines in `preprocess.sh`.
+To do so, we reused [nerfies](https://github.com/google/nerfies) colmap processing code.
+Please follow the instructions to install nerfies conda env.
 ```
 bash preprocess/preprocess.sh Sultan .MOV n 10 
 ```

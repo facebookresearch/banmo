@@ -188,7 +188,7 @@ flags.DEFINE_integer('loadvid', -1, 'video id to load (for ft)')
 flags.DEFINE_bool('scaled_code', False, 'whether to use scaled code')
 
 # for preloading
-flags.DEFINE_bool('preload', True, 'whether to use pre-computed data')
+flags.DEFINE_bool('preload', False, 'whether to use pre-computed data')
 flags.DEFINE_bool('lineload',False,'whether to use pre-computed data per line')
 
 # for match

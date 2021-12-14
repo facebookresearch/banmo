@@ -7,7 +7,7 @@ sys.path.insert(0,'third_party/nerfies-0.1/third_party/pycolmap/')
 from absl import logging
 from typing import Dict
 import numpy as np
-from nerfies.camera import Camera
+#from nerfies.camera import Camera
 import pycolmap
 from pycolmap import Quaternion
 import os

@@ -13,8 +13,6 @@ suffix=$2
 ishuman=$3 # y/n
 fps=$4
 
-mkdir -p trash # replace rm to mv -f trash
-
 ## rename to upper case
 #if [ "$suffix" = ".MOV" ]; then
 #  cd $filedir

@@ -72,7 +72,7 @@ for infile in $filedir/*$suffix; do
   cd -
 
   ## Optionally run SfM for initial root pose
-  #bash preprocess/colmap_to_data.sh $seqname
+  #bash preprocess/colmap_to_data.sh $seqname $ishuman
 
   ## save to zips
   #cd database/DAVIS/

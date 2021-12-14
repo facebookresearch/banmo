@@ -76,7 +76,7 @@ else:
   os.makedirs(tmp_rgb_raw_dir, exist_ok=True)
   os.makedirs(tmp_mask_raw_dir, exist_ok=True)
 
-  for i in glob.glob('/private/home/gengshany/data/DAVIS/JPEGImages/Full-Resolution/%s/*'%seqname):
+  for i in glob.glob('../../../database/DAVIS/JPEGImages/Full-Resolution/%s/*'%seqname):
         img = cv2.imread(i)
         imgmask = cv2.imread(i.replace('JPEGImages', 'Annotations').replace('.jpg', '.png'),0)>0
         use_lasr=False

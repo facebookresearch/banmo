@@ -9,6 +9,15 @@ import sys
 nerfies_dir=sys.argv[1]
 import os
 
+def mkdir_p(path):
+    try:
+        os.makedirs(path)
+    except OSError as exc:  # Python >2.5
+        if exc.errno == errno.EEXIST and os.path.isdir(path):
+            pass
+        else:
+            raise
+
 # @title Model and dataset configuration
 # @markdown Change the directories to where you saved your capture and experiment.
 
@@ -93,9 +102,9 @@ if save_data:
         shutil.rmtree(sil_save_path)
         shutil.rmtree(cam_save_path)
     except: pass
-    os.mkdir(cam_save_path)
-    os.mkdir(rgb_save_path)
-    os.mkdir(sil_save_path)
+    mkdir_p(cam_save_path)
+    mkdir_p(rgb_save_path)
+    mkdir_p(sil_save_path)
 
 for tidx in range(0,render_len):
     tidxf = int(tidx/render_len*frame_len)

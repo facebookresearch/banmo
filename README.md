@@ -21,17 +21,19 @@ Optionally you could download each file separately [here](https://www.dropbox.co
 ```
 mkdir -p database/DAVIS/
 curl -L https://www.dropbox.com/sh/2owtqkmyfhnn6qh/AADzpTrY50UGUk_qs40DTNa-a?dl=1 > ./database/cat-pikachiu.zip
-unzip "database/cat-pikachiu.zip" -d database/; rm database/cat-pikachiu.zip
+curl -L https://www.dropbox.com/sh/invde3okcyum8e9/AABaJulvEoXBePV6gLLxgsM4a?dl=1 > ./database/human-cap.zip
 unzip "database/*.zip" -d database/DAVIS/; rm database/*.zip
+unzip "database/DAVIS/*.zip" -d database/DAVIS/; rm database/DAVIS/*.zip
 ```
 To speed up data loading, we store images as lines
 ```
 python preprocess/img2lines.py --seqname sfm-mcats10
+python preprocess/img2lines.py --seqname adult7
 ```
 ### Preprocess videos from scratch (optional, don't use for now)
 Instead using preprocessing, you provide scripts to process raw videos. See [here](./preprocess).
 
-## Run
+## Example: Cat
 Create tmp dirs and run optimization monitor.
 You may need to set up ssh tunneling to view the tensorboard monitor locally.
 ```
@@ -42,12 +44,20 @@ Run optimization on cats
 ```
 bash scripts/template-sfm-cats10-line.sh 0,1,2,3,4,5,6,7
 ```
-Extracted animated meshes and render
+Extract animated meshes and render
 ```
 bash scripts/render_vids.sh sultan10 logdir/sultan10-lbs-rkopt-90-b128-init/params_89.pth \
     "0 1 2 3 4 5 6 7 8 9" \
     "--sample_grid3d 128 --root_opt --lbs --full_mesh  --nouse_corresp --nouse_viser --nouse_proj --render_size 2 --ndepth 2 --nouse_human --queryfw --num_bones 25"
 ```
+
+## Example: Human
+Extract
+```
+bash scripts/render_vids.sh adult7 logdir/adult7-lbs-rkopt-120-b128-nounc-init/params_115.pth \
+    "0 1 2 3 4 5 6 7 8 9" \
+    "--sample_grid3d 128 --root_opt --lbs --full_mesh  --nouse_corresp --nouse_viser --nouse_proj --render_size 2 --ndepth 2 --use_human --queryfw --num_bones 64 --symm_shape"
+``` 
 
 ## PoseNet Training
 To traing pose predictor

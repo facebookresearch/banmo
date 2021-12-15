@@ -343,7 +343,10 @@ def get_config_info(opts, config, name, dataid, is_eval=False):
                               dataid=dataid, numvid=numvid, flip=flip, is_eval=is_eval,
                               rtk_path=rtk_path)
             # duplicate such that it goes more than 200 iters
-            dup_num = int(200/(len(dataset)/opts['ngpu']/opts['batch_size']))+1
+            dup_num = 200/(len(dataset)/opts['ngpu']/opts['batch_size'])
+            if 'use_accu' in opts.keys():
+                dup_num = dup_num*opts['use_accu']
+            dup_num = int(dup_num)+1
             for i in range(dup_num):
                 datasets.append(dataset)
         else:

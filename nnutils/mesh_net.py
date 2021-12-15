@@ -181,7 +181,7 @@ flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane a
 flags.DEFINE_float('bound_reset', 0.5, 'by default, start reseting bound from 50%')
 flags.DEFINE_bool('use_resize',False, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
-flags.DEFINE_bool('use_accu',False, 'whether to use gradient accumulation')
+flags.DEFINE_integer('use_accu', 1, 'how many steps to do gradient accumulation')
 flags.DEFINE_bool('freeze_coarse', False, 'whether to freeze coarse posec of MLP')
 flags.DEFINE_integer('loadid0', -1, 'frame id to load (for ft)')
 flags.DEFINE_integer('loadvid', -1, 'video id to load (for ft)')

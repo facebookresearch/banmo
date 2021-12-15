@@ -71,14 +71,7 @@ class v2s_trainer(Trainer):
         self.local_rank = opts.local_rank
         self.save_dir = os.path.join(opts.checkpoint_dir, opts.logname)
         
-        if opts.use_accu:
-            # 4bs  30 ep  => accu=1  (nerfies807, 120 img), 1.5h
-            # 16bs 90 ep  => accu=3  (sfm10, 750 img), 6h
-            # 16bs 300 ep => accu=10 (amaf, 2600 img), 15h
-            accu_steps = max(1, opts.num_epochs // 30)
-            self.accu_steps = int(accu_steps)
-        else:
-            self.accu_steps = 1
+        self.accu_steps = opts.use_accu
         
         # write logs
         if opts.local_rank==0:
@@ -124,6 +117,7 @@ class v2s_trainer(Trainer):
         opts_dict['local_rank'] = opts.local_rank
         opts_dict['rtk_path'] = opts.rtk_path
         opts_dict['preload']=opts.preload
+        opts_dict['use_accu'] = opts.use_accu
 
         if self.is_eval and opts.rtk_path=='' and opts.model_path!='':
             # automatically load cameras in the logdir
@@ -865,7 +859,7 @@ class v2s_trainer(Trainer):
 
         dataloader.sampler.set_epoch(epoch) # necessary for shuffling
         for i, batch in enumerate(dataloader):
-            if i==200:
+            if i==200*opts.use_accu:
                 break
             self.model.module.progress = float(self.model.total_steps) /\
                                                self.model.final_steps

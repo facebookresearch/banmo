@@ -39,10 +39,6 @@ class Trainer():
         save_dict['epoch_nscore'] = self.epoch_nscore
         save_dict = {k:v for k,v in save_dict.items() if 'zoo_feat_net' not in k}
 
-        if self.opts.reg3d and 'reg3d' in self.opts.name and len(self.model.module.best_list)>0:
-            import kornia
-            save_dict['rotvid'][1,0] = save_dict['rotvid'][1,0].matmul(kornia.rotation_matrix_to_quaternion(kornia.quaternion_to_rotation_matrix(save_dict['rotvid'][1,0]).matmul( self.model.module.best_list[0][0] )))
-
         torch.save(save_dict, save_path)
         return
 

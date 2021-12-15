@@ -7,7 +7,6 @@ import math
 import pdb
 import time
 import cv2
-import kornia
 
 from .submodule import pspnet, bfmodule, bfmodule_feat, conv, compute_geo_costs, get_skew_mat, get_intrinsics, F_ngransac
 from .conv4d import sepConv4d, butterfly4D

@@ -25,7 +25,7 @@ from ext_utils import geometry as geom_utils
 from nnutils.nerf import Embedding, NeRF, RTHead, SE3head, RTExplicit, Encoder,\
                     ScoreHead, evaluate_mlp, Transhead, NeRFUnc, ScaledEmbed,\
                     grab_xyz_weights
-import kornia, configparser, soft_renderer as sr
+import configparser, soft_renderer as sr
 from nnutils.geom_utils import K2mat, mat2K, Kmatinv, K2inv, raycast, sample_xy,\
                                 chunk_rays, generate_bones,\
                                 canonical2ndc, obj_to_cam, vec_to_sim3, \
@@ -158,11 +158,11 @@ flags.DEFINE_string('nf_path', '', 'a array of near far planes, Nx2')
 flags.DEFINE_string('pose_cnn_path', '', 'path to pre-trained pose cnn')
 flags.DEFINE_string('cnn_feature', 'embed', 'input to pose cnn')
 flags.DEFINE_string('cnn_type', 'reg', 'output of pose cnn')
-flags.DEFINE_bool('sfm_init', True, 'whether to maintain sfm relative trajectory')
+flags.DEFINE_bool('sfm_init', False, 'whether to maintain sfm relative trajectory')
 flags.DEFINE_bool('unc_filter', False, 'whether to filter root poses init with low uncertainty')
 flags.DEFINE_bool('unit_nf', True, 'whether to set near-far plane as unit value (0-6)')
 flags.DEFINE_bool('symm_shape', False, 'whether to set geometry to x-symmetry')
-flags.DEFINE_bool('root_sm', False, 'whether to use smooth loss for root pose')
+flags.DEFINE_bool('root_sm', True, 'whether to use smooth loss for root pose')
 
 #viser
 flags.DEFINE_bool('ft_cse', False, 'whether to fine-tune cse features')
@@ -179,7 +179,7 @@ flags.DEFINE_integer('cnn_shape', 256, 'image size as input to cnn')
 flags.DEFINE_float('fine_steps', 0.8, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
 flags.DEFINE_float('bound_reset', 0.5, 'by default, start reseting bound from 50%')
-flags.DEFINE_bool('use_resize',True, 'whether to use cycle resize')
+flags.DEFINE_bool('use_resize',False, 'whether to use cycle resize')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
 flags.DEFINE_bool('use_accu',False, 'whether to use gradient accumulation')
 flags.DEFINE_bool('freeze_coarse', False, 'whether to freeze coarse posec of MLP')
@@ -199,9 +199,9 @@ flags.DEFINE_string('retarget_path', '', 'load source model path for regargeting
 
 flags.DEFINE_float('total_wt', 1, 'by default, multiple total loss by 1')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
-flags.DEFINE_float('img_wt',  1, 'weight for silhouette loss')
+flags.DEFINE_float('img_wt',  0.1, 'weight for silhouette loss')
 flags.DEFINE_float('feat_wt', 0.2, 'by default, multiple feat loss by 1')
-flags.DEFINE_float('proj_wt', 0.01, 'by default, multiple proj loss by 1')
+flags.DEFINE_float('proj_wt', 0.02, 'by default, multiple proj loss by 1')
 flags.DEFINE_float('flow_wt', 1, 'by default, multiple flow loss by 1')
 flags.DEFINE_float('cyc_wt', 1, 'by default, multiple cyc loss by 1')
 

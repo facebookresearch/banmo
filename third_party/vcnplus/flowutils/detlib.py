@@ -5,7 +5,6 @@ import cv2
 import torch
 import torch.nn.functional as F
 import torch.nn as nn
-import kornia
 
 def gaussian2D(shape, sigma=1):
     m, n = [(ss - 1.) / 2. for ss in shape]

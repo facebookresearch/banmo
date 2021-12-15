@@ -32,7 +32,7 @@ import torch.nn.functional as F
 import math
 import numpy as np
 import pdb
-import kornia
+#import kornia
 
 class residualBlock(nn.Module):
     expansion = 1

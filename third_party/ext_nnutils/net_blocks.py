@@ -31,7 +31,6 @@ import torch
 import torchvision
 import torch.nn as nn
 import math
-import kornia
 import pdb
 
 class Flatten(nn.Module):

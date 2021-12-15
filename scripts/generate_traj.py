@@ -6,7 +6,6 @@ import numpy as np
 import trimesh
 import torch
 import cv2
-import kornia
 import pdb
 from scipy.spatial.transform import Rotation as R
 

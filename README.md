@@ -16,23 +16,28 @@ cd kmeans_pytorch; pip install --editable .; cd ../../
 
 ## Data preparation
 ### Download proprocessed data
+Download data (~8G) as follows. 
+Optionally you could download each file separately [here](https://www.dropbox.com/sh/2owtqkmyfhnn6qh/AADzpTrY50UGUk_qs40DTNa-a?dl=0) maually.
 ```
-mkdir database
-unzip "/private/home/gengshany/data/DAVIS-backup.zip" -d database/
-mv database/DAVIS-backup/ database/DAVIS
+mkdir -p database/DAVIS/
+curl -L https://www.dropbox.com/sh/2owtqkmyfhnn6qh/AADzpTrY50UGUk_qs40DTNa-a?dl=1 > ./database/cat-pikachiu.zip
+unzip "database/cat-pikachiu.zip" -d database/; rm database/cat-pikachiu.zip
+unzip "database/*.zip" -d database/DAVIS/; rm database/*.zip
+```
+To speed up data loading, we store images as lines
+```
 python preprocess/img2lines.py --seqname sfm-mcats10
 ```
 ### Preprocess videos from scratch (optional, don't use for now)
-See [here](./preprocess).
+Instead using preprocessing, you provide scripts to process raw videos. See [here](./preprocess).
 
 ## Run
-Create tmp dirs and run optimization monitor
+Create tmp dirs and run optimization monitor.
+You may need to set up ssh tunneling to view the tensorboard monitor locally.
 ```
 mkdir tmp; mkdir logdir
 screen -dmS "tensorboard" bash -c "tensorboard --logdir=logdir --bind_all"
 ```
-Need to set up tunneling to view the monitor locally.
-
 Run optimization on cats
 ```
 bash scripts/template-sfm-cats10-line.sh 0,1,2,3,4,5,6,7

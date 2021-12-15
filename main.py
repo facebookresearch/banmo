@@ -1,7 +1,6 @@
 from absl import app
 from absl import flags
 import cv2
-import kornia
 import os.path as osp
 import sys
 sys.path.insert(0,'third_party')

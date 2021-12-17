@@ -30,7 +30,7 @@ To speed up data loading, we store images as lines
 python preprocess/img2lines.py --seqname sfm-mcats10
 python preprocess/img2lines.py --seqname adult7
 ```
-### Preprocess videos from scratch (optional, don't use for now)
+### Preprocess videos from scratch (optional, not tested)
 Instead using preprocessing, you provide scripts to process raw videos. See [here](./preprocess).
 
 ## Example: Cat
@@ -74,6 +74,7 @@ bash scripts/template-ama-female.sh 0,1,2,3,4,5,6,7
 
 ## Example: synthetic data (not tested)
 To render synthetic eagle/hands, see `scripts/render_eagle.sh` and `scripts/render_hands.sh`.
+
 To optimize, see `scripts/template-cams.sh`
 
 ## Visualization scripts
@@ -86,14 +87,28 @@ To visualize matchings between frame 0 and 200.
 bash scripts/render_match.sh sfm-mcats10 logdir/sfm-mcats10-lbs-rkopt-90-b128-init/params_89.pth "0 200" "--root_opt --lbs"
 ```
 
-## Evaluation
+## Evaluation (not tested)
+Install chamfer3D
+```
+cd third_party/chamfer3D/; python setup.py install; cd ../../
+```
 To evaluate swing
 ```
-python render_vis.py --testdir logdir/T_swing1-lbs-rkopt-ft2/ --outpath logdir/T_swing1-lbs-rkopt-ft2/T_swing1-eval --seqname T_swing1 --test_frames "{0}" --vp 0 --gtdir ~/data/AMA/T_swing/meshes/
+seqname=T_swing1
+testdir=~/data/old_checkpoints_4/ama-female-lbs-rkopt-300-b16-ft2/
+gtdir=~/data/AMA/T_swing/meshes/
+gt_pmat=/private/home/gengshany/data/AMA/T_swing/calibration/Camera1.Pmat.cal
+python render_vis.py --testdir $testdir  --outpath $testdir/$seqname-eval \
+    --seqname $seqname --test_frames "{0}" --vp 0  --gtdir $gtdir --gt_pmat $gt_pmat
 ```
 To evaluate eagle
 ```
-python render_vis.py --testdir logdir/baseline-a-eagle-1/ --outpath logdir/baseline-a-eagle-1/a-eagle-1-eval --seqname a-eagle-1 --test_frames "{0}" --vp 0 --gtdir database/DAVIS/Meshes/Full-Resolution/a-eagle-1/ --gt_pmat ''
+seqname=a-eagle-1
+testdir=/private/home/gengshany/data/old_checkpoints_4/a-eagle-lbs-rkopt-b16-cam-cse
+gtdir=database/DAVIS/Meshes/Full-Resolution/a-eagle-1/
+gt_pmat=''
+python render_vis.py --testdir $testdir  --outpath $testdir/$seqname-eval \
+    --seqname $seqname --test_frames "{0}" --vp 0  --gtdir $gtdir --gt_pmat $gt_pmat
 ```
 
 ## PoseNet Training
@@ -101,6 +116,14 @@ To traing pose predictor
 ```
 bash scripts/template-mgpu.sh 0 test T_samba_small 10001 --num_epochs 30 --lbs --root_opt --ks_opt --nopreload --use_human --warmup_pose_ep 10
 ```
+
+## Acknowledgement
+
+External repos:
+- [Nerf_pl](https://github.com/kwea123/nerf_pl)
+- [SoftRas](https://github.com/ShichenLiu/SoftRas)
+- [Chamfer3D](https://github.com/ThibaultGROUEIX/ChamferDistancePytorch)
+- [VCN-robust](https://github.com/gengshan-y/rigidmask)
 
 ## deprecated
 Adaptation to another set of videos

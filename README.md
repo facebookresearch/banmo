@@ -46,18 +46,32 @@ bash scripts/template-sfm-cats10-line.sh 0,1,2,3,4,5,6,7
 ```
 Extract animated meshes and render
 ```
-bash scripts/render_vids.sh sultan10 logdir/sultan10-lbs-rkopt-90-b128-init/params_89.pth \
+bash scripts/render_vids.sh sfm-mcats10 logdir/sfm-mcats10-lbs-rkopt-90-b128-init/params_89.pth \
     "0 1 2 3 4 5 6 7 8 9" \
     "--sample_grid3d 128 --root_opt --lbs --full_mesh  --nouse_corresp --nouse_viser --nouse_proj --render_size 2 --ndepth 2 --nouse_human --queryfw --num_bones 25"
 ```
 
 ## Example: Human
-Extract
+Run optimization on cats
 ```
-bash scripts/render_vids.sh adult7 logdir/adult7-lbs-rkopt-120-b128-nounc-init/params_115.pth \
+bash scripts/template-adult7-line.sh 0,1,2,3,4,5,6,7
+```
+Extract animated meshes and render
+```
+bash scripts/render_vids.sh adult7 logdir/adult7-lbs-rkopt-120-b128-init/params_115.pth \
     "0 1 2 3 4 5 6 7 8 9" \
     "--sample_grid3d 128 --root_opt --lbs --full_mesh  --nouse_corresp --nouse_viser --nouse_proj --render_size 2 --ndepth 2 --use_human --queryfw --num_bones 64 --symm_shape"
 ``` 
+
+## Visualization scripts
+To draw root pose trajectories (+rest shape) over time
+```
+python scripts/render_root.py --testdir logdir/sfm-mcats10-lbs-rkopt-90-b128-init/
+```
+To visualize matchings between frame 0 and 200.
+```
+bash scripts/render_match.sh sfm-mcats10 logdir/sfm-mcats10-lbs-rkopt-90-b128-init/params_89.pth "0 200" "--root_opt --lbs"
+```
 
 ## PoseNet Training
 To traing pose predictor
@@ -107,18 +121,6 @@ python render_vis.py --testdir logdir/T_swing1-lbs-rkopt-ft2/ --outpath logdir/T
 To evaluate eagle
 ```
 python render_vis.py --testdir logdir/baseline-a-eagle-1/ --outpath logdir/baseline-a-eagle-1/a-eagle-1-eval --seqname a-eagle-1 --test_frames "{0}" --vp 0 --gtdir database/DAVIS/Meshes/Full-Resolution/a-eagle-1/ --gt_pmat ''
-```
-To visualize matchings
-```
-CUDA_VISIBLE_DEVICES=1 bash scripts/render_match.sh sfm-mcats10 logdir/sfm-mcats10-lbsn-correspdv01d-rkopt-u-100ep/params_100.pth "0 200" "--queryfw --root_opt --lbs"
-```
-To draw root pose trajectory
-```
-python scripts/render_root.py --testdir logdir/syn-eagle-15h-hr-lbs-corresp-root-nowarmup-64-16-olr/
-```
-To re-render meshes
-```
-CUDA_VISIBLE_DEVICES=1 bash scripts/render_vids.sh sfm-mcats10 logdir/sfm-mcats10-lbs-rkopt-ft4/params_30.pth "8 9" "--sample_grid3d 128 --queryfw --root_opt --lbs --render_size 16 --ndepth 16 --nouse_viser --nouse_corresp --nouse_proj"
 ```
 To re-render nerfies meshes
 ```

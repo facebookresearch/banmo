@@ -28,7 +28,6 @@ from utils.io import config_to_dataloader, draw_cams, str_to_frame, \
         extract_data_info
 import pytorch3d
 import pytorch3d.ops
-import chamfer3D.dist_chamfer_3D
 from utils.icp import icp
 
 parser = argparse.ArgumentParser(description='render mesh')
@@ -363,6 +362,7 @@ def main():
             Tmat_gt = torch.Tensor(Tmat_gt).cuda()[None]
             verts_gt = obj_to_cam(verts_gt, Rmat_gt, Tmat_gt)
 
+            import chamfer3D.dist_chamfer_3D
             chamLoss = chamfer3D.dist_chamfer_3D.chamfer_3DDist()
 
             ## use ICP for bad shape reduce accuracy 

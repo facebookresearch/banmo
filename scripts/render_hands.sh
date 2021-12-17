@@ -1,5 +1,3 @@
-#python scripts/render_synthetic.py --outdir a-hands-test --model hands \
-#    --nframes 2 --alpha 0.1 --init_a 0.2 --xspeed 1 --rot_axis x
 python scripts/render_synthetic.py --outdir a-hands-apart-1 --model hands \
     --nframes 150 --alpha 0.1 --init_a 0.2 --xspeed 1 --rot_axis x
 python scripts/render_synthetic.py --outdir a-hands-apart-2 --model hands \
@@ -47,4 +45,4 @@ cd third_party/vcnplus
   bash compute_flow.sh $seqname
 cd -
 
-python preload.py --seqname a-hands-apart
+python preprocess/preload.py --seqname a-hands-apart

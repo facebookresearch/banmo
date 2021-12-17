@@ -87,7 +87,7 @@ To visualize matchings between frame 0 and 200.
 bash scripts/render_match.sh sfm-mcats10 logdir/sfm-mcats10-lbs-rkopt-90-b128-init/params_89.pth "0 200" "--root_opt --lbs"
 ```
 
-## Evaluation (not tested)
+## Evaluation
 Install chamfer3D
 ```
 cd third_party/chamfer3D/; python setup.py install; cd ../../
@@ -106,7 +106,7 @@ To evaluate eagle
 seqname=a-eagle-1
 testdir=/private/home/gengshany/data/old_checkpoints_4/a-eagle-lbs-rkopt-b16-cam-cse
 gtdir=database/DAVIS/Meshes/Full-Resolution/a-eagle-1/
-gt_pmat=''
+gt_pmat="''"
 python render_vis.py --testdir $testdir  --outpath $testdir/$seqname-eval \
     --seqname $seqname --test_frames "{0}" --vp 0  --gtdir $gtdir --gt_pmat $gt_pmat
 ```

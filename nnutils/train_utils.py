@@ -143,10 +143,10 @@ class v2s_trainer(Trainer):
         # set as module attributes since they do not change across gpus
         if opts.lineload:
             self.model.module.final_steps = self.num_epochs * \
-                                                min(200,len(self.lineloader))
+                                                min(200,len(self.lineloader)) * opts.use_accu
         else:
             self.model.module.final_steps = self.num_epochs * \
-                                                min(200,len(self.dataloader))
+                                                min(200,len(self.dataloader)) * opts.use_accu
         # ideally should be greater than 200 batches
 
         params_nerf_coarse=[]

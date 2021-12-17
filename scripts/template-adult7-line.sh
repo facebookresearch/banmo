@@ -1,15 +1,15 @@
 gpus=$1
 seqname=adult7 # 630 frames
 num_epochs=120
-addname=b128-nosfm
+addname=b128
 addr=10004
 use_human=
 
 model_prefix=$seqname-lbs-rkopt-$num_epochs-$addname
 if [ "$use_human" = "" ]; then
-  pose_cnn_path=logdir/pose-occ03-T_samba_small/cnn-params_10.pth
+  pose_cnn_path=mesh_material/posenet/human.pth
 else
-  pose_cnn_path=logdir/pose-occ03-cat_600-lbs-corresp-ropt-8gpu/cnn-params_10.pth
+  pose_cnn_path=mesh_material/posenet/quad.pth
 fi
 echo $pose_cnn_path
 
@@ -21,8 +21,6 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --img_wt 0.1 --sil_wt 0.1 --proj_wt 0.02\
   --num_bones 64 \
   --symm_shape \
-  --root_sm \
-  --nosfm_init \
   --${use_human}use_human
   #--nounc_filter \
   #--lineload --batch_size 128 --nsample 8 --nouse_resize \
@@ -40,8 +38,6 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --dskin_steps 0.2 --fine_steps 0.2 --noanneal_freq --nouse_resize \
   --num_bones 64 \
   --symm_shape \
-  --root_sm \
-  --nosfm_init \
   --${use_human}use_human
   #--nounc_filter \
   #--lineload --batch_size 128 --nsample 8 \

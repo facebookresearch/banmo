@@ -1,27 +1,6 @@
-## More examples
+## More examples  (under construction)
 
-### Example: Retarget
-After optimizing cat videos, run
-```
-bash scripts/template-cat-socks-retarget.sh 0,1,2,3
-bash scripts/render_retarget.sh 0
-```
-Results will be saved at `tmp/nvs-traj-*all.mp4`
-
-### Example: Human
-First download raw videos or preprocessed data similar to [here](https://github.com/facebookresearch/banmo#examples).
-Preprocessed data are at `misc/processed-human-cap.txt` and raw videos are at `misc/vidi-human-cap.txt`.
-
-Then run optimization on human-cap
-```
-bash scripts/template-adult7-line.sh 0,1,2,3,4,5,6,7
-```
-After optimization, your can extract animated meshes and render with
-```
-bash scripts/render_vids.sh adult7 logdir/adult7-lbs-rkopt-120-b128-init/params_120.pth \
-    "0 1 2 3 4 5 6 7 8 9" \
-    "--sample_grid3d 256 --root_opt --lbs --full_mesh  --nouse_corresp --nouse_viser --nouse_proj --render_size 2 --ndepth 2 --use_human --queryfw --symm_shape --perturb 0"
-``` 
+## Example: Motion retargeting
 
 ### Example: AMA-human
 Download swing and samba sequences from [aminated mesh animation website](https://people.csail.mit.edu/drdaniel/mesh_animation/) or 
@@ -48,7 +27,7 @@ python preprocess/img2lines.py --seqname ama-female
 ```
 To optimize, run 
 ```
-bash scripts/template-ama-female-line.sh 0,1,2,3,4,5,6,7
+bash scripts/template.sh 0,1 ama-female 10001 "" "no"
 ```
 
 ### Evaluation on AMA
@@ -56,7 +35,7 @@ Install chamfer3D
 ```
 cd third_party/chamfer3D/; python setup.py install; cd ../../
 ```
-To evaluate swing
+To evaluate AMA-swing
 ```
 seqname=T_swing1
 testdir=~/data/old_checkpoints_4/ama-female-lbs-rkopt-300-b16-ft2/

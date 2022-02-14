@@ -200,6 +200,7 @@ def match_frames(trainer, idxs, nsample=200):
             fig.canvas.draw()
             plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
             plot = plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
+            print('id:%03d'%i)
             if len(bne_path)+model.num_vid == len(out):
                 bneimg = cv2.imread(bne_path[i])
                 bneimg = cv2.resize(bneimg,\

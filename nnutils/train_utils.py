@@ -636,7 +636,12 @@ class v2s_trainer():
             self.warmup_pose(log, pose_cnn_path=opts.pose_cnn_path)
         else:
             # save cameras to latest vars and file
-            self.extract_cams(self.dataloader)
+            if opts.use_rtk_file:
+                self.model.module.use_cam=True
+                self.extract_cams(self.dataloader)
+                self.model.module.use_cam=opts.use_cam
+            else:
+                self.extract_cams(self.dataloader)
 
         #TODO train mlp
         if opts.warmup_rootmlp:
@@ -915,6 +920,7 @@ class v2s_trainer():
                                                self.model.final_steps
                 self.select_loss_indicator(i)
                 self.update_root_indicator(i)
+                self.update_body_indicator(i)
                 self.update_shape_indicator(i)
                 self.update_cvf_indicator(i)
 
@@ -1040,6 +1046,20 @@ class v2s_trainer():
         # freeze shape after rebone        
         if self.model.module.counter_frz_rebone > 0:
             self.model.module.root_update = 0
+    
+    def update_body_indicator(self, i):
+        """
+        whether to update root pose
+        1: update
+        0: freeze
+        """
+        opts = self.opts
+        if opts.freeze_proj and \
+           self.model.module.progress <=opts.frzbody_end: 
+            self.model.module.body_update = 0
+        else:
+            self.model.module.body_update = 1
+
         
     def select_loss_indicator(self, i):
         """
@@ -1080,7 +1100,7 @@ class v2s_trainer():
             self.init_training() # add new params to optimizer
             if epoch>0:
                 # freeze weights of root pose in the following epoch (not used)
-                self.model.module.counter_frz_rebone = 0.01
+                #self.model.module.counter_frz_rebone = 0.01
                 #reset error stats
                 self.model.module.latest_vars['fp_err']      [:]=0
                 self.model.module.latest_vars['flo_err']     [:]=0
@@ -1192,6 +1212,9 @@ class v2s_trainer():
         if self.model.module.root_update == 0:
             self.zero_grad_list(grad_root_code)
             self.zero_grad_list(grad_nerf_root_rts)
+        if self.model.module.body_update == 0:
+            self.zero_grad_list(grad_pose_code)
+            self.zero_grad_list(grad_nerf_body_rts)
         if self.model.module.shape_update == 1:
             self.zero_grad_list(grad_nerf_coarse)
             self.zero_grad_list(grad_nerf_beta)

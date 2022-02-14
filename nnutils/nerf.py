@@ -354,7 +354,7 @@ class RTExpMLP(nn.Module):
         self.root_code = nn.Embedding(max_t, t_embed_dim)
         #self.root_code = FrameCode(num_freqs, t_embed_dim, data_offset)
 
-        self.base_rt = RTExplicit(max_t, delta=delta,rand=True)
+        self.base_rt = RTExplicit(max_t, delta=delta,rand=False)
         #self.base_rt = RTHead(use_quat=True, 
         #            D=2, W=64,
         #            in_channels_xyz=t_embed_dim,in_channels_dir=0,

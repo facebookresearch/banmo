@@ -112,7 +112,7 @@ dependencies:
     - numba==0.55.1
     - oauthlib==3.2.0
     - omegaconf==2.1.1
-    - opencv-python==4.5.5.62
+    - opencv-python==4.4.0.46
     - packaging==21.3
     - pathspec==0.9.0
     - portalocker==2.3.2

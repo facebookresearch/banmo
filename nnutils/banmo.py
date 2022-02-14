@@ -52,6 +52,7 @@ flags.DEFINE_string('pose_cnn_path', '', 'path to pre-trained pose cnn')
 flags.DEFINE_string('rtk_path', '', 'path to rtk files')
 flags.DEFINE_bool('lineload',False,'whether to use pre-computed data per line')
 flags.DEFINE_integer('n_data_workers', 1, 'Number of data loading workers')
+flags.DEFINE_boolean('use_rtk_file', False, 'whether to use input rtk files')
 flags.DEFINE_boolean('debug', False, 'deubg')
 
 # model: shape, appearance, and feature
@@ -102,7 +103,7 @@ flags.DEFINE_float('bound_reset', 0.5, 'by default, start reseting bound from 50
 flags.DEFINE_float('bound_factor', 2, 'by default, use a loose bound')
 
 # optimization: initialization 
-flags.DEFINE_bool('init_ellips', True, 'whether to init shape as ellips')
+flags.DEFINE_bool('init_ellips', False, 'whether to init shape as ellips')
 flags.DEFINE_integer('warmup_pose_ep', 0, 'epochs to pre-train cnn pose predictor')
 flags.DEFINE_integer('warmup_shape_ep', 0, 'epochs to pre-train nerf')
 flags.DEFINE_bool('warmup_rootmlp', False, 'whether to preset base root pose (compatible with expmlp root basis only)')
@@ -116,6 +117,7 @@ flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
 flags.DEFINE_bool('freeze_proj', False, 'whether to freeze some params w/ proj loss')
 flags.DEFINE_float('proj_start', 0.0, 'steps to strat projection opt')
 flags.DEFINE_float('frzroot_start', 0.0, 'steps to strat fixing root pose')
+flags.DEFINE_float('frzbody_end', 0.0,   'steps to end fixing body pose')
 flags.DEFINE_float('proj_end', 0.2,  'steps to end projection opt')
 
 # CSE fine-tuning (turned off by default)
@@ -173,6 +175,7 @@ class banmo(nn.Module):
         self.alpha=nn.Parameter(self.alpha)
         self.loss_select = 1 # by default,  use all losses
         self.root_update = 1 # by default, update root pose
+        self.body_update = 1 # by default, update body pose
         self.shape_update = 0 # by default, update all
         self.cvf_update = 0 # by default, update all
         self.progress = 0. # also reseted in optimizer

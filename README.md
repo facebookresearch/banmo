@@ -1,4 +1,5 @@
-# BANMo
+# BANMo 
+#### [[Webpage]](https://banmo-www.github.io/) [[Arxiv]](https://arxiv.org/abs/2112.12761)
 
 ## Install
 ### Build with conda
@@ -207,7 +208,6 @@ Other external repos:
 - [Detectron2](https://github.com/facebookresearch/detectron2) (modified)
 - [SoftRas](https://github.com/ShichenLiu/SoftRas) (modified, for synthetic data generation)
 - [Chamfer3D](https://github.com/ThibaultGROUEIX/ChamferDistancePytorch) (for evaluation)
-- [Nerfies](https://github.com/google/nerfies) (modified, for SfM and baseline comparison. SfM is not used in banmo pipeline)
 </details>
 
 ### License

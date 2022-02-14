@@ -1,5 +1,5 @@
 # BANMo 
-#### [[Webpage]](https://banmo-www.github.io/) [[Arxiv]](https://arxiv.org/abs/2112.12761)
+#### [[Webpage]](https://banmo-www.github.io/) [[Arxiv]](https://arxiv.org/abs/2112.12761) [[Latest preprint (02/14/2022)]]()
 
 ## Install
 ### Build with conda

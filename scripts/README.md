@@ -1,6 +1,6 @@
 ## More examples  (under construction)
 
-## Example: Motion retargeting
+### Example: Motion retargeting
 
 ### Example: AMA-human
 Download swing and samba sequences from [aminated mesh animation website](https://people.csail.mit.edu/drdaniel/mesh_animation/) or 

@@ -1,5 +1,7 @@
 # BANMo 
 #### [[Webpage]](https://banmo-www.github.io/) [[Latest preprint (02/14/2022)]](https://banmo-www.github.io/banmo-2-14.pdf) [[Arxiv]](https://arxiv.org/abs/2112.12761) 
+**Note**: The current release is mostly complete but we are adding more 
+features (motion-retargeting, quantitative evaluation, pre-computed root poses, etc.) in the next few days/weeks. 
 
 ## Install
 ### Build with conda

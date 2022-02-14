@@ -1,0 +1,12 @@
+[submodule "third_party/kmeans_pytorch"]
+	path = third_party/kmeans_pytorch
+	url = https://github.com/subhadarship/kmeans_pytorch
+    ignore = dirty
+[submodule "third_party/pytorch3d"]
+	path = third_party/pytorch3d
+	url = https://github.com/facebookresearch/pytorch3d
+    ignore = dirty
+[submodule "third_party/detectron2"]
+	path = third_party/detectron2
+	url = https://github.com/facebookresearch/detectron2
+    ignore = dirty

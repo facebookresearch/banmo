@@ -1,0 +1,10 @@
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-400.zip
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-401.zip
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-402.zip
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-404.zip
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-405.zip
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-407.zip
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-500.zip
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-501.zip
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-502.zip
+https://dl.fbaipublicfiles.com/banmo/processed/human-cap/adult-503.zip

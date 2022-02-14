@@ -1,0 +1,2 @@
+http://groups.csail.mit.edu/graphics/mesh_animation/T_samba.tar
+http://groups.csail.mit.edu/graphics/mesh_animation/T_swing.tar

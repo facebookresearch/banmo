@@ -1,0 +1,13 @@
+cam-files/
+trash/*
+raw
+mesh_material/geodists_smpl_27554.pkl
+mesh_material/geodists_sheep_5004.pkl
+logdir
+tmp
+Manifold
+database
+__pycache__/
+lasr_vcn/
+*.pyc
+.nfs*

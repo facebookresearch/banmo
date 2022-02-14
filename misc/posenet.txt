@@ -1,0 +1,2 @@
+https://www.dropbox.com/s/51cjzo8zgz966t5/human.pth
+https://www.dropbox.com/s/1464pg6c9ce8rve/quad.pth

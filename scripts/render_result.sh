@@ -47,9 +47,9 @@ python scripts/visualize/render_vis.py --testdir $testdir \
                      --outpath $prefix-vid \
                      --seqname $seqname \
                      --test_frames $test_frames \
-                     --show_dp \
                      --append_img yes \
                      --append_render no
+                     #--show_dp \
 
 # part2 other renderings
 #python scripts/visualize/render_vis.py --testdir $testdir \

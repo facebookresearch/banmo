@@ -139,28 +139,33 @@ def main():
         all_fr.append(fr)
         print('%s/%d'%(seqname, fr))
 
-        try:
-            mesh = trimesh.load('%s/%s-mesh-%05d.obj'%(args.testdir, seqname, fr),process=False)
-            if args.clean:
-                # keep the largest mesh
-                mesh = [i for i in mesh.split(only_watertight=False)]
-                mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
-                mesh = mesh[-1]
+        if args.append_render=="yes":
+            try:
+                mesh = trimesh.load('%s/%s-mesh-%05d.obj'%(args.testdir, seqname, fr),process=False)
+                if args.clean:
+                    # keep the largest mesh
+                    mesh = [i for i in mesh.split(only_watertight=False)]
+                    mesh = sorted(mesh, key=lambda x:x.vertices.shape[0])
+                    mesh = mesh[-1]
 
-            if args.gray_color:
-                mesh.visual.vertex_colors[:,:3]=128 # necessary for color override
+                if args.gray_color:
+                    mesh.visual.vertex_colors[:,:3]=128 # necessary for color override
 
+                all_mesh.append(mesh)
+               
+                name_root = rootlist[idx]
+                seqname_root = name_root.split('/')[-2]
+                fr_root = int(name_root.split('/')[-1].split('.')[-2])
+                cam = np.loadtxt('%s/%s-cam-%05d.txt'%(args.testdir, seqname_root, fr_root))
+                all_cam.append(cam)
+
+                bone = trimesh.load('%s/%s-bone-%05d.obj'%(args.testdir, seqname,fr),process=False)
+                all_bone.append(bone)
+            except: print('no mesh found')
+        else:
+            # dummy variable
+            mesh = trimesh.creation.uv_sphere(radius=1,count=[2, 2])
             all_mesh.append(mesh)
-           
-            name_root = rootlist[idx]
-            seqname_root = name_root.split('/')[-2]
-            fr_root = int(name_root.split('/')[-1].split('.')[-2])
-            cam = np.loadtxt('%s/%s-cam-%05d.txt'%(args.testdir, seqname_root, fr_root))
-            all_cam.append(cam)
-
-            bone = trimesh.load('%s/%s-bone-%05d.obj'%(args.testdir, seqname,fr),process=False)
-            all_bone.append(bone)
-        except: print('no mesh found')
 
 
     # process bones, trajectories and cameras

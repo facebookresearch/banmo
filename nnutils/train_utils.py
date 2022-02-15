@@ -337,20 +337,15 @@ class v2s_trainer():
             self.del_key( states, 'pose_code.basis_mlp.weight')
             self.del_key( states, 'nerf_body_rts.0.weight')
             self.del_key( states, 'nerf_root_rts.0.weight')
+            self.del_key( states, 'nerf_root_rts.root_code.weight')
+            self.del_key( states, 'nerf_root_rts.base_rt.se3')
+            self.del_key( states, 'nerf_root_rts.delta_rt.0.weight')
             self.del_key( states, 'env_code.weight')
             self.del_key( states, 'env_code.basis_mlp.weight')
             if 'vid_code.weight' in states.keys():
                 self.del_key( states, 'vid_code.weight')
             if 'ks_param' in states.keys():
                 self.del_key( states, 'ks_param')
-            #TODO delete backbones?
-            del_key_list = []
-            for k in states.keys():
-                if 'nerf_body_rts' in k or 'nerf_root_rts' in k:
-                    del_key_list.append(k)
-            for k in del_key_list:
-                print(k)
-                self.del_key( states, k)
     
         if rm_prefix and self.opts.lbs and states['bones'].shape[0] != self.model.bones.shape[0]:
             self.del_key(states, 'bones')

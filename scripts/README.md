@@ -1,6 +1,41 @@
 ## More examples  (under construction)
 
 ### Example: Motion retargeting
+We show an example of retargeting a source (driven) dog model to a driver cat video.
+
+First download the pre-trained dog model.
+```
+mkdir -p tmp && cd "$_"
+wget https://www.dropbox.com/s/y2phlrnh7v3vlx0/shiba-haru-1.pth; cd ../
+```
+
+Then run retargeting (optimization) on all the cat videos. This takes 5h on 2 V100 GPUs.
+Refer to the main page for downloading the videos and preprocessing.
+```
+seqname=cat-pikachiu
+# To speed up data loading, we store images as lines of pixels). 
+# only needs to run it once per sequence and data are stored
+python preprocess/img2lines.py --seqname $seqname
+
+# Optimization
+bash scripts/template.sh 0,1 $seqname 10001 "no" "no"
+bash scripts/template-retarget.sh 0,1 $seqname 10001 "no" "no" tmp/shiba-haru-1.pth
+# argv[1]: gpu ids separated by comma 
+# args[2]: sequence name
+# args[3]: port for distributed training
+# args[4]: use_human, pass "" for human cse, "no" for quadreped cse
+# args[5]: use_symm, pass "" to force x-symmetric shape
+# args[6]: driven model
+
+# Extract articulated meshes and render
+bash scripts/render_nvs.sh 0 $seqname logdir/driver-$seqname-e120-b256/params_latest.pth 4 4
+# argv[1]: gpu id
+# argv[2]: sequence name
+# argv[3]: weights path
+# argv[4]: video id used for pose traj
+# argv[5]: video id used for root traj
+```
+</details>
 
 ### Example: AMA-human
 Download swing and samba sequences from [aminated mesh animation website](https://people.csail.mit.edu/drdaniel/mesh_animation/) or 

@@ -1,12 +1,12 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 gpus=$1
-seqname=$2 # 630 frames
+seqname=$2
 addr=$3
 use_human=$4
 use_symm=$5
 driven_model=$6
-num_epochs=120
-batch_size=256
+num_epochs=30
+batch_size=128
 
 model_prefix=driver-$seqname-e$num_epochs-b$batch_size
 if [ "$use_human" = "" ]; then
@@ -28,6 +28,6 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --warmup_steps 0 --nf_reset 0 --bound_reset 1 \
   --dskin_steps 0 --fine_steps 1 --noanneal_freq \
   --freeze_proj --proj_end 1 --frzroot_start 0.4 --frzbody_end 0.2\
-  --warmup_rootmlp \
+  --warmup_rootmlp --freeze_body_mlp \
   --${use_symm}symm_shape \
   --${use_human}use_human

@@ -1,6 +1,6 @@
 # Copyright (c) Facebook, Inc. and its affiliates. All rights reserved.
 gpus=$1
-seqname=$2 # 630 frames
+seqname=$2
 addr=$3
 use_human=$4
 use_symm=$5

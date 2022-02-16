@@ -332,10 +332,11 @@ class v2s_trainer():
         if rm_prefix and states['near_far'].shape[0] != self.model.near_far.shape[0]:
             print('!!!deleting video specific dicts due to size mismatch!!!')
             self.del_key( states, 'near_far') 
-            self.del_key( states, 'root_code.weight')
+            self.del_key( states, 'root_code.weight') # only applies to root_basis=mlp
             self.del_key( states, 'pose_code.weight')
             self.del_key( states, 'pose_code.basis_mlp.weight')
             self.del_key( states, 'nerf_body_rts.0.weight')
+            self.del_key( states, 'nerf_body_rts.0.basis_mlp.weight')
             self.del_key( states, 'nerf_root_rts.0.weight')
             self.del_key( states, 'nerf_root_rts.root_code.weight')
             self.del_key( states, 'nerf_root_rts.base_rt.se3')
@@ -1209,6 +1210,8 @@ class v2s_trainer():
             self.zero_grad_list(grad_nerf_root_rts)
         if self.model.module.body_update == 0:
             self.zero_grad_list(grad_pose_code)
+            self.zero_grad_list(grad_nerf_body_rts)
+        if self.opts.freeze_body_mlp:
             self.zero_grad_list(grad_nerf_body_rts)
         if self.model.module.shape_update == 1:
             self.zero_grad_list(grad_nerf_coarse)

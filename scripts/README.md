@@ -1,4 +1,4 @@
-## More examples  (under construction)
+## More examples
 
 ### Example: Motion retargeting
 We show an example of retargeting a source (driven) dog model to a driver cat video.
@@ -6,19 +6,20 @@ We show an example of retargeting a source (driven) dog model to a driver cat vi
 First download the pre-trained dog model.
 ```
 mkdir -p tmp && cd "$_"
-wget https://www.dropbox.com/s/y2phlrnh7v3vlx0/shiba-haru-1.pth; cd ../
+wget https://www.dropbox.com/s/oxq1g5ioorg6vwk/shiba-haru-1.npy
+wget https://www.dropbox.com/s/y2phlrnh7v3vlx0/shiba-haru-1.pth
+cd ../
 ```
 
-Then run retargeting (optimization) on all the cat videos. This takes 5h on 2 V100 GPUs.
+Then run retargeting (optimization) on a cat video. This takes 2h on 2 TitanXp GPUs.
 Refer to the main page for downloading the videos and preprocessing.
 ```
-seqname=cat-pikachiu
+seqname=cat-pikachiu-sub
 # To speed up data loading, we store images as lines of pixels). 
 # only needs to run it once per sequence and data are stored
 python preprocess/img2lines.py --seqname $seqname
 
 # Optimization
-bash scripts/template.sh 0,1 $seqname 10001 "no" "no"
 bash scripts/template-retarget.sh 0,1 $seqname 10001 "no" "no" tmp/shiba-haru-1.pth
 # argv[1]: gpu ids separated by comma 
 # args[2]: sequence name
@@ -28,7 +29,7 @@ bash scripts/template-retarget.sh 0,1 $seqname 10001 "no" "no" tmp/shiba-haru-1.
 # args[6]: driven model
 
 # Extract articulated meshes and render
-bash scripts/render_nvs.sh 0 $seqname logdir/driver-$seqname-e120-b256/params_latest.pth 4 4
+bash scripts/render_nvs.sh 0 $seqname logdir/driver-$seqname-e120-b256/params_latest.pth 0 0
 # argv[1]: gpu id
 # argv[2]: sequence name
 # argv[3]: weights path
@@ -54,60 +55,79 @@ python scripts/ama-process/ama2davis.py --path ./database/T_swing
 ```
 Then extract flow and dense appearance features (take ~1h)
 ```
-mkdir raw/ama-female;
+seqname=ama-female
+mkdir raw/$seqname;
 # write filenames in replace of .MOV files
-ls -d database/DAVIS/Annotations/Full-Resolution/T_s* | xargs -i echo {} | sed 's:.*/::' | xargs -i touch raw/ama-female/{}.txt # create empty txt files
-bash preprocess/preprocess.sh ama-female .txt y 10
-python preprocess/img2lines.py --seqname ama-female
+ls -d database/DAVIS/Annotations/Full-Resolution/T_s* | xargs -i echo {} | sed 's:.*/::' | xargs -i touch raw/$seqname/{}.txt # create empty txt files
+bash preprocess/preprocess.sh $seqname .txt y 10
 ```
 To optimize, run 
 ```
-bash scripts/template.sh 0,1 ama-female 10001 "" "no"
+# store as lines
+python preprocess/img2lines.py --seqname $seqname 
+# optimization
+bash scripts/template.sh 0,1 $seqname 10001 "" "no"
+# extract articulated meshes for two representative videos
+bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
+        "0 8" 256
 ```
 
 ### Evaluation on AMA
 Install chamfer3D
 ```
-cd third_party/chamfer3D/; python setup.py install; cd ../../
+pip install -e third_party/chamfer3D/
 ```
+
+Then download example data
+```
+mkdir -p tmp/banmo-swing1 && cd "$_"
+wget https://www.dropbox.com/sh/n9eebife5uovg2m/AAA1BsADDzCIsTSUnJyCTRp7a -O tmp.zip
+unzip tmp.zip; rm tmp.zip; cd ../../
+```
+
 To evaluate AMA-swing
 ```
-seqname=T_swing1
-testdir=~/data/old_checkpoints_4/ama-female-lbs-rkopt-300-b16-ft2/
-gtdir=~/data/AMA/T_swing/meshes/
-gt_pmat=/private/home/gengshany/data/AMA/T_swing/calibration/Camera1.Pmat.cal
-python render_vis.py --testdir $testdir  --outpath $testdir/$seqname-eval \
-    --seqname $seqname --test_frames "{0}" --vp 0  --gtdir $gtdir --gt_pmat $gt_pmat
+bash scripts/eval/run_eval.sh 0 tmp/banmo-swing1/
+# argv[1] gpu id
+# argv[2] test dir
 ```
-
+results will be saved at `tmp/banmo-swing1.txt` and video visualizations will be saved at `tmp/banmo-swing1/ama-female-all.mp4`
 
 ### Synthetic data
-First, install softras
+First install soft rasterizer
 ```
-cd third_party/softras; python setup.py install; cd -;
+pip install -e third_party/softras
 ```
-Then download animated mesh sequences in XXX, and install mesh renderer.
+
+Then download animated mesh sequences
 ```
-cd third_party/softras
-python setup.py install
+mkdir database/eagle && cd "$_"
+wget https://www.dropbox.com/sh/xz8kckfq817ggqd/AADIhtb1syWhDQeY8xa9Brc0a -O eagle.zip
+unzip eagle.zip; cd ../../
+mkdir database/hands && cd "$_"
+wget https://www.dropbox.com/sh/kbobvwtt51bl165/AAC4d-tbJ5PR6XQIUjbk3Qe2a -O hands.zip
+unzip hands.zip; cd ../../
 ```
-Then render image data and prepare mesh ground-truth
+
+Render image data and prepare mesh ground-truth
 ```
-bash scripts/render_eagle.sh
+bash scripts/synthetic/render_eagle.sh
+bash scripts/synthetic/render_hands.sh
 ``` 
 
-To run optimization
+To run optimization on eagle
 ```
-bash scripts/template-cam.sh 0,1,2,3,4,5,6,7 a-eagle 120
+seqname=a-eagle
+# store as lines
+python preprocess/img2lines.py --seqname $seqname 
+# optimization
+bash scripts/template-known-cam.sh 0,1 $seqname 10001 "no" "no"
+# extract articulated meshes
+bash scripts/render_mgpu.sh 0 $seqname logdir/known-cam-$seqname-e120-b256/params_latest.pth \
+        "0" 256
 ```
 
-
-To evaluate eagle
+To evaluate eagle, modify the related lines in `scripts/eval/run_eval.sh` and run
 ```
-seqname=a-eagle-1
-testdir=/private/home/gengshany/data/old_checkpoints_4/a-eagle-lbs-rkopt-b16-cam-cse
-gtdir=database/DAVIS/Meshes/Full-Resolution/a-eagle-1/
-gt_pmat="''"
-python render_vis.py --testdir $testdir  --outpath $testdir/$seqname-eval \
-    --seqname $seqname --test_frames "{0}" --vp 0  --gtdir $gtdir --gt_pmat $gt_pmat
+bash scripts/eval/run_eval.sh 0 logdir/known-cam$seqname-e120-b256/
 ```

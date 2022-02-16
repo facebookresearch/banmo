@@ -1,7 +1,6 @@
 # BANMo 
 #### [[Webpage]](https://banmo-www.github.io/) [[Latest preprint (02/14/2022)]](https://banmo-www.github.io/banmo-2-14.pdf) [[Arxiv]](https://arxiv.org/abs/2112.12761) 
-**Note**: The current release is mostly complete but we are adding more 
-features (motion-retargeting, quantitative evaluation, pre-computed root poses, etc.) in the next few days/weeks. 
+**Update 02/15**: More features are added, including motion-retargeting, quantitative evaluation and synthetic data.
 
 ## Install
 ### Build with conda
@@ -115,7 +114,7 @@ bash scripts/template.sh 0,1 $seqname 10001 "no" "no"
 # args[5]: use_symm, pass "" to force x-symmetric shape
 
 # Extract articulated meshes and render
-bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-ft3/params_latest.pth \
+bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
         "0 1 2 3 4 5 6 7 8 9 10" 256
 # argv[1]: gpu id
 # argv[2]: sequence name
@@ -131,7 +130,7 @@ bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-ft3/params_latest.pth \
 seqname=human-cap
 python preprocess/img2lines.py --seqname $seqname
 bash scripts/template.sh 0,1 $seqname 10001 "" ""
-bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-ft3/params_latest.pth \
+bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
         "0 1 2 3 4 5 6 7 8 9" 256
 ```
 </details>
@@ -175,7 +174,7 @@ near-plane frame 0 will be saved to `tmp/match_plane.obj`.
 
 Render novel views at the canonical camera coordinate
 ```
-bash scripts/render_nvs.sh 0 adult7 logdir/adult7-ft3/params_latest.pth 0 0
+bash scripts/render_nvs.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth 0 1
 # argv[1]: gpu id
 # argv[2]: sequence name
 # argv[3]: path to the weights

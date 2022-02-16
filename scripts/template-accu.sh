@@ -3,7 +3,7 @@
 # see --accu_steps flag.
 # A rule of thumb is to set "num gpus" x "batch size" x "accu steps" ~= num frames (default number 512 suits for cat-pikachiu and human-hap)
 gpus=$1
-seqname=$2 # 630 frames
+seqname=$2
 addr=$3
 use_human=$4
 use_symm=$5

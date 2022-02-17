@@ -75,6 +75,8 @@ class v2s_trainer():
             if not os.path.exists(self.save_dir): os.makedirs(self.save_dir)
             log_file = os.path.join(self.save_dir, 'opts.log')
             if not self.is_eval:
+                if os.path.exists(log_file):
+                    os.remove(log_file)
                 opts.append_flags_into_file(log_file)
 
     def define_model(self, data_info):
@@ -1095,8 +1097,8 @@ class v2s_trainer():
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
             if epoch>0:
-                # freeze weights of root pose in the following epoch (not used)
-                #self.model.module.counter_frz_rebone = 0.01
+                # freeze weights of root pose in the following 0.1% iters
+                self.model.module.counter_frz_rebone = 0.001
                 #reset error stats
                 self.model.module.latest_vars['fp_err']      [:]=0
                 self.model.module.latest_vars['flo_err']     [:]=0

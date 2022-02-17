@@ -38,6 +38,57 @@ bash scripts/render_nvs.sh 0 $seqname logdir/driver-$seqname-e120-b256/params_la
 ```
 </details>
 
+### Example: Adaptation to a new video
+
+Instead of retargeting to a new video, we can adapt a pre-optimized model 
+to a new video, which usually converges faster and more stable than starting from scratch.
+We show an example of adapting cat-coco to a single video of cat-socks.
+
+First download the pre-trained cat-coco model.
+```
+mkdir -p tmp && cd "$_"
+wget https://www.dropbox.com/s/fwf8il8bt9c812f/cat-coco.npy
+wget https://www.dropbox.com/s/4g0w6z4xec4f88g/cat-coco.pth
+cd ../
+```
+
+Then download and run optimization on a video of cat-socks 
+```
+seqname=cat-socks
+bash misc/processed/download.sh $seqname
+python preprocess/img2lines.py --seqname $seqname
+bash scripts/template-prior-model.sh 0,1 $seqname 10001 "no" "no" tmp/cat-coco.pth
+bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
+        "0 1" 256
+```
+
+
+### Example: Known root poses
+
+There are two additional steps to use pre-computed camera poses wrt the object (root body poses) instead of the posenet.
+    * First, add `rtk_path` key to config files, see `configs/cat-pikachiu-cam.config` for an example.
+    * Then use `template-known-cam.sh` instead of `template.sh` when running optimization. Specifically, it replaces `--pose_cnn_path $pose_cnn_path` with `--use_rtk_file`.
+
+Here's an example. Frist, download the precomputed rtk files.
+```
+mkdir -p cam-files/cse-cat-pikachiu && cd "$_"
+wget https://www.dropbox.com/sh/4zw6mkhn1bbjk2s/AAAHOPz0NLInAQBSBHqFdA9ha -O tmp.zip
+unzip tmp.zip; cd ../../
+```
+The rtk files are in the format of 
+```
+# xxx-%05d.txt/
+# [R_3x3|T_3x1] # translation is in the same scale as unit-sized object
+# [fx,fy,px,py] # in pixel
+```
+Then run optimization (assuming you've already run img2line.py)
+```
+seqname=cat-pikachiu-cam
+bash scripts/template-known-cam.sh 0,1 $seqname 10001 "no" "no"
+```
+
+
+
 ### Example: AMA-human
 Download swing and samba sequences from [aminated mesh animation website](https://people.csail.mit.edu/drdaniel/mesh_animation/) or 
 run the following scripts
@@ -126,6 +177,7 @@ bash scripts/template-known-cam.sh 0,1 $seqname 10001 "no" "no"
 bash scripts/render_mgpu.sh 0 $seqname logdir/known-cam-$seqname-e120-b256/params_latest.pth \
         "0" 256
 ```
+To run optimization on hands, turn connected components off (`--nouse_cc`). See note on the main page.
 
 To evaluate eagle, modify the related lines in `scripts/eval/run_eval.sh` and run
 ```

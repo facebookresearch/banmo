@@ -1,6 +1,7 @@
 # BANMo 
 #### [[Webpage]](https://banmo-www.github.io/) [[Latest preprint (02/14/2022)]](https://banmo-www.github.io/banmo-2-14.pdf) [[Arxiv]](https://arxiv.org/abs/2112.12761) 
-**Update 02/15**: More features are added, including motion-retargeting, quantitative evaluation and synthetic data.
+**Update 02/15**: Added examples for motion-retargeting, quantitative evaluation and synthetic data generation/eval.
+**Update 02/17**: Added examples for adaptation to a new video, known root poses, and pose code visualization.
 
 ## Install
 ### Build with conda
@@ -157,7 +158,7 @@ Find the output at `$logdir/mesh-cam.gif`.
 During optimization, the rest mesh and bones at each epoch are saved at `$logdir/*rest.obj`.
 </details>
 
-<details><summary>[Correspondence]</summary>
+<details><summary>[Correspondence/pose code]</summary>
 
 To visualize 2d-2d and 2d-3d matchings of the latest epoch weights
 ```
@@ -168,6 +169,7 @@ bash scripts/render_match.sh $logdir/params_latest.pth "0 100" "--render_size 12
 2d-3d feature matches of frame 0 will be saved to `tmp/match_line_pred.obj`.
 2d-3d geometric warps of frame 0 will be saved to `tmp/match_line_exp.obj`.
 near-plane frame 0 will be saved to `tmp/match_plane.obj`.
+Pose code visualization will be saved at `tmp/code.mp4`.
 </details>
 
 <details><summary>[Render novel views]</summary>
@@ -183,7 +185,7 @@ bash scripts/render_nvs.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_lates
 ```
 </details>
 
-### Common issues
+### Common install issues
 <details><summary>[expand]</summary>
 
 * Q: pyrender reports `ImportError: Library "GLU" not found.`
@@ -198,6 +200,8 @@ bash scripts/render_nvs.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_lates
 - use `--use_human` for human reconstruction, otherwise it assumes quadruped animals
 - use `--full_mesh` at mesh extraction time to extract a complete surface (disable visibility check)
 - use `--queryfw` at mesh extraction time to extract forward articulated meshes, which only needs to run marching cubes once.
+- use `--use_cc` maintains the largest connected component for rest mesh in order to set the object bounds and near-far plane (by default turned on). Turn it off with `--nouse_cc` for disconnected objects such as hands.
+- use `--debug` to print out the rough time each component takes.
 </details>
 
 ### Acknowledgement

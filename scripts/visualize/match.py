@@ -25,7 +25,7 @@ from nnutils.geom_utils import obj_to_cam, tensor2array, vec_to_sim3, obj_to_cam
                                 raycast
 from nnutils.loss_utils import kp_reproj, feat_match, kp_reproj_loss
 from ext_utils.util_flow import write_pfm
-from ext_utils.flowlib import cat_imgflo 
+from ext_utils.flowlib import cat_imgflo
 opts = flags.FLAGS
 
 def construct_rays(dp_feats_rsmp, model, xys, rand_inds,
@@ -59,7 +59,7 @@ def construct_rays(dp_feats_rsmp, model, xys, rand_inds,
             'bone_rts': bone_rts}
 
     return rays, feats_at_samp, xys
-                
+
 
 def match_frames(trainer, idxs, nsample=200):
     idxs = [int(i) for i in idxs.split(' ')]
@@ -76,22 +76,22 @@ def match_frames(trainer, idxs, nsample=200):
     for i in idxs:
         batch.append( trainer.evalloader.dataset[i] )
     batch = trainer.evalloader.collate_fn(batch)
- 
-    model.set_input(batch)   
+
+    model.set_input(batch)
     rtk =   model.rtk
     Rmat = rtk[:,:3,:3]
     Tmat = rtk[:,:3,3]
     Kmat = K2mat(rtk[:,3,:])
-    
+
     kaug =  model.kaug # according to cropping, p = Kaug Kmat P
-    Kaug = K2inv(kaug) 
+    Kaug = K2inv(kaug)
     Kinv = Kmatinv(Kaug.matmul(Kmat))
 
     near_far = model.near_far[model.frameid.long()]
     dp_feats_rsmp = model.dp_feats
 
     # construct rays for sampled pixels
-    rand_inds, xys = sample_xy(opts.img_size, bs, nsample, device,return_all=False) 
+    rand_inds, xys = sample_xy(opts.img_size, bs, nsample, device,return_all=False)
     rays, feats_at_samp, xys = construct_rays(dp_feats_rsmp, model, xys, rand_inds,
                         Rmat, Tmat, Kinv, near_far)
     model.update_delta_rts(rays)
@@ -102,7 +102,7 @@ def match_frames(trainer, idxs, nsample=200):
             model.latest_vars['obj_bound'],grid_size=20,is_training=False)
         pts_pred = pts_pred.view(bs,nsample,3)
         xy_reproj = kp_reproj(pts_pred, model.nerf_models, model.embedding_xyz, rays)
-    
+
     # draw
     imgs_trg = model.imgs.view(bs//2,2,-1).flip(1).view(model.imgs.shape)
     xy_reproj = xy_reproj.view(bs,nsample,2)
@@ -119,7 +119,7 @@ def match_frames(trainer, idxs, nsample=200):
         p2s[...,0] = p2s[...,0] + img1.shape[2]
         img = draw_lines(img, p1s,p2s)
         cv2.imwrite('tmp/match_%04d.png'%i, img)
-    
+
     # visualize matching error
     if opts.render_size<=128:
         with torch.no_grad():
@@ -132,10 +132,10 @@ def match_frames(trainer, idxs, nsample=200):
                     export('tmp/match_camera_pts.obj')
             trimesh.Trimesh(xyz_canonical[0::skip_idx].reshape(-1,3).cpu()).\
                     export('tmp/match_canonical_pts.obj')
-            vis_match(rendered, model.masks, model.imgs, 
+            vis_match(rendered, model.masks, model.imgs,
                     bs,opts.img_size, opts.ndepth)
         ## construct rays for all pixels
-        #rand_inds, xys = sample_xy(opts.img_size, bs, nsample, device,return_all=True) 
+        #rand_inds, xys = sample_xy(opts.img_size, bs, nsample, device,return_all=True)
         #rays, feats_at_samp, xys = construct_rays(dp_feats_rsmp, model, xys, rand_inds,
         #                Rmat, Tmat, Kinv, near_far, flip=False)
         #with torch.no_grad():
@@ -143,7 +143,7 @@ def match_frames(trainer, idxs, nsample=200):
         #        model.latest_vars['obj_bound'],grid_size=20,is_training=False)
         #    pts_pred = pts_pred.view(bs,opts.render_size**2,3)
 
-        #    proj_err = kp_reproj_loss(pts_pred, xys, model.nerf_models, 
+        #    proj_err = kp_reproj_loss(pts_pred, xys, model.nerf_models,
         #            model.embedding_xyz, rays)
         #    proj_err = proj_err.view(pts_pred.shape[:-1]+(1,))
         #    proj_err = proj_err/opts.img_size * 2
@@ -152,8 +152,8 @@ def match_frames(trainer, idxs, nsample=200):
 
 
     ## visualize current error stats
-    #feat_err=model.latest_vars['fp_err'][:,0] 
-    #proj_err=model.latest_vars['fp_err'][:,1] 
+    #feat_err=model.latest_vars['fp_err'][:,0]
+    #proj_err=model.latest_vars['fp_err'][:,1]
     #feat_err = feat_err[feat_err>0]
     #proj_err = proj_err[proj_err>0]
     #print('feat-med: %f'%(np.median(feat_err)))
@@ -170,42 +170,58 @@ def match_frames(trainer, idxs, nsample=200):
         D=model.pose_code(fid)
         D = D.view(len(fid),-1)
         ##TODO
-        #px = torch.Tensor(range(len(D))).cuda() 
+        #px = torch.Tensor(range(len(D))).cuda()
         #py = px*2
         #pz = px*5+1
         #D = torch.stack([px,py,pz],-1)
 
         D = D-D.mean(0)[None]
         A = D.T.matmul(D)/D.shape[0] # fxf
-        U,S,V=torch.svd(A) # 
-        out=D.matmul(V[:,:3])
+        U,S,V=torch.svd(A) #
+        code_proj_3d=D.matmul(V[:,:3])
         cmap = matplotlib.cm.get_cmap('cool')
         time = np.asarray(range(len(model.impath)))
         time = time/time.max()
-        out=out.detach().cpu().numpy()
-        trimesh.Trimesh(out, vertex_colors=cmap(time)).export('tmp/0.obj')
+        code_proj_3d=code_proj_3d.detach().cpu().numpy()
+        trimesh.Trimesh(code_proj_3d, vertex_colors=cmap(time)).export('tmp/0.obj')
 
         #plt.figure(figsize=(16,16))
         plot_stack = []
         weight_dir = opts.model_path.rsplit('/',1)[0]
         bne_path = sorted(glob.glob('%s/%s-*bne-mrender*.png'%\
                             (weight_dir, opts.seqname)))
-        for i in range(len(out)-model.num_vid):
-            plt.scatter(out[i,0], out[i,1], color=cmap(time[i]))
-            plt.annotate(str(i), (out[i,0], out[i,1]))
-            plt.xlim(out[:,0].min(), out[:,0].max())
-            plt.ylim(out[:,1].min(), out[:,1].max())
+        img_path = model.impath.copy()
+        ## remove the last img for each video to make shape consistent with bone renders
+        #for i in model.data_offset[1:][::-1]:
+        #    img_path.remove(img_path[i-1])
+        #    code_proj_3d = np.delete(code_proj_3d, i-1,0)
+        # plot the first video
+        img_path = img_path        [:model.data_offset[1]-2]
+        code_proj_3d = code_proj_3d[:model.data_offset[1]-2]
+        try:
+            bne_path = bne_path    [:model.data_offset[1]-2]
+        except:
+            pass
+
+        for i in range(len(code_proj_3d)):
+            plt.plot(code_proj_3d[i,0], code_proj_3d[i,1], color=cmap(time[i]), marker='o')
+            plt.annotate(str(i), (code_proj_3d[i,0], code_proj_3d[i,1]))
+            plt.xlim(code_proj_3d[:,0].min(), code_proj_3d[:,0].max())
+            plt.ylim(code_proj_3d[:,1].min(), code_proj_3d[:,1].max())
 
             fig = plt.gcf()
             fig.canvas.draw()
             plot = np.frombuffer(fig.canvas.tostring_rgb(), dtype=np.uint8)
             plot = plot.reshape(fig.canvas.get_width_height()[::-1] + (3,))
-            print('id:%03d'%i)
-            if len(bne_path)+model.num_vid == len(out):
+            print('plot pose code of frame id:%03d'%i)
+            if len(bne_path) == len(code_proj_3d):
                 bneimg = cv2.imread(bne_path[i])
                 bneimg = cv2.resize(bneimg,\
                 (bneimg.shape[1]*plot.shape[0]//bneimg.shape[0], plot.shape[0]))
-                plot = np.hstack([plot, bneimg])
+                img=cv2.imread(img_path[i])[:,:,::-1]
+                img = cv2.resize(img,\
+                (img.shape[1]*plot.shape[0]//img.shape[0], plot.shape[0]))
+                plot = np.hstack([img, bneimg, plot])
             plot_stack.append(plot)
 
         save_vid('tmp/code', plot_stack, suffix='.mp4',
@@ -215,12 +231,12 @@ def match_frames(trainer, idxs, nsample=200):
 
     # vis dps
     cv2.imwrite('tmp/match_dpc.png', model.dp_vis[model.dps[0].long()].cpu().numpy()*255)
-    
+
 
 def main(_):
     opts.img_size=opts.render_size
     trainer = v2s_trainer(opts, is_eval=True)
-    data_info = trainer.init_dataset()    
+    data_info = trainer.init_dataset()
     trainer.define_model(data_info)
 
     #write matching function

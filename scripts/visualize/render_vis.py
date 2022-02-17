@@ -491,7 +491,7 @@ def main():
             color = cv2.addWeighted(color, 0.5, refimg[:,:,::-1], 0.5, 0)
         prefix = (args.outpath).split('/')[-1].split('.')[0]
         color = color.copy(); color[0,0,:] = 0
-        imoutpath = '%s/%s-mrender%03d.png'%(args.testdir, prefix,i)
+        imoutpath = '%s/%s-mrender%03d.jpg'%(args.testdir, prefix,i)
         cv2.imwrite(imoutpath,color[:,:,::-1] )
         color = cv2.resize(color, output_size[::-1])
 
@@ -530,7 +530,7 @@ def main():
     for idx in range(len(ctrajs)):
         save_path = '%s-ctrajs-%05d.txt'%(args.outpath, idx)
         np.savetxt(save_path, ctrajs[idx])
-        save_path = '%s-refsil-%05d.png'%(args.outpath, idx)
+        save_path = '%s-refsil-%05d.jpg'%(args.outpath, idx)
         cv2.imwrite(save_path, rndsils[idx])
 
 if __name__ == '__main__':

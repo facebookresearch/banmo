@@ -123,7 +123,12 @@ bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_late
 # argv[4]: video id separated by space
 # argv[5]: resolution of running marching cubes (256 by default)
 ```
+
+https://user-images.githubusercontent.com/13134872/154554031-332e2355-3303-43e3-851c-b5812699184b.mp4
+
+
 </details>
+
 
 <details><summary>[human-cap]</summary>
 
@@ -134,6 +139,9 @@ bash scripts/template.sh 0,1 $seqname 10001 "" ""
 bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
         "0 1 2 3 4 5 6 7 8 9" 256
 ```
+
+https://user-images.githubusercontent.com/13134872/154554210-3bb0a439-fe46-4ea3-a058-acecf5f8dbb5.mp4
+  
 </details>
 
 #### 2. Visualization tools
@@ -156,6 +164,9 @@ python scripts/visualize/render_root.py --testdir $logdir --first_idx 0 --last_i
 ```
 Find the output at `$logdir/mesh-cam.gif`. 
 During optimization, the rest mesh and bones at each epoch are saved at `$logdir/*rest.obj`.
+
+https://user-images.githubusercontent.com/13134872/154553887-1871fdea-24f4-4a79-8689-86ff6af7fa52.mp4
+
 </details>
 
 <details><summary>[Correspondence/pose code]</summary>
@@ -170,6 +181,10 @@ bash scripts/render_match.sh $logdir/params_latest.pth "0 100" "--render_size 12
 2d-3d geometric warps of frame 0 will be saved to `tmp/match_line_exp.obj`.
 near-plane frame 0 will be saved to `tmp/match_plane.obj`.
 Pose code visualization will be saved at `tmp/code.mp4`.
+
+https://user-images.githubusercontent.com/13134872/154553652-c93834db-cce2-4158-a30a-21680ab46a63.mp4
+
+
 </details>
 
 <details><summary>[Render novel views]</summary>

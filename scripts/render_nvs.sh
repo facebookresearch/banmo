@@ -16,7 +16,7 @@ add_args="--sample_grid3d ${sample_grid3d} --full_mesh \
 testdir=${model_path%/*} # %: from end
 CUDA_VISIBLE_DEVICES=$dev python extract.py --flagfile=$testdir/opts.log \
                   --model_path $model_path \
-                  --test_frames $rootid \
+                  --test_frames {$rootid} \
                   $add_args
 
 # re-render the trained sequence

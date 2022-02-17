@@ -16,7 +16,7 @@ add_args="--sample_grid3d ${sample_grid3d} --full_mesh \
 testdir=${model_path%/*} # %: from end
 CUDA_VISIBLE_DEVICES=$dev python extract.py --flagfile=$testdir/opts.log \
                   --model_path $model_path \
-                  --test_frames {$rootid} \
+                  --test_frames {${rootid}","${vidid}} \
                   $add_args
 
 # re-render the trained sequence
@@ -41,10 +41,10 @@ CUDA_VISIBLE_DEVICES=$dev python scripts/visualize/render_vis.py --testdir $test
                      #--outpath $prefix-fgray --vp -1 \
 # render
 rootdir=$trgpath-ctrajs-
-CUDA_VISIBLE_DEVICES=$dev python scripts/visualize/nvs.py --seqname $seqname \
+CUDA_VISIBLE_DEVICES=$dev python scripts/visualize/nvs.py --flagfile=$testdir/opts.log \
   --model_path $model_path \
   --vidid $vidid \
-  --scale $scale --maxframe $maxframe --lbs --bullet_time -1 \
+  --scale $scale --maxframe $maxframe --bullet_time -1 \
   --chunk 2048 \
   --nouse_corresp --nouse_unc --perturb 0\
   --rootdir $rootdir --nvs_outpath $save_prefix-traj

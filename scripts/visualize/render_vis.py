@@ -530,7 +530,7 @@ def main():
     for idx in range(len(ctrajs)):
         save_path = '%s-ctrajs-%05d.txt'%(args.outpath, idx)
         np.savetxt(save_path, ctrajs[idx])
-        save_path = '%s-refsil-%05d.jpg'%(args.outpath, idx)
+        save_path = '%s-refsil-%05d.png'%(args.outpath, idx)
         cv2.imwrite(save_path, rndsils[idx])
 
 if __name__ == '__main__':

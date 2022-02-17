@@ -188,7 +188,7 @@ def match_frames(trainer, idxs, nsample=200):
         #plt.figure(figsize=(16,16))
         plot_stack = []
         weight_dir = opts.model_path.rsplit('/',1)[0]
-        bne_path = sorted(glob.glob('%s/%s-*bne-mrender*.png'%\
+        bne_path = sorted(glob.glob('%s/%s-*bne-mrender*.jpg'%\
                             (weight_dir, opts.seqname)))
         img_path = model.impath.copy()
         ## remove the last img for each video to make shape consistent with bone renders

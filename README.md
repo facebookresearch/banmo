@@ -199,6 +199,9 @@ bash scripts/render_nvs.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_lates
 # argv[5]: video id used for root traj
 ```
 Results will be saved at `logdir/$seqname-e120-b256-ft3/nvs*.mp4`.
+  
+https://user-images.githubusercontent.com/13134872/154580120-aa18f22d-814d-40e3-81e2-5a2c2869f90d.mp4
+
 </details>
 
 ### Common install issues

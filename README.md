@@ -133,7 +133,7 @@ https://user-images.githubusercontent.com/13134872/154554031-332e2355-3303-43e3-
 <details><summary>[human-cap]</summary>
 
 ```
-seqname=human-cap
+seqname=adult7
 python preprocess/img2lines.py --seqname $seqname
 bash scripts/template.sh 0,1 $seqname 10001 "" ""
 bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
@@ -191,13 +191,14 @@ https://user-images.githubusercontent.com/13134872/154553652-c93834db-cce2-4158-
 
 Render novel views at the canonical camera coordinate
 ```
-bash scripts/render_nvs.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth 0 1
+bash scripts/render_nvs.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth 5 0
 # argv[1]: gpu id
 # argv[2]: sequence name
 # argv[3]: path to the weights
 # argv[4]: video id used for pose traj
 # argv[5]: video id used for root traj
 ```
+Results will be saved at `logdir/$seqname-e120-b256-ft3/nvs*.mp4`.
 </details>
 
 ### Common install issues

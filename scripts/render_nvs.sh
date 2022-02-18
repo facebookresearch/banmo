@@ -5,7 +5,8 @@ model_path=$3
 vidid=$4   # pose traj
 rootid=$5  # root traj
 
-save_prefix=tmp/nvs
+testdir=${model_path%/*} # %: from end
+save_prefix=$testdir/nvs-$vidid-$rootid
 maxframe=150
 scale=1
 sample_grid3d=256
@@ -13,7 +14,6 @@ add_args="--sample_grid3d ${sample_grid3d} --full_mesh \
   --nouse_corresp --nouse_embed --nouse_proj --render_size 2 --ndepth 2"
 
 # extrat meshes
-testdir=${model_path%/*} # %: from end
 CUDA_VISIBLE_DEVICES=$dev python extract.py --flagfile=$testdir/opts.log \
                   --model_path $model_path \
                   --test_frames {${rootid}","${vidid}} \

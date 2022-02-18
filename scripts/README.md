@@ -36,6 +36,7 @@ bash scripts/render_nvs.sh 0 $seqname logdir/driver-$seqname-e120-b256/params_la
 # argv[4]: video id used for pose traj
 # argv[5]: video id used for root traj
 ```
+Results will be saved at `logdir/driver-$seqname-e120-b256-ft3/nvs*.mp4`.
 </details>
 
 ### Example: Adaptation to a new video

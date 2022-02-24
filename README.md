@@ -1,9 +1,10 @@
 # BANMo 
 #### [[Webpage]](https://banmo-www.github.io/) [[Latest preprint (02/14/2022)]](https://banmo-www.github.io/banmo-2-14.pdf) [[Arxiv]](https://arxiv.org/abs/2112.12761) 
 
-**Update 02/15**: Add motion-retargeting, quantitative evaluation and synthetic data generation/eval.
-**Update 02/17**: Add adaptation to a new video, optimization with known root poses, and pose code visualization.
-**Update 02/23**: Improve NVS with fourier light code, improve uncertainty MLP, add long schedule, minor speed up.
+### Changelog
+- **02/15**: Add motion-retargeting, quantitative evaluation and synthetic data generation/eval.
+- **02/17**: Add adaptation to a new video, optimization with known root poses, and pose code visualization.
+- **02/23**: Improve NVS with fourier light code, improve uncertainty MLP, add long schedule, minor speed up.
 
 ## Install
 ### Build with conda
@@ -203,7 +204,7 @@ bash scripts/render_nvs.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_lates
 ```
 Results will be saved at `logdir/$seqname-e120-b256-ft3/nvs*.mp4`.
   
-https://user-images.githubusercontent.com/13134872/154580120-aa18f22d-814d-40e3-81e2-5a2c2869f90d.mp4
+https://user-images.githubusercontent.com/13134872/155441493-38bf7a02-a6ee-4f2f-9dc5-0cf98a4c7c45.mp4
 
 </details>
 

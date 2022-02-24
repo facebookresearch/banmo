@@ -303,6 +303,7 @@ class v2s_trainer():
         return new_dict
 
     def load_network(self,model_path=None, is_eval=True, rm_prefix=True):
+        opts = self.opts
         states = torch.load(model_path,map_location='cpu')
         if rm_prefix: states = self.rm_module_prefix(states)
         var_path = model_path.replace('params', 'vars').replace('.pth', '.npy')
@@ -312,25 +313,7 @@ class v2s_trainer():
             # load variables
             self.model.latest_vars = latest_vars
         
-        if self.opts.loadid0>=0:
-            # TODO load the specific vid codes
-            loadvid=self.opts.loadvid
-            loadid0=self.opts.loadid0
-            loadidn=loadid0+len(self.model.root_code.weight)
-            self.model.env_code.weight.data= states['env_code.weight'][loadid0:loadidn]
-            #self.model.env_code.weight.data= states['env_code.weight'][loadvid:loadvid+1]
-            self.model.ks_param       .data= states['ks_param'][loadvid:loadvid+1]
-            self.model.root_code.weight.data  = states['root_code.weight'][loadid0:loadidn]
-            self.model.pose_code.weight.data  = states['pose_code.weight'][loadid0:loadidn]
-            self.model.nerf_root_rts[0].weight.data = \
-                            states['nerf_root_rts.0.weight'][loadid0:loadidn]
-            self.model.nerf_body_rts[0].weight.data = \
-                            states['nerf_body_rts.0.weight'][loadid0:loadidn]
-
-
         # if size mismatch, delete all related variables
-        #if not is_eval and self.opts.freeze_proj: 
-        # TODO turn on it after ft cse feat
         if rm_prefix and states['near_far'].shape[0] != self.model.near_far.shape[0]:
             print('!!!deleting video specific dicts due to size mismatch!!!')
             self.del_key( states, 'near_far') 
@@ -349,8 +332,18 @@ class v2s_trainer():
                 self.del_key( states, 'vid_code.weight')
             if 'ks_param' in states.keys():
                 self.del_key( states, 'ks_param')
+
+            # delete pose basis(backbones)
+            if not opts.keep_pose_basis:
+                del_key_list = []
+                for k in states.keys():
+                    if 'nerf_body_rts' in k or 'nerf_root_rts' in k:
+                        del_key_list.append(k)
+                for k in del_key_list:
+                    print(k)
+                    self.del_key( states, k)
     
-        if rm_prefix and self.opts.lbs and states['bones'].shape[0] != self.model.bones.shape[0]:
+        if rm_prefix and opts.lbs and states['bones'].shape[0] != self.model.bones.shape[0]:
             self.del_key(states, 'bones')
             states = self.rm_module_prefix(states, prefix='nerf_skin')
             states = self.rm_module_prefix(states, prefix='nerf_body_rts')
@@ -365,19 +358,10 @@ class v2s_trainer():
         # load nerf_coarse, nerf_bone/root (not code), nerf_vis, nerf_feat, nerf_unc
         #TODO somehow, this will reset the batch stats for 
         # a pretrained cse model, to keep those, we want to manually copy to states
-        if self.opts.ft_cse and \
+        if opts.ft_cse and \
           'csenet.net.backbone.fpn_lateral2.weight' not in states.keys():
             self.add_cse_to_states(self.model, states)
         self.model.load_state_dict(states, strict=False)
-
-        # load weights for source model
-        if self.opts.retarget_path!='':
-            source_states = torch.load(self.opts.retarget_path,map_location='cpu')
-            source_shape_states = self.rm_module_prefix(source_states, 
-                    prefix='module.nerf_coarse')
-            self.model.nerf_coarse.load_state_dict(source_shape_states, strict=False)
-            # TODO need to pick a lighting code
-            #self.model.env_code.weight.data = source_states['module.env_code.weight'][0:1]
 
         return
 
@@ -511,7 +495,7 @@ class v2s_trainer():
                     rendered_seq['proj_err'][-1] *= sil_rszd
                     rendered_seq['proj_err'][-1] *= 255/rendered_seq['proj_err'][-1].max()
                 if opts.use_unc:
-                    rendered_seq['unc_pred'][-1] = F.relu(rendered_seq['unc_pred'][-1])
+                    rendered_seq['unc_pred'][-1] -= rendered_seq['unc_pred'][-1].min()
                     rendered_seq['unc_pred'][-1] *= 255/rendered_seq['unc_pred'][-1].max()
 
                 # extract mesh sequences

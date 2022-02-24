@@ -245,7 +245,7 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
         chunk_pts = 8*1024
     else:
         chunk_pts = 1024
-    chunk_pix = 200
+    chunk_pix = 4096
     nsample,_ = feats.shape
     device = feats.device
     feats = F.normalize(feats,2,-1)

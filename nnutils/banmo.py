@@ -59,10 +59,10 @@ flags.DEFINE_boolean('debug', False, 'deubg')
 flags.DEFINE_bool('use_human', False, 'whether to use human cse model')
 flags.DEFINE_bool('symm_shape', False, 'whether to set geometry to x-symmetry')
 flags.DEFINE_bool('env_code', True, 'whether to use environment code for each video')
-flags.DEFINE_bool('env_fourier', False, 'whether to use fourier basis for env')
+flags.DEFINE_bool('env_fourier', True, 'whether to use fourier basis for env')
 flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
-flags.DEFINE_bool('anneal_freq', True, 'whether to use frequency annealing')
+flags.DEFINE_bool('anneal_freq', False, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
 flags.DEFINE_bool('use_cc', True, 'whether to use connected component for mesh')
 
@@ -110,6 +110,7 @@ flags.DEFINE_bool('warmup_rootmlp', False, 'whether to preset base root pose (co
 flags.DEFINE_bool('unc_filter', True, 'whether to filter root poses init with low uncertainty')
 
 # optimization: fine-tuning
+flags.DEFINE_bool('keep_pose_basis', True, 'keep pose basis when loading models at train time')
 flags.DEFINE_bool('freeze_coarse', False, 'whether to freeze coarse posec of MLP')
 flags.DEFINE_bool('root_stab', True, 'whether to stablize root at ft')
 flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
@@ -159,11 +160,6 @@ flags.DEFINE_bool('rm_novp', True,'whether to remove loss on non-overlapping pxs
 
 # for scripts/visualize/match.py
 flags.DEFINE_string('match_frames', '0 1', 'a list of frame index')
-
-# for retarget
-flags.DEFINE_string('retarget_path', '', 'load source model path for regargeting')
-flags.DEFINE_integer('loadid0', -1, 'frame id to load (for ft)')
-flags.DEFINE_integer('loadvid', -1, 'video id to load (for ft)')
 
 class banmo(nn.Module):
     def __init__(self, opts, data_info):
@@ -243,7 +239,7 @@ class banmo(nn.Module):
             # add video-speficit environment lighting embedding
             env_code_dim = 64
             if opts.env_fourier:
-                self.env_code = FrameCode(self.num_freqs, env_code_dim, self.data_offset, scale=0.1)
+                self.env_code = FrameCode(self.num_freqs, env_code_dim, self.data_offset, scale=1)
             else:
                 self.env_code = embed_net(self.num_fr, env_code_dim)
         else:
@@ -1496,8 +1492,8 @@ class banmo(nn.Module):
         if self.training and self.opts.anneal_freq:
             alpha = self.num_freqs * \
                 self.progress / (opts.warmup_steps)
-            if alpha>self.alpha.data[0]:
-                self.alpha.data[0] = min(max(3, alpha),self.num_freqs) # alpha from 3 to 10
+            #if alpha>self.alpha.data[0]:
+            self.alpha.data[0] = min(max(6, alpha),self.num_freqs) # alpha from 6 to 10
             self.embedding_xyz.alpha = self.alpha.data[0]
             self.embedding_dir.alpha = self.alpha.data[0]
 

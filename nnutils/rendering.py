@@ -153,13 +153,14 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
                        # (N_rays*N_samples_, embed_dir_channels)
 
     # Perform model inference to get rgb and raw sigma
+    chunk_size=4096
     B = xyz_.shape[0]
     xyz_input = xyz_.view(N_rays,N_samples,3)
     out = evaluate_mlp(model, xyz_input, 
             embed_xyz = embedding_xyz,
             dir_embedded = dir_embedded.view(N_rays,N_samples,-1),
             code=env_code,
-            chunk=chunk//N_samples, sigma_only=weights_only).view(B,-1)
+            chunk=chunk_size, sigma_only=weights_only).view(B,-1)
 
     if weights_only:
         sigmas = out.view(N_rays, N_samples_)
@@ -498,7 +499,7 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             xyt_code = torch.cat([xyt_embedded, vid_code],-1)
             unc_pred = nerf_unc(xyt_code)
             #TODO add activation function
-            unc_pred = F.softplus(unc_pred)
+            #unc_pred = F.softplus(unc_pred)
             result['unc_pred'] = unc_pred
         
         if 'img_at_samp' in rays.keys():

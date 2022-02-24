@@ -197,6 +197,12 @@ def mlp_skinning(mlp, code, pts_embed):
         dskin = evaluate_mlp(mlp, pts_embed, code=code, chunk=8*1024)
     return dskin
 
+def axis_rotate(orient, mdis):
+    bs,N,B,_,_ = mdis.shape
+    mdis = (orient * mdis.view(bs,N,B,1,3)).sum(4)[...,None] # faster 
+    #mdis = orient.matmul(mdis) # bs,N,B,3,1 # slower
+    return mdis
+
 def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
 #def skinning(bones, pts, dskin=None, skin_aux=None):
     """
@@ -219,7 +225,8 @@ def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
     # transform a vector to the local coordinate
     mdis = center.view(bs,1,B,3) - pts.view(bs,N,1,3) # bs,N,B,3
     if True:#B<50:
-        mdis = orient.view(bs,1,B,3,3).matmul(mdis[...,None]) # bs,N,B,3,1
+        mdis = axis_rotate(orient.view(bs,1,B,3,3), mdis[...,None])
+        #mdis = orient.view(bs,1,B,3,3).matmul(mdis[...,None]) # bs,N,B,3,1
         mdis = mdis[...,0]
         mdis = scale.view(bs,1,B,3) * mdis.pow(2)
     else:
@@ -246,7 +253,7 @@ def skinning(bones, pts, dskin=None, skin_aux=None):
     pts: bs,N,3    - N 3d points
     skin: bs,N,B   - skinning matrix
     """
-    chunk=1024
+    chunk=4096
     bs,N,_ = pts.shape
     B = bones.shape[-2]
     if bones.dim()==2: bones = bones[None].repeat(bs,1,1)
@@ -324,7 +331,7 @@ def blend_skinning(bones, rts, skin, pts):
     skin: bs,N,B   - skinning matrix
     apply rts to bone coordinates, while computing blending globally
     """
-    chunk=1024
+    chunk=4096
     B = rts.shape[-3]
     N = pts.shape[-2]
     bones = bones.view(-1,B,10)

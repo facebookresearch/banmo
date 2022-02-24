@@ -1,7 +1,9 @@
 # BANMo 
 #### [[Webpage]](https://banmo-www.github.io/) [[Latest preprint (02/14/2022)]](https://banmo-www.github.io/banmo-2-14.pdf) [[Arxiv]](https://arxiv.org/abs/2112.12761) 
-**Update 02/15**: Added examples for motion-retargeting, quantitative evaluation and synthetic data generation/eval.
-**Update 02/17**: Added examples for adaptation to a new video, known root poses, and pose code visualization.
+
+**Update 02/15**: Add motion-retargeting, quantitative evaluation and synthetic data generation/eval.
+**Update 02/17**: Add adaptation to a new video, optimization with known root poses, and pose code visualization.
+**Update 02/23**: Improve NVS with fourier light code, improve uncertainty MLP, add long schedule, minor speed up.
 
 ## Install
 ### Build with conda
@@ -129,6 +131,7 @@ https://user-images.githubusercontent.com/13134872/154554031-332e2355-3303-43e3-
 
 </details>
 
+Use more iterations for for better color rendering and novel view synthesis results, see `scripts/template-long.sh`.
 
 <details><summary>[human-cap]</summary>
 

@@ -48,6 +48,7 @@ Download pre-trained VCN optical flow (`pip install gdown` first). Then run
 ```
 mkdir ./lasr_vcn
 gdown https://drive.google.com/uc?id=139S6pplPvMTB-_giI6V2dxpOHGqqAdHn -O ./lasr_vcn/vcn_rob.pth
+# alternatively: wget https://www.dropbox.com/s/bgsodsnnbxdoza3/vcn_rob.pth -O ./lasr_vcn/vcn_rob.pth
 ```
 
 ### Run segmentation, extract features and flow

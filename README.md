@@ -2,9 +2,10 @@
 #### [[Webpage]](https://banmo-www.github.io/) [[Latest preprint (02/14/2022)]](https://banmo-www.github.io/banmo-2-14.pdf) [[Arxiv]](https://arxiv.org/abs/2112.12761) 
 
 ### Changelog
-- **02/15**: Add motion-retargeting, quantitative evaluation and synthetic data generation/eval.
-- **02/17**: Add adaptation to a new video, optimization with known root poses, and pose code visualization.
+- **03/20**: Add mesh color option (canonical mappihg vs radiance) during surface extraction. See `--ce_color` flag.
 - **02/23**: Improve NVS with fourier light code, improve uncertainty MLP, add long schedule, minor speed up.
+- **02/17**: Add adaptation to a new video, optimization with known root poses, and pose code visualization.
+- **02/15**: Add motion-retargeting, quantitative evaluation and synthetic data generation/eval.
 
 ## Install
 ### Build with conda
@@ -222,6 +223,7 @@ https://user-images.githubusercontent.com/13134872/155441493-38bf7a02-a6ee-4f2f-
 
 - use `--use_human` for human reconstruction, otherwise it assumes quadruped animals
 - use `--full_mesh` at mesh extraction time to extract a complete surface (disable visibility check)
+- use `--noce_color` at mesh extraction time to assign radiance instead canonical mapping as vertex colors.
 - use `--queryfw` at mesh extraction time to extract forward articulated meshes, which only needs to run marching cubes once.
 - use `--use_cc` maintains the largest connected component for rest mesh in order to set the object bounds and near-far plane (by default turned on). Turn it off with `--nouse_cc` for disconnected objects such as hands.
 - use `--debug` to print out the rough time each component takes.

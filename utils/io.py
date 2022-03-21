@@ -242,6 +242,22 @@ def draw_cams(all_cam, color='cool', axis=True,
     mesh_cam = trimesh.util.concatenate(cam_list)
     return mesh_cam
 
+def draw_cams_pair(cam1,cam2, color='cool', axis=True,
+        color_list = None):
+    frame_num = cam1.shape[0]
+    cam_mesh1 = draw_cams(cam1, color=color,axis=axis,color_list=color_list)
+    cam_mesh2 = draw_cams(cam2, color=color,axis=axis,color_list=color_list)
+
+    # draw line
+    lines = []
+    for i in range(frame_num):
+        cam1_c = -cam1[i,:3,:3].T.dot(cam1[i,:3,3:])[:,0]
+        cam2_c = -cam2[i,:3,:3].T.dot(cam2[i,:3,3:])[:,0]
+        segment = np.stack([cam1_c, cam2_c])
+        line = trimesh.creation.cylinder(0.001,segment=segment,sections=5)
+        lines.append(line)
+    lines = trimesh.util.concatenate(lines)
+    return cam_mesh1, cam_mesh2, lines
 
 def save_vid(outpath, frames, suffix='.gif',upsample_frame=150., fps=30,
         is_flow=False):
@@ -560,3 +576,23 @@ def mkdir_p(path):
             pass
         else:
             raise
+
+def get_vertex_colors(model, mesh, frame_idx=0, view_dir=None):
+    # assign color to mesh verts according to current frame
+    xyz_query = torch.cuda.FloatTensor(mesh.vertices, device=model.device)
+    xyz_embedded = model.embedding_xyz(xyz_query) # (N, embed_xyz_channels)
+    # use env code of the first frame
+    env_code = model.env_code(torch.Tensor([frame_idx]).long().to(model.device))
+    env_code = env_code.expand(xyz_query.shape[0],-1)
+    if view_dir is None:
+        # use view direction of (0,0,-1)
+        dir_query = torch.zeros_like(xyz_query) 
+        dir_query[:,2] = -1
+    else:
+        dir_query = F.normalize(view_dir, 2,-1)
+    dir_embedded = model.embedding_dir(dir_query) # (N, embed_xyz_channels)
+    xyz_embedded = torch.cat([xyz_embedded, dir_embedded, env_code],-1)
+    #xyz_embedded = torch.cat([xyz_embedded, env_code],-1)
+    vis = model.nerf_coarse(xyz_embedded)[:,:3].cpu().numpy()
+    vis = np.clip(vis, 0, 1)
+    return vis

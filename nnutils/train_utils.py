@@ -42,7 +42,7 @@ from utils.io import mkdir_p
 from nnutils.vis_utils import image_grid
 from dataloader import frameloader
 from utils.io import save_vid, draw_cams, extract_data_info, merge_dict,\
-        render_root_txt, save_bones
+        render_root_txt, save_bones, draw_cams_pair, get_vertex_colors
 from utils.colors import label_colormap
 
 class DataParallelPassthrough(torch.nn.parallel.DistributedDataParallel):
@@ -511,9 +511,18 @@ class v2s_trainer():
                                             opts.sample_grid3d, opts.mc_threshold,
                                         embedid=embedid, mesh_dict_in=mesh_dict_rest)
                         mesh=mesh_dict['mesh']
-                        if mesh_dict_rest is not None:
+                        if mesh_dict_rest is not None and opts.ce_color:
                             mesh.visual.vertex_colors = mesh_dict_rest['mesh'].\
                                    visual.vertex_colors # assign rest surface color
+                        else:
+                            # get view direction 
+                            obj_center = self.model.rtk[idx][:3,3:4]
+                            cam_center = -self.model.rtk[idx][:3,:3].T.matmul(obj_center)[:,0]
+                            view_dir = torch.cuda.FloatTensor(mesh.vertices, device=self.device) \
+                                            - cam_center[None]
+                            vis = get_vertex_colors(self.model, mesh_dict_rest['mesh'], 
+                                                    frame_idx=idx, view_dir=view_dir)
+                            mesh.visual.vertex_colors[:,:3] = vis*255
 
                         # save bones
                         if 'bones' in mesh_dict.keys():
@@ -1081,8 +1090,8 @@ class v2s_trainer():
             reinit_bones(self.model.module, mesh_rest, opts.num_bones)
             self.init_training() # add new params to optimizer
             if epoch>0:
-                # freeze weights of root pose in the following 0.1% iters
-                self.model.module.counter_frz_rebone = 0.001
+                # freeze weights of root pose in the following 1% iters
+                self.model.module.counter_frz_rebone = 0.01
                 #reset error stats
                 self.model.module.latest_vars['fp_err']      [:]=0
                 self.model.module.latest_vars['flo_err']     [:]=0
@@ -1411,6 +1420,8 @@ class v2s_trainer():
                     model.vis_len = vis.max(0)[None] - vis.min(0)[None]
                 vis = vis - model.vis_min
                 vis = vis / model.vis_len
+                if opts.ce_color:
+                    vis = get_vertex_colors(model, mesh, frame_idx=0)
                 mesh.visual.vertex_colors[:,:3] = vis*255
 
         # forward warping

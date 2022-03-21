@@ -136,6 +136,7 @@ flags.DEFINE_integer('rnd_frame_chunk', 3, 'chunk size to render eval images')
 flags.DEFINE_bool('queryfw', True, 'use forward warping to query deformed shape')
 flags.DEFINE_float('mc_threshold', -0.002, 'marching cubes threshold')
 flags.DEFINE_bool('full_mesh', False, 'extract surface without visibility check')
+flags.DEFINE_bool('ce_color', True, 'assign mesh color as canonical surface mapping or radiance')
 flags.DEFINE_integer('sample_grid3d', 64, 'resolution for mesh extraction from nerf')
 flags.DEFINE_string('test_frames', '9', 'a list of video index or num of frames, {0,1,2}, 30')
 

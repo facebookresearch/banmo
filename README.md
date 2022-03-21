@@ -101,6 +101,43 @@ When optimizing your own videos, a rule of thumb is to set
 "num gpus" x "batch size" x "accu steps" ~= num frames (default number 512 suits for cat-pikachiu and human-hap)
 </details>
 
+<details><summary>Try pre-optimized models</summary>
+
+We provide pre-optimized models and scripts to run mesh extraction and novel view synthesis. 
+  
+|seqname | download link |
+|---|---|
+|cat-pikachiu|[.npy](https://www.dropbox.com/s/nc2aawnwrmil8jr/cat-pikachiu.npy), [.pth](https://www.dropbox.com/s/i8sjlgbom5eoy0j/cat-pikachiu.pth)| 
+|cat-coco|[.npy](https://www.dropbox.com/s/fwf8il8bt9c812f/cat-coco.npy), [.pth](https://www.dropbox.com/s/4g0w6z4xec4f88g/cat-coco.pth)|   
+ 
+```
+# download pre-optimized models
+mkdir -p tmp && cd "$_"
+wget https://www.dropbox.com/s/nc2aawnwrmil8jr/cat-pikachiu.npy
+wget https://www.dropbox.com/s/i8sjlgbom5eoy0j/cat-pikachiu.pth
+cd ../
+
+seqname=cat-pikachiu
+# Extract articulated meshes and render
+bash scripts/render_mgpu.sh 0 $seqname tmp/cat-pikachiu.pth \
+        "0 1 2 3 4 5 6 7 8 9 10" 256
+# argv[1]: gpu id
+# argv[2]: sequence name
+# argv[3]: weights path
+# argv[4]: video id separated by space
+# argv[5]: resolution of running marching cubes (256 by default)
+  
+# render novel views
+bash scripts/render_nvs.sh 0 $seqname tmp/cat-pikachiu.pth 5 0
+# argv[1]: gpu id
+# argv[2]: sequence name
+# argv[3]: path to the weights
+# argv[4]: video id used for pose traj
+# argv[5]: video id used for root traj
+```
+
+</details>
+
 #### 1. Optimization
 <details><summary>[cat-pikachiu]</summary>
 
@@ -133,8 +170,6 @@ https://user-images.githubusercontent.com/13134872/154554031-332e2355-3303-43e3-
 
 </details>
 
-Use more iterations for for better color rendering and novel view synthesis results, see `scripts/template-long.sh`.
-
 <details><summary>[human-cap]</summary>
 
 ```
@@ -148,6 +183,8 @@ bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_late
 https://user-images.githubusercontent.com/13134872/154554210-3bb0a439-fe46-4ea3-a058-acecf5f8dbb5.mp4
   
 </details>
+
+Use more iterations for for better color rendering and novel view synthesis results, see `scripts/template-long.sh`.
 
 #### 2. Visualization tools
 <details><summary>[Tensorboard]</summary>

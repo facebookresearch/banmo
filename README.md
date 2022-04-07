@@ -246,6 +246,19 @@ https://user-images.githubusercontent.com/13134872/155441493-38bf7a02-a6ee-4f2f-
 
 </details>
 
+<details><summary>[Render canonical view over iterations]</summary>
+
+Render depth and color of the canonical view over optimization iterations
+```
+bash scripts/nvs_iter.sh 0 logdir/$seqname-e120-b256-init/
+# argv[1]: gpu id
+# argv[2]: path to the logdir
+```
+Results will be saved at `logdir/$seqname-e120-b256-init/vis-iter*.mp4`.
+  
+
+</details>
+
 ### Common install issues
 <details><summary>[expand]</summary>
 
@@ -259,7 +272,7 @@ https://user-images.githubusercontent.com/13134872/155441493-38bf7a02-a6ee-4f2f-
 <details><summary>[expand]</summary>
 
 - use `--use_human` for human reconstruction, otherwise it assumes quadruped animals
-- use `--full_mesh` at mesh extraction time to extract a complete surface (disable visibility check)
+- use `--full_mesh` to disable visibility check at mesh extraction time
 - use `--noce_color` at mesh extraction time to assign radiance instead canonical mapping as vertex colors.
 - use `--queryfw` at mesh extraction time to extract forward articulated meshes, which only needs to run marching cubes once.
 - use `--use_cc` maintains the largest connected component for rest mesh in order to set the object bounds and near-far plane (by default turned on). Turn it off with `--nouse_cc` for disconnected objects such as hands.

@@ -157,19 +157,9 @@ def feat_match_loss(nerf_feat, embedding_xyz, feats, pts, pts_prob, bound,
     ## part2: matching
     pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
             bound,grid_size=20,is_training=is_training)
-    ##TODO iterative matching 2
-    #pts_pred1 = feat_match(nerf_feat, embedding_xyz, feats, 
-    #        bound,grid_size=20,is_training=is_training)
-    #pts_pred = feat_match(nerf_feat, embedding_xyz, feats, 
-    #        bound/8,grid_size=5,is_training=is_training, init_pts=pts_pred1)
 
     # part3: compute loss
-    # loss
-    # evaluate against model's opacity distirbution along the ray with soft target
     feat_err = (pts_pred - pts_exp).norm(2,-1) # n,ndepth
-    ##TODO iterative matching 2
-    #feat_err = 0.8* (pts_pred1 - pts_exp.detach()).norm(2,-1) + \
-    #                 (pts_pred - pts_exp).norm(2,-1)
 
     # rearrange outputs
     pts_pred  = pts_pred.view(base_shape+(3,))
@@ -237,7 +227,7 @@ def kp_reproj(pts_pred, models, embedding_xyz, rays, to_target=False):
     
     
 def feat_match(nerf_feat, embedding_xyz, feats, bound, 
-        grid_size=20,is_training=True, init_pts=None):
+        grid_size=20,is_training=True, init_pts=None, rt_entropy=False):
     """
     feats:    -1, num_feat
     """
@@ -307,8 +297,14 @@ def feat_match(nerf_feat, embedding_xyz, feats, bound,
     if not is_training: torch.cuda.empty_cache()
     # n, ns, 1 * n, ns, 3
     pts_pred = (prob_vol[...,None] * query_xyz).sum(1)
-    return pts_pred
 
+    if rt_entropy:
+        # compute normalized entropy
+        match_unc = (-prob_vol * prob_vol.clamp(1e-9,1-1e-9).log()).sum(1)[:,None]
+        match_unc = match_unc/np.log(grid_size**3)
+        return pts_pred, match_unc
+    else:
+        return pts_pred
 
 def grad_update_bone(bones,embedding_xyz, nerf_vis, learning_rate):
     """

@@ -560,7 +560,8 @@ class v2s_trainer():
    
                     num_bones = skins.shape[-1]
                     colormap = label_colormap()
-                    colormap = np.repeat(colormap,4,axis=0) # TODO use a larger color map
+                    # TODO use a larger color map
+                    colormap = np.repeat(colormap[None],4,axis=0).reshape(-1,3)
                     colormap = colormap[:num_bones]
                     colormap = (colormap[None] * skins[...,None]).sum(1)
 
@@ -1420,7 +1421,7 @@ class v2s_trainer():
                     model.vis_len = vis.max(0)[None] - vis.min(0)[None]
                 vis = vis - model.vis_min
                 vis = vis / model.vis_len
-                if opts.ce_color:
+                if not opts.ce_color:
                     vis = get_vertex_colors(model, mesh, frame_idx=0)
                 mesh.visual.vertex_colors[:,:3] = vis*255
 

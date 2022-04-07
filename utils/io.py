@@ -63,6 +63,7 @@ def save_bones(bones, len_max, path):
         center = bone[None,:3]
         orient = bone[3:7] # real first
         orient = orient / np.linalg.norm(orient, 2,-1)
+        orient = orient[[1,2,3,0]]
         orient = R.from_quat(orient).as_matrix() # real first
         orient = orient.T # transpose R
         scale =  np.exp(bone[None, 7:10])

@@ -67,8 +67,8 @@ bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_late
 ### Example: Known root poses
 
 There are two additional steps to use pre-computed camera poses wrt the object (root body poses) instead of the posenet.
-    * First, add `rtk_path` key to config files, see `configs/cat-pikachiu-cam.config` for an example.
-    * Then use `template-known-cam.sh` instead of `template.sh` when running optimization. Specifically, it replaces `--pose_cnn_path $pose_cnn_path` with `--use_rtk_file`.
+- First, add `rtk_path` key to config files, see `configs/cat-pikachiu-cam.config` for an example.
+- Then use `template-known-cam.sh` instead of `template.sh` when running optimization. Specifically, it replaces `--pose_cnn_path $pose_cnn_path` with `--use_rtk_file`.
 
 Here's an example. Frist, download the precomputed rtk files.
 ```

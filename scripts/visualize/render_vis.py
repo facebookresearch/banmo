@@ -113,9 +113,9 @@ def main():
     imglist = [imglist[i] for i in idx_render]
 
     seqname_list = []
-    # subsumple frames
-    if len(imglist)>150:
-        imglist = imglist[::(len(imglist)//150)]
+    ## subsumple frames ##This may cause bug at nvs##
+    #if len(imglist)>150:
+    #    imglist = imglist[::(len(imglist)//150)]
 
     rootlist = [rootlist[i] for i in \
                 np.linspace(0,len(rootlist)-1,len(imglist),dtype=int)]
@@ -249,7 +249,8 @@ def main():
     init_light_pose = np.asarray([[1,0,0,0],[0,np.cos(theta),-np.sin(theta),0],[0,np.sin(theta),np.cos(theta),0],[0,0,0,1]])
     init_light_pose0 =np.asarray([[1,0,0,0],[0,0,-1,0],[0,1,0,0],[0,0,0,1]])
     if args.freeze or args.rest:
-        size = 150
+        size = len(all_mesh)
+        #size = 150
     else:
         size = len(all_mesh)
     for i in range(size):
@@ -523,7 +524,7 @@ def main():
         print('ave f-score at d=5%%: %.1f%%'%(100*np.mean(f005)))
         print('min f-score at d=5%%: %.1f%%'%(100*np.min( f005)))
     save_vid(args.outpath, frames, suffix='.gif')
-    save_vid(args.outpath, frames, suffix='.mp4')
+    save_vid(args.outpath, frames, suffix='.mp4',upsample_frame=0)
 
 
     # save camera trajectory and reference sil

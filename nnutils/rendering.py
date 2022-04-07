@@ -453,11 +453,10 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             ### script to plot sigmas/weights
             #from matplotlib import pyplot as plt
             #plt.ioff()
-            #plt.plot(weights_coarse[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
-            #plt.savefig('weights.png')
+            #sil_rays = weights_coarse[rays['sil_at_samp'][:,0]>0]
+            #plt.plot(sil_rays[::1000].T.cpu().numpy(),'*-')
+            #plt.savefig('tmp/probs.png')
             #plt.cla()
-            #plt.plot(sigmas[weights_coarse.sum(-1)==1][:].T.cpu().numpy(),'*-')
-            #plt.savefig('sigmas.png')
 
         if is_training and 'nerf_vis' in models.keys():
             result['vis_loss'] = visibility_loss(models['nerf_vis'], embedding_xyz,

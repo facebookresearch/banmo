@@ -38,8 +38,7 @@ def show_flow(filename):
     plt.imshow(img)
     plt.show()
 
-def point_vec(img,flow,skip=10):
-    skip=40
+def point_vec(img,flow,skip=40):
     maxsize=1000.
     extendfac=1.
     resize_factor = 1

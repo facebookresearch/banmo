@@ -35,6 +35,8 @@ parser.add_argument('--first_idx', default=0,type=int,
                     help='first frame index to vis')
 parser.add_argument('--last_idx', default=-1,type=int,
                     help='last frame index to vis')
+parser.add_argument('--mesh_only', dest='mesh_only',action='store_true',
+                    help='whether to only render rest mesh')
 args = parser.parse_args()
         
 img_size = 1024
@@ -65,21 +67,25 @@ def main():
         var['rtk'] = var['rtk'][args.first_idx:args.last_idx] 
         mesh_cams.append(draw_cams(var['rtk'][first_valid_idx:]))
         mesh_objs.append(var['mesh_rest'])
-       
+
     frames = []
     # process cameras
     for i in range(size):
         print(i)
         refcam = var['rtk'][first_valid_idx].copy()
-        # median camera trans
-        mtrans = np.median(np.linalg.norm(var['rtk'][first_valid_idx:,:3,3],2,-1)) 
+        ## median camera trans
+        #mtrans = np.median(np.linalg.norm(var['rtk'][first_valid_idx:,:3,3],2,-1)) 
+        # max camera trans
+        mtrans = np.max(np.linalg.norm(var['rtk'][first_valid_idx:,:3,3],2,-1)) 
         refcam[:2,3] = 0  # trans xy
         refcam[2,3] = 4*mtrans # depth
-        refcam[3,:2] = 3*img_size/2 # fl
+        refcam[3,:2] = 4*img_size/2 # fl
         refcam[3,2] = img_size/2
         refcam[3,3] = img_size/2
         vp_rmat = refcam[:3,:3]
-        vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0].dot(vp_rmat) # bev
+        if args.mesh_only: refcam[3,:2] *= 2 # make it appear larger
+        else:
+            vp_rmat = cv2.Rodrigues(np.asarray([np.pi/2,0,0]))[0].dot(vp_rmat) # bev
         refcam[:3,:3] = vp_rmat
 
         # load vertices
@@ -107,9 +113,13 @@ def main():
         mesh = trimesh.Trimesh(vertices=np.asarray(verts[0,:,:3].cpu()), faces=np.asarray(refface[0].cpu()),vertex_colors=colors)
         meshr = Mesh.from_trimesh(mesh,smooth=smooth)
         meshr._primitives[0].material.RoughnessFactor=.5
-        scene.add_node( Node(mesh=meshr ))
+        if not args.mesh_only:
+            scene.add_node( Node(mesh=meshr ))
 
         mesh_obj = mesh_objs[i]
+        if args.mesh_only:
+            # assign gray color
+            mesh_obj.visual.vertex_colors[...,:3] = 64
         if len(mesh_obj.vertices)>0:
             mesh_obj.vertices = obj2cam_np(mesh_obj.vertices, Rmat, Tmat)
             mesh_obj=Mesh.from_trimesh(mesh_obj,smooth=smooth)
@@ -124,7 +134,8 @@ def main():
                 znear=1e-3,zfar=1000)
         cam_pose = -np.eye(4); cam_pose[0,0]=1; cam_pose[-1,-1]=1
         cam_node = scene.add(cam, pose=cam_pose)
-        light_pose =np.asarray([[1,0,0,0],[0,0,-1,0],[0,1,0,0],[0,0,0,1]])
+        light_pose =np.asarray([[1,0,0,0],[0,0,-1,0],[0,1,0,0],[0,0,0,1]],dtype=float)
+        light_pose[:3,:3] = cv2.Rodrigues(np.asarray([np.pi,0,0]))[0]
         direc_l_node = scene.add(direc_l, pose=light_pose)
         color, depth = r.render(scene,flags=pyrender.RenderFlags.SHADOWS_DIRECTIONAL | pyrender.RenderFlags.SKIP_CULL_FACES)
         r.delete()
@@ -137,9 +148,7 @@ def main():
         cv2.imwrite(imoutpath,color[:,:,::-1] )
         frames.append(color)
 
-    save_vid('%s/mesh-cam'%args.testdir, frames, suffix='.gif', 
-            upsample_frame=-1, fps=2)
-    save_vid('%s/mesh-cam'%args.testdir, frames, suffix='.mp4', 
-            upsample_frame=-1, fps=2)
+    save_vid('%s/mesh-cam'%args.testdir, frames, suffix='.gif') 
+    save_vid('%s/mesh-cam'%args.testdir, frames, suffix='.mp4',upsample_frame=-1)
 if __name__ == '__main__':
     main()

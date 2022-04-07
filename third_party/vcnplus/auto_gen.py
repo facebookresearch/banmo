@@ -203,8 +203,18 @@ def main():
             imwarped = warp_flow(imgL_o, flowbw[:,:,:2])
             cv2.imwrite('%s/FlowBW_%d/warp-%05d.jpg'% (seqname, dframe, jnx),imwarped[:,:,::-1])
 
+            # visualize semi-dense flow for forward 
+            x0,y0  =np.meshgrid(range(flowfw.shape[1]),range(flowfw.shape[0]))
+            hp0 = np.stack([x0,y0],-1)
+            dis = warp_flow(hp0+flowbw[...,:2], flowfw[...,:2]) - hp0
+            dis = np.linalg.norm(dis[:,:,:2],2,-1)
+            dis = dis / np.sqrt(flowfw.shape[0] * flowfw.shape[1]) * 2
+            fb_mask = np.exp(-25*dis) > 0.8
+            #mask = np.logical_and(mask, fb_mask)
+            mask = fb_mask # do not use object mask
+
             flowvis = flowfw.copy(); flowvis[~mask]=0
-            flowvis = point_vec(imgL_o, flowvis)
+            flowvis = point_vec(imgL_o, flowvis,skip=10)
             cv2.imwrite('%s/FlowFW_%d/visflo-%05d.jpg'% (seqname, dframe, inx),flowvis)
             flowvis = flowbw.copy(); flowvis[~maskR]=0
             flowvis = point_vec(imgR_o, flowvis)

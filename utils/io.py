@@ -260,7 +260,7 @@ def draw_cams_pair(cam1,cam2, color='cool', axis=True,
     lines = trimesh.util.concatenate(lines)
     return cam_mesh1, cam_mesh2, lines
 
-def save_vid(outpath, frames, suffix='.gif',upsample_frame=150., fps=30,
+def save_vid(outpath, frames, suffix='.gif',upsample_frame=150., fps=10,
         is_flow=False):
     """
     save frames to video

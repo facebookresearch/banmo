@@ -38,6 +38,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
 # freeze shape/feature etc
 loadname=${model_prefix}-init
 savename=${model_prefix}-ft1
+num_epochs=$((num_epochs/4))
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr --num_epochs $num_epochs \
   --pose_cnn_path $pose_cnn_path \
@@ -49,10 +50,10 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --${use_symm}symm_shape \
   --${use_human}use_human
 
-# mode: fine tunning without pose correction
+# mode: fine tune with active+fine samples, large rgb loss wt and reset beta
 loadname=${model_prefix}-ft1
 savename=${model_prefix}-ft2
-num_epochs=$((num_epochs/2))
+num_epochs=$((num_epochs*4))
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr --num_epochs $num_epochs \
   --pose_cnn_path $pose_cnn_path \
@@ -60,19 +61,6 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --lineload --batch_size $batch_size \
   --warmup_steps 0 --nf_reset 0 --bound_reset 0 \
   --dskin_steps 0 --fine_steps 0 --noanneal_freq \
-  --${use_symm}symm_shape \
-  --${use_human}use_human
-
-# mode: final tunning with larger rgb loss wt and reset beta
-loadname=${model_prefix}-ft2
-savename=${model_prefix}-ft3
-bash scripts/template-mgpu.sh $gpus $savename \
-    $seqname $addr --num_epochs $num_epochs \
-  --pose_cnn_path $pose_cnn_path \
-  --model_path logdir/$loadname/params_latest.pth \
-  --lineload --batch_size $batch_size \
-  --warmup_steps 0 --nf_reset 0 --bound_reset 0 \
-  --dskin_steps 0 --fine_steps 0 --noanneal_freq \
-  --img_wt 1 --reset_beta --eikonal_loss \
+  --freeze_root --use_unc --img_wt 1 --reset_beta \
   --${use_symm}symm_shape \
   --${use_human}use_human

@@ -6,8 +6,8 @@ We show an example of retargeting a source (driven) dog model to a driver cat vi
 First download the pre-trained dog model.
 ```
 mkdir -p tmp && cd "$_"
-wget https://www.dropbox.com/s/oxq1g5ioorg6vwk/shiba-haru-1.npy
-wget https://www.dropbox.com/s/y2phlrnh7v3vlx0/shiba-haru-1.pth
+wget https://www.dropbox.com/s/wqm7ulxx9qpu85g/shiba-haru-1.npy
+wget https://www.dropbox.com/s/e21vycgoe5y7pio/shiba-haru-1.pth
 cd ../
 ```
 
@@ -48,8 +48,8 @@ We show an example of adapting cat-coco to a single video of cat-socks.
 First download the pre-trained cat-coco model.
 ```
 mkdir -p tmp && cd "$_"
-wget https://www.dropbox.com/s/fwf8il8bt9c812f/cat-coco.npy
-wget https://www.dropbox.com/s/4g0w6z4xec4f88g/cat-coco.pth
+wget https://www.dropbox.com/s/tvc9rpef9fgb7vp/cat-coco.npy
+wget https://www.dropbox.com/s/iwosbezgfwcr54w/cat-coco.pth
 cd ../
 ```
 

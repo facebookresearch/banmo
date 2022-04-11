@@ -2,6 +2,7 @@
 #### [[Webpage]](https://banmo-www.github.io/) [[Latest preprint (02/14/2022)]](https://banmo-www.github.io/banmo-2-14.pdf) [[Arxiv]](https://arxiv.org/abs/2112.12761) 
 
 ### Changelog
+- **04/11**: Replace matching loss with feature rendering loss; Fix bugs in LBS; Stablize optimization.
 - **03/20**: Add mesh color option (canonical mappihg vs radiance) during surface extraction. See `--ce_color` flag.
 - **02/23**: Improve NVS with fourier light code, improve uncertainty MLP, add long schedule, minor speed up.
 - **02/17**: Add adaptation to a new video, optimization with known root poses, and pose code visualization.
@@ -90,31 +91,29 @@ For more examples, see [here](./scripts/README.md).
 
 <details><summary>Hardware/time for running the demo</summary>
 
-By default, it takes 8 hours on 2 V100 GPUs and 15 hours on 1 V100 GPU.
+The [short schedule](./scripts/template-short.sh) takes 4 hours on 2 V100 GPUs (+SSD storage).
+To reach higher quality, the [full schedule](./scripts/template.sh) takes 12 hours.
 We provide a [script](./scripts/template-accu.sh) that use gradient accumulation
  to support experiments on fewer GPUs / GPU with lower memory.
 </details>
 
-<details><summary>Setting good hyper-parameter for your own videos</summary>
+<details><summary>Setting good hyper-parameter for videos with various length</summary>
 
-When optimizing your own videos, a rule of thumb is to set 
-"num gpus" x "batch size" x "accu steps" ~= num frames (default number 512 suits for cat-pikachiu and human-hap)
+When optimizing videos with different lengths, we found it useful to scale batchsize with the number of frames.
+A rule of thumb is to set "num gpus" x "batch size" x "accu steps" ~= num frames.
+This means more video frames needs more GPU memory but the same optimization time.
 </details>
 
 <details><summary>Try pre-optimized models</summary>
 
-We provide pre-optimized models and scripts to run mesh extraction and novel view synthesis. 
-  
-|seqname | download link |
-|---|---|
-|cat-pikachiu|[.npy](https://www.dropbox.com/s/nc2aawnwrmil8jr/cat-pikachiu.npy), [.pth](https://www.dropbox.com/s/i8sjlgbom5eoy0j/cat-pikachiu.pth)| 
-|cat-coco|[.npy](https://www.dropbox.com/s/fwf8il8bt9c812f/cat-coco.npy), [.pth](https://www.dropbox.com/s/4g0w6z4xec4f88g/cat-coco.pth)|   
+We provide [pre-optimized models](https://www.dropbox.com/sh/5ue6tpsqmt6gstw/AAB9FD6on0UZDnThr6GEde46a?dl=0) 
+and scripts to run mesh extraction and novel view synthesis. 
  
 ```
 # download pre-optimized models
 mkdir -p tmp && cd "$_"
-wget https://www.dropbox.com/s/nc2aawnwrmil8jr/cat-pikachiu.npy
-wget https://www.dropbox.com/s/i8sjlgbom5eoy0j/cat-pikachiu.pth
+wget https://www.dropbox.com/s/qzwuqxp0mzdot6c/cat-pikachiu.npy
+wget https://www.dropbox.com/s/dnob0r8zzjbn28a/cat-pikachiu.pth
 cd ../
 
 seqname=cat-pikachiu
@@ -183,8 +182,6 @@ bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_late
 https://user-images.githubusercontent.com/13134872/154554210-3bb0a439-fe46-4ea3-a058-acecf5f8dbb5.mp4
   
 </details>
-
-Use more iterations for for better color rendering and novel view synthesis results, see `scripts/template-long.sh`.
 
 #### 2. Visualization tools
 <details><summary>[Tensorboard]</summary>

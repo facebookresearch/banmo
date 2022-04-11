@@ -60,7 +60,7 @@ flags.DEFINE_bool('use_human', False, 'whether to use human cse model')
 flags.DEFINE_bool('symm_shape', False, 'whether to set geometry to x-symmetry')
 flags.DEFINE_bool('env_code', True, 'whether to use environment code for each video')
 flags.DEFINE_bool('env_fourier', True, 'whether to use fourier basis for env')
-flags.DEFINE_bool('use_unc',True, 'whether to use uncertainty sampling')
+flags.DEFINE_bool('use_unc',False, 'whether to use uncertainty sampling')
 flags.DEFINE_bool('nerf_vis', True, 'use visibility volume')
 flags.DEFINE_bool('anneal_freq', False, 'whether to use frequency annealing')
 flags.DEFINE_integer('alpha', 10, 'maximum frequency for fourier features')
@@ -97,7 +97,7 @@ flags.DEFINE_float('reinit_bone_steps', 0.667, 'steps to initialize bones')
 flags.DEFINE_float('dskin_steps', 0.8, 'steps to add delta skinning weights')
 flags.DEFINE_float('init_beta', 0.1, 'initial value for transparency beta')
 flags.DEFINE_bool('reset_beta', False, 'reset volsdf beta to 0.1')
-flags.DEFINE_float('fine_steps', 0.8, 'by default, not using fine samples')
+flags.DEFINE_float('fine_steps', 1.1, 'by default, not using fine samples')
 flags.DEFINE_float('nf_reset', 0.5, 'by default, start reseting near-far plane at 50%')
 flags.DEFINE_float('bound_reset', 0.5, 'by default, start reseting bound from 50%')
 flags.DEFINE_float('bound_factor', 2, 'by default, use a loose bound')
@@ -112,6 +112,7 @@ flags.DEFINE_bool('unc_filter', True, 'whether to filter root poses init with lo
 # optimization: fine-tuning
 flags.DEFINE_bool('keep_pose_basis', True, 'keep pose basis when loading models at train time')
 flags.DEFINE_bool('freeze_coarse', False, 'whether to freeze coarse posec of MLP')
+flags.DEFINE_bool('freeze_root', False, 'whether to freeze root body pose')
 flags.DEFINE_bool('root_stab', True, 'whether to stablize root at ft')
 flags.DEFINE_bool('freeze_cvf',  False, 'whether to freeze canonical features')
 flags.DEFINE_bool('freeze_shape',False, 'whether to freeze canonical shape')
@@ -148,7 +149,8 @@ flags.DEFINE_bool('dist_corresp', True, 'whether to render distributed corresp')
 flags.DEFINE_float('total_wt', 1, 'by default, multiple total loss by 1')
 flags.DEFINE_float('sil_wt', 0.1, 'weight for silhouette loss')
 flags.DEFINE_float('img_wt',  0.1, 'weight for silhouette loss')
-flags.DEFINE_float('feat_wt', 0.2, 'by default, multiple feat loss by 1')
+flags.DEFINE_float('feat_wt', 0., 'by default, multiple feat loss by 1')
+flags.DEFINE_float('frnd_wt', 1., 'by default, multiple feat loss by 1')
 flags.DEFINE_float('proj_wt', 0.02, 'by default, multiple proj loss by 1')
 flags.DEFINE_float('flow_wt', 1, 'by default, multiple flow loss by 1')
 flags.DEFINE_float('cyc_wt', 1, 'by default, multiple cyc loss by 1')
@@ -420,7 +422,8 @@ class banmo(nn.Module):
             # input, (x,y,t)+code, output, (1)
             vid_code_dim=32  # add video-specific code
             self.vid_code = embed_net(self.num_vid, vid_code_dim)
-            self.nerf_unc = NeRFUnc(in_channels_xyz=in_channels_xyz, D=5, W=128,
+            #self.nerf_unc = NeRFUnc(in_channels_xyz=in_channels_xyz, D=5, W=128,
+            self.nerf_unc = NeRFUnc(in_channels_xyz=in_channels_xyz, D=8, W=256,
          out_channels=1,in_channels_dir=vid_code_dim, raw_feat=True, init_beta=1.)
             self.nerf_models['nerf_unc'] = self.nerf_unc
 
@@ -498,6 +501,8 @@ class banmo(nn.Module):
                     print('%d removed from sil'%(invalid_idx.sum()))
         
         img_loss_samp = opts.img_wt*rendered['img_loss_samp']
+        if opts.loss_flt:
+            img_loss_samp[invalid_idx] *= 0
         img_loss = img_loss_samp
         if opts.rm_novp:
             img_loss = img_loss * rendered['sil_coarse'].detach()
@@ -508,27 +513,22 @@ class banmo(nn.Module):
         aux_out['img_loss'] = img_loss
         total_loss = img_loss
         total_loss = total_loss + sil_loss 
-            
+          
+        # feat rnd loss
+        frnd_loss_samp = opts.frnd_wt*rendered['frnd_loss_samp']
+        if opts.loss_flt:
+            frnd_loss_samp[invalid_idx] *= 0
+        if opts.rm_novp:
+            frnd_loss_samp = frnd_loss_samp * rendered['sil_coarse'].detach()
+        feat_rnd_loss = frnd_loss_samp[sil_at_samp[...,0]>0].mean() # eval on valid pts
+        aux_out['feat_rnd_loss'] = feat_rnd_loss
+        total_loss = total_loss + feat_rnd_loss
+  
         # flow loss
         if opts.use_corresp:
-            if opts.loss_flt:
-                # find flow window
-                dframe = (self.frameid.view(2,-1).flip(0).reshape(-1) - \
-                          self.frameid).abs()
-                didxs = dframe.log2().long()
-                for didx in range(6):
-                    subidx = didxs==didx
-                    flo_err, invalid_idx = loss_filter(self.latest_vars['flo_err'][:,didx], 
-                                                    rendered['flo_loss_samp'][subidx],
-                                                    sil_at_samp_flo[subidx], scale_factor=20)
-                    self.latest_vars['flo_err'][self.errid.long()[subidx],didx] = flo_err
-                    if self.progress > (opts.warmup_steps):
-                        #print('%d removed from flow'%(invalid_idx.sum()))
-                        flo_loss_samp_sub = rendered['flo_loss_samp'][subidx]
-                        flo_loss_samp_sub[invalid_idx] *= 0.
-                        rendered['flo_loss_samp'][subidx] = flo_loss_samp_sub
-
             flo_loss_samp = rendered['flo_loss_samp']
+            if opts.loss_flt:
+                flo_loss_samp[invalid_idx] *= 0
             if opts.rm_novp:
                 flo_loss_samp = flo_loss_samp * rendered['sil_coarse'].detach()
 
@@ -548,21 +548,7 @@ class banmo(nn.Module):
         if opts.use_embed:
             feat_err_samp = rendered['feat_err']* opts.feat_wt
             if opts.loss_flt:
-                if opts.lineload:
-                    invalid_idx = loss_filter_line(self.latest_vars['fp_err'][:,0],
-                                               self.errid.long(),self.frameid.long(),
-                                               feat_err_samp * sil_at_samp,
-                                               opts.img_size, scale_factor=10)
-                else:
-                    # loss filter
-                    feat_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,0], 
-                                                    feat_err_samp,
-                                                    sil_at_samp>0)
-                    self.latest_vars['fp_err'][self.errid.long(),0] = feat_err
-                if self.progress > (opts.warmup_steps):
-                    feat_err_samp[invalid_idx] *= 0.
-                    if invalid_idx.sum()>0:
-                        print('%d removed from feat'%(invalid_idx.sum()))
+                feat_err_samp[invalid_idx] *= 0
             
             feat_loss = feat_err_samp
             if opts.rm_novp:
@@ -576,20 +562,7 @@ class banmo(nn.Module):
         if opts.use_proj:
             proj_err_samp = rendered['proj_err']* opts.proj_wt
             if opts.loss_flt:
-                if opts.lineload:
-                    invalid_idx = loss_filter_line(self.latest_vars['fp_err'][:,1],
-                                               self.errid.long(),self.frameid.long(),
-                                               proj_err_samp * sil_at_samp,
-                                               opts.img_size, scale_factor=10)
-                else:
-                    proj_err, invalid_idx = loss_filter(self.latest_vars['fp_err'][:,1], 
-                                                    proj_err_samp,
-                                                    sil_at_samp>0)
-                    self.latest_vars['fp_err'][self.errid.long(),1] = proj_err
-                if self.progress > (opts.warmup_steps):
-                    proj_err_samp[invalid_idx] *= 0.
-                    if invalid_idx.sum()>0:
-                        print('%d removed from proj'%(invalid_idx.sum()))
+                proj_err_samp[invalid_idx] *= 0
 
             proj_loss = proj_err_samp[sil_at_samp>0].mean()
             aux_out['proj_loss'] = proj_loss
@@ -677,8 +650,8 @@ class banmo(nn.Module):
             unc_sil = sil_loss_samp[...,0]
             #unc_accumulated = unc_feat + unc_proj
             #unc_accumulated = unc_feat + unc_proj + unc_rgb*0.1
-            unc_accumulated = unc_feat + unc_proj + unc_rgb
-#            unc_accumulated = unc_rgb
+#            unc_accumulated = unc_feat + unc_proj + unc_rgb
+            unc_accumulated = unc_rgb
 #            unc_accumulated = unc_rgb + unc_sil
 
             unc_loss = (unc_accumulated.detach() - unc_pred[...,0]).pow(2)

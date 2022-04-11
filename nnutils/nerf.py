@@ -351,8 +351,8 @@ class RTExpMLP(nn.Module):
     """
     def __init__(self, max_t, num_freqs, t_embed_dim, data_offset, delta=False):
         super(RTExpMLP, self).__init__()
-        self.root_code = nn.Embedding(max_t, t_embed_dim)
-        #self.root_code = FrameCode(num_freqs, t_embed_dim, data_offset)
+        #self.root_code = nn.Embedding(max_t, t_embed_dim)
+        self.root_code = FrameCode(num_freqs, t_embed_dim, data_offset, scale=0.1)
 
         self.base_rt = RTExplicit(max_t, delta=delta,rand=False)
         #self.base_rt = RTHead(use_quat=True, 

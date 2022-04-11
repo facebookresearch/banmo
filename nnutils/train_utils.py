@@ -324,6 +324,8 @@ class v2s_trainer():
             self.del_key( states, 'nerf_body_rts.0.basis_mlp.weight')
             self.del_key( states, 'nerf_root_rts.0.weight')
             self.del_key( states, 'nerf_root_rts.root_code.weight')
+            self.del_key( states, 'nerf_root_rts.root_code.basis_mlp.weight')
+            self.del_key( states, 'nerf_root_rts.delta_rt.0.basis_mlp.weight')
             self.del_key( states, 'nerf_root_rts.base_rt.se3')
             self.del_key( states, 'nerf_root_rts.delta_rt.0.weight')
             self.del_key( states, 'env_code.weight')
@@ -1037,6 +1039,9 @@ class v2s_trainer():
         
         # freeze shape after rebone        
         if self.model.module.counter_frz_rebone > 0:
+            self.model.module.root_update = 0
+        
+        if opts.freeze_root: # to stablize
             self.model.module.root_update = 0
     
     def update_body_indicator(self, i):

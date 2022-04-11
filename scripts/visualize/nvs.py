@@ -30,7 +30,7 @@ from ext_utils.flowlib import cat_imgflo
 opts = flags.FLAGS
 
 # script specific ones
-flags.DEFINE_integer('maxframe', 1, 'maximum number frame to render')
+flags.DEFINE_integer('maxframe', 0, 'maximum number frame to render')
 flags.DEFINE_integer('vidid', 0, 'video id that determines the env code')
 flags.DEFINE_integer('bullet_time', -1, 'frame id in a video to show bullet time')
 flags.DEFINE_float('scale', 0.1,
@@ -69,9 +69,12 @@ def main(_):
     #         (f|p)
     rtks = load_root(opts.rootdir, 0)  # cap frame=0=>load all
     rndsils = load_sils(opts.rootdir.replace('ctrajs', 'refsil'),0)
-    sample_idx = np.linspace(0,len(rtks)-1,opts.maxframe).astype(int)
-    rtks = rtks[sample_idx]
-    rndsils = rndsils[sample_idx]
+    if opts.maxframe>0:
+        sample_idx = np.linspace(0,len(rtks)-1,opts.maxframe).astype(int)
+        rtks = rtks[sample_idx]
+        rndsils = rndsils[sample_idx]
+    else:
+        sample_idx = np.linspace(0,len(rtks)-1, len(rtks)).astype(int)
     img_size = rndsils[0].shape
     if img_size[0] > img_size[1]:
         img_type='vert'
@@ -187,9 +190,9 @@ def main(_):
         cv2.imwrite('%s-rgb_%05d.png'%(opts.nvs_outpath,i), rgb[...,::-1]*255)
         cv2.imwrite('%s-sil_%05d.png'%(opts.nvs_outpath,i), sil*255)
         cv2.imwrite('%s-vis_%05d.png'%(opts.nvs_outpath,i), vis*255)
-    save_vid('%s-rgb'%(opts.nvs_outpath), rgbs, suffix='.mp4')
-    save_vid('%s-sil'%(opts.nvs_outpath), sils, suffix='.mp4')
-    save_vid('%s-vis'%(opts.nvs_outpath), viss, suffix='.mp4')
+    save_vid('%s-rgb'%(opts.nvs_outpath), rgbs, suffix='.mp4',upsample_frame=0)
+    save_vid('%s-sil'%(opts.nvs_outpath), sils, suffix='.mp4',upsample_frame=0)
+    save_vid('%s-vis'%(opts.nvs_outpath), viss, suffix='.mp4',upsample_frame=0)
 
 
 if __name__ == '__main__':

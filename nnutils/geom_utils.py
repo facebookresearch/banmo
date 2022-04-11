@@ -51,7 +51,7 @@ def bone_transform(bones_in, rts, is_vec=False):
     """ 
     bones_in: 1,B,10  - B gaussian ellipsoids of bone coordinates
     rts: ...,B,3,4    - B ririd transforms
-    rts are transformation applied to bone coordinates (right multiply)
+    rts are applied to bone coordinate transforms (left multiply)
     is_vec:     whether rts are stored as r1...9,t1...3 vector form
     """
     B = bones_in.shape[-2]
@@ -72,9 +72,10 @@ def bone_transform(bones_in, rts, is_vec=False):
         Rmat = rts[:,:,:3,:3]   
         Tmat = rts[:,:,:3,3:4]   
 
-    center = transforms.quaternion_to_matrix(orient).matmul(Tmat)[...,0]+center
+    # move bone coordinates (left multiply)
+    center = Rmat.matmul(center[...,None])[...,0]+Tmat[...,0]
     Rquat = transforms.matrix_to_quaternion(Rmat)
-    orient = transforms.quaternion_multiply(orient, Rquat)
+    orient = transforms.quaternion_multiply(Rquat, orient)
 
     scale = scale.repeat(bs,1,1)
     bones = torch.cat([center,orient,scale],-1)
@@ -177,7 +178,8 @@ def gauss_mlp_skinning(xyz, embedding_xyz, bones,
     pose_code:  ...,1, nchannel
     """
     N_rays = xyz.shape[0]
-    if pose_code.dim() == 2:
+    #TODO hacky way to make code compaitible with noqueryfw
+    if pose_code.dim() == 2 and pose_code.shape[0]!=N_rays: 
         pose_code = pose_code[None].repeat(N_rays, 1,1)
 
     xyz_embedded = embedding_xyz(xyz)
@@ -275,46 +277,46 @@ def blend_skinning_chunk(bones, rts, skin, pts):
 #def blend_skinning(bones, rts, skin, pts):
     """
     bone: bs,B,10   - B gaussian ellipsoids
-    rts: bs,B,3,4   - B ririd transforms, applied to bone coordinates
+    rts: bs,B,3,4   - B ririd transforms, applied to bone coordinates (points attached to bones in world coords)
     pts: bs,N,3     - N 3d points
     skin: bs,N,B   - skinning matrix
     apply rts to bone coordinates, while computing blending globally
     """
     B = rts.shape[-3]
     N = pts.shape[-2]
-    bones = bones.view(-1,B,10)
     pts = pts.view(-1,N,3)
     rts = rts.view(-1,B,3,4)
     Rmat = rts[:,:,:3,:3] # bs, B, 3,3
     Tmat = rts[:,:,:3,3]
     device = Tmat.device
 
-    # convert from bone to root transforms
-    bs = Rmat.shape[0]
-    center = bones[:,:,:3]
-    orient = bones[:,:,3:7] # real first
-    orient = F.normalize(orient, 2,-1)
-    orient = transforms.quaternion_to_matrix(orient) # real first
-    gmat = torch.eye(4)[None,None].repeat(bs, B, 1, 1).to(device)
-    
-    # root to bone
-    gmat_r2b = gmat.clone()
-    gmat_r2b[:,:,:3,:3] = orient.permute(0,1,3,2)
-    gmat_r2b[:,:,:3,3] = -orient.permute(0,1,3,2).matmul(center[...,None])[...,0]
+    ## convert from bone to root transforms
+    #bones = bones.view(-1,B,10)
+    #bs = Rmat.shape[0]
+    #center = bones[:,:,:3]
+    #orient = bones[:,:,3:7] # real first
+    #orient = F.normalize(orient, 2,-1)
+    #orient = transforms.quaternion_to_matrix(orient) # real first
+    #gmat = torch.eye(4)[None,None].repeat(bs, B, 1, 1).to(device)
+    #
+    ## root to bone
+    #gmat_r2b = gmat.clone()
+    #gmat_r2b[:,:,:3,:3] = orient.permute(0,1,3,2)
+    #gmat_r2b[:,:,:3,3] = -orient.permute(0,1,3,2).matmul(center[...,None])[...,0]
    
-    # bone to root
-    gmat_b2r = gmat.clone()
-    gmat_b2r[:,:,:3,:3] = orient
-    gmat_b2r[:,:,:3,3] = center
+    ## bone to root
+    #gmat_b2r = gmat.clone()
+    #gmat_b2r[:,:,:3,:3] = orient
+    #gmat_b2r[:,:,:3,3] = center
 
-    # bone to bone  
-    gmat_b = gmat.clone()
-    gmat_b[:,:,:3,:3] = Rmat
-    gmat_b[:,:,:3,3] = Tmat
+    ## bone to bone  
+    #gmat_b = gmat.clone()
+    #gmat_b[:,:,:3,:3] = Rmat
+    #gmat_b[:,:,:3,3] = Tmat
    
-    gmat = gmat_b2r.matmul(gmat_b.matmul(gmat_r2b))
-    Rmat = gmat[:,:,:3,:3]
-    Tmat = gmat[:,:,:3,3]
+    #gmat = gmat_b2r.matmul(gmat_b.matmul(gmat_r2b))
+    #Rmat = gmat[:,:,:3,:3]
+    #Tmat = gmat[:,:,:3,3]
 
     # Gi=sum(wbGb), V=RV+T
     Rmat_w = (skin[...,None,None] * Rmat[:,None]).sum(2) # bs,N,B,3
@@ -1512,3 +1514,4 @@ def fid_reindex(fid, num_vids, vid_offset):
         #tid[assign] = 2*(tid[assign] / doffset)-1
         #tid[assign] = (tid[assign] - doffset/2)/1000.
     return vid, tid
+

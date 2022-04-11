@@ -119,7 +119,7 @@ def render_rays(models,
 
     return result
     
-def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 
+def inference(models, embedding_xyz, xyz_, dir_, dir_embedded, z_vals, 
         N_rays, N_samples,chunk, noise_std,
         env_code=None, weights_only=False, clip_bound = None, vis_pred=None):
     """
@@ -138,13 +138,11 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
         weights_only: do inference on sigma only or not
 
     Outputs:
-        if weights_only:
-            weights: (N_rays, N_samples_): weights of each sample
-        else:
-            rgb_final: (N_rays, 3) the final rgb image
-            depth_final: (N_rays) depth map
-            weights: (N_rays, N_samples_): weights of each sample
+        rgb_final: (N_rays, 3) the final rgb image
+        depth_final: (N_rays) depth map
+        weights: (N_rays, N_samples_): weights of each sample
     """
+    nerf_sdf = models['coarse']
     N_samples_ = xyz_.shape[1]
     # Embed directions
     xyz_ = xyz_.view(-1, 3) # (N_rays*N_samples_, 3)
@@ -156,18 +154,23 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
     chunk_size=4096
     B = xyz_.shape[0]
     xyz_input = xyz_.view(N_rays,N_samples,3)
-    out = evaluate_mlp(model, xyz_input, 
+    out = evaluate_mlp(nerf_sdf, xyz_input, 
             embed_xyz = embedding_xyz,
             dir_embedded = dir_embedded.view(N_rays,N_samples,-1),
             code=env_code,
             chunk=chunk_size, sigma_only=weights_only).view(B,-1)
 
-    if weights_only:
-        sigmas = out.view(N_rays, N_samples_)
+    rgbsigma = out.view(N_rays, N_samples_, 4)
+    rgbs = rgbsigma[..., :3] # (N_rays, N_samples_, 3)
+    sigmas = rgbsigma[..., 3] # (N_rays, N_samples_)
+
+    if 'nerf_feat' in models.keys():
+        nerf_feat = models['nerf_feat']
+        feat = evaluate_mlp(nerf_feat, xyz_input,
+            embed_xyz = embedding_xyz,
+            chunk=chunk_size).view(N_rays,N_samples_,-1)
     else:
-        rgbsigma = out.view(N_rays, N_samples_, 4)
-        rgbs = rgbsigma[..., :3] # (N_rays, N_samples_, 3)
-        sigmas = rgbsigma[..., 3] # (N_rays, N_samples_)
+        feat = torch.zeros_like(rgbs)
 
     # Convert these values using volume rendering (Section 4)
     deltas = z_vals[:, 1:] - z_vals[:, :-1] # (N_rays, N_samples_-1)
@@ -186,7 +189,7 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
     sigmas = sigmas+noise
     #sigmas = F.softplus(sigmas)
     #sigmas = torch.relu(sigmas)
-    ibetas = 1/(model.beta.abs()+1e-9)
+    ibetas = 1/(nerf_sdf.beta.abs()+1e-9)
     #ibetas = 100
     sdf = -sigmas
     sigmas = (0.5 + 0.5 * sdf.sign() * torch.expm1(-sdf.abs() * ibetas)) # 0-1
@@ -211,14 +214,13 @@ def inference(model, embedding_xyz, xyz_, dir_, dir_embedded, z_vals,
     weights_sum = weights.sum(1) # (N_rays), the accumulated opacity along the rays
                                  # equals "1 - (1-a1)(1-a2)...(1-an)" mathematically
     visibility = alpha_prod.detach() # 1 q_0 q_j-1
-    if weights_only:
-        return weights
 
     # compute final weighted outputs
     rgb_final = torch.sum(weights.unsqueeze(-1)*rgbs, -2) # (N_rays, 3)
+    feat_final = torch.sum(weights.unsqueeze(-1)*feat, -2) # (N_rays, 3)
     depth_final = torch.sum(weights*z_vals, -1) # (N_rays)
 
-    return rgb_final, depth_final, weights, visibility
+    return rgb_final, feat_final, depth_final, weights, visibility
     
 def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
                          N_rays, embedding_xyz, rays_d, noise_std,
@@ -349,8 +351,8 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
     else:
         xyz_input = xyz_coarse_sampled
 
-    rgb_coarse, depth_rnd, weights_coarse, vis_coarse = \
-        inference(model_coarse, embedding_xyz, xyz_input, rays_d,
+    rgb_coarse, feat_rnd, depth_rnd, weights_coarse, vis_coarse = \
+        inference(models, embedding_xyz, xyz_input, rays_d,
                 dir_embedded, z_vals, N_rays, N_samples, chunk, noise_std,
                 weights_only=False, env_code=env_code, 
                 clip_bound=clip_bound, vis_pred=vis_pred)
@@ -510,7 +512,7 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             cfd_at_samp = rays['cfd_at_samp']
 
             # img loss
-            img_loss_samp = (rgb_coarse - img_at_samp).pow(2)
+            img_loss_samp = (rgb_coarse - img_at_samp).pow(2).mean(-1)[...,None]
             
             # sil loss, weight sil loss based on # points
             if is_training and sil_at_samp.sum()>0 and (1-sil_at_samp).sum()>0:
@@ -539,7 +541,17 @@ def inference_deform(xyz_coarse_sampled, rays, models, chunk, N_samples,
             result['img_loss_samp'] = img_loss_samp 
             result['sil_loss_samp'] = sil_loss_samp
             result['flo_loss_samp'] = flo_loss_samp
+    
+            # exclude error outside mask
+            result['img_loss_samp']*=sil_at_samp
+            result['flo_loss_samp']*=sil_at_samp
 
+        if 'feats_at_samp' in rays.keys():
+            # feat loss
+            feats_at_samp=rays['feats_at_samp']
+            feat_rnd = F.normalize(feat_rnd, 2,-1)
+            frnd_loss_samp = (feat_rnd - feats_at_samp).pow(2).mean(-1)
+            result['frnd_loss_samp'] = frnd_loss_samp * sil_at_samp[...,0]
     return result, weights_coarse
 
 

@@ -254,6 +254,14 @@ bash scripts/nvs_iter.sh 0 logdir/$seqname-e120-b256-init/
 Results will be saved at `logdir/$seqname-e120-b256-init/vis-iter*.mp4`.
   
 
+https://user-images.githubusercontent.com/13134872/162283256-49f9de87-0bce-4f7f-9376-651a170e8879.mp4
+
+
+
+https://user-images.githubusercontent.com/13134872/162283257-7636462b-c698-4411-9084-57f7a0bb89e8.mp4
+
+
+
 </details>
 
 ### Common install issues

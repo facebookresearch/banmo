@@ -12,6 +12,7 @@ import glob
 import argparse
 import sys
 from shutil import copyfile
+sys.path.insert(0,'')
 from utils.io import mkdir_p
 
 parser = argparse.ArgumentParser(description='script to render cameras over epochs')

@@ -59,7 +59,7 @@ seqname=cat-socks
 bash misc/processed/download.sh $seqname
 python preprocess/img2lines.py --seqname $seqname
 bash scripts/template-prior-model.sh 0,1 $seqname 10001 "no" "no" tmp/cat-coco.pth
-bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
+bash scripts/render_mgpu.sh 0 $seqname logdir/prior-$seqname-e30-b256-ft2/params_latest.pth \
         "0" 256
 ```
 

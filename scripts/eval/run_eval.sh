@@ -35,6 +35,7 @@ seqname_eval=T_swing1
 #
 #testdir=${model_path%/*} # %: from end
 #CUDA_VISIBLE_DEVICES=$dev python extract.py --flagfile=$testdir/opts.log \
+#                  --seqname $seqname \
 #                  --model_path $model_path \
 #                  --test_frames {0} \
 #                  $add_args

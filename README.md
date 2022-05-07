@@ -107,25 +107,16 @@ This means more video frames needs more GPU memory but the same optimization tim
 <details><summary>Try pre-optimized models</summary>
 
 We provide [pre-optimized models](https://www.dropbox.com/sh/5ue6tpsqmt6gstw/AAB9FD6on0UZDnThr6GEde46a?dl=0) 
-and scripts to run mesh extraction and novel view synthesis. 
+and scripts to run novel view synthesis and mesh extraction (results saved at `tmp/*all.mp4`). 
  
 ```
 # download pre-optimized models
 mkdir -p tmp && cd "$_"
 wget https://www.dropbox.com/s/qzwuqxp0mzdot6c/cat-pikachiu.npy
 wget https://www.dropbox.com/s/dnob0r8zzjbn28a/cat-pikachiu.pth
+wget https://www.dropbox.com/s/p74aaeusprbve1z/opts.log # flags used at opt time
 cd ../
 
-seqname=cat-pikachiu
-# Extract articulated meshes and render
-bash scripts/render_mgpu.sh 0 $seqname tmp/cat-pikachiu.pth \
-        "0 1 2 3 4 5 6 7 8 9 10" 256
-# argv[1]: gpu id
-# argv[2]: sequence name
-# argv[3]: weights path
-# argv[4]: video id separated by space
-# argv[5]: resolution of running marching cubes (256 by default)
-  
 # render novel views
 bash scripts/render_nvs.sh 0 $seqname tmp/cat-pikachiu.pth 5 0
 # argv[1]: gpu id
@@ -133,6 +124,17 @@ bash scripts/render_nvs.sh 0 $seqname tmp/cat-pikachiu.pth 5 0
 # argv[3]: path to the weights
 # argv[4]: video id used for pose traj
 # argv[5]: video id used for root traj
+
+seqname=cat-pikachiu
+# Extract articulated meshes and render
+bash scripts/render_mgpu.sh 0 $seqname tmp/cat-pikachiu.pth \
+        "0 5" 64
+# argv[1]: gpu id
+# argv[2]: sequence name
+# argv[3]: weights path
+# argv[4]: video id separated by space
+# argv[5]: resolution of running marching cubes (use 256 to get higher-res mesh)
+  
 ```
 
 </details>

@@ -38,7 +38,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
 # freeze shape/feature etc
 loadname=${model_prefix}-init
 savename=${model_prefix}-ft1
-num_epochs=$((num_epochs/4))
+num_epochs=$((num_epochs/2))
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr --num_epochs $num_epochs \
   --pose_cnn_path $pose_cnn_path \
@@ -53,7 +53,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
 # mode: fine tune with active+fine samples, large rgb loss wt and reset beta
 loadname=${model_prefix}-ft1
 savename=${model_prefix}-ft2
-num_epochs=$((num_epochs*4))
+num_epochs=$((num_epochs*2))
 bash scripts/template-mgpu.sh $gpus $savename \
     $seqname $addr --num_epochs $num_epochs \
   --pose_cnn_path $pose_cnn_path \

@@ -592,15 +592,15 @@ class v2s_trainer():
             # save images
             for k,v in rendered_seq.items():
                 rendered_seq[k] = torch.cat(rendered_seq[k],0)
-                #TODO
-                if opts.local_rank==0:
-                    print('saving %s to gif'%k)
-                    is_flow = self.isflow(k)
-                    upsample_frame = min(30,len(rendered_seq[k]))
-                    save_vid('%s/%s'%(self.save_dir,k), 
-                            rendered_seq[k].cpu().numpy(), 
-                            suffix='.gif', upsample_frame=upsample_frame, 
-                            is_flow=is_flow)
+                ##TODO
+                #if opts.local_rank==0:
+                #    print('saving %s to gif'%k)
+                #    is_flow = self.isflow(k)
+                #    upsample_frame = min(30,len(rendered_seq[k]))
+                #    save_vid('%s/%s'%(self.save_dir,k), 
+                #            rendered_seq[k].cpu().numpy(), 
+                #            suffix='.gif', upsample_frame=upsample_frame, 
+                #            is_flow=is_flow)
 
         return rendered_seq, aux_seq
 

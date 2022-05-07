@@ -9,6 +9,7 @@ prefix=$testdir/$seqname-$test_frames
 
 # part 1
 python extract.py --flagfile=$testdir/opts.log \
+                  --seqname $seqname \
                   --model_path $model_path \
                   --test_frames $test_frames \
                   $add_args

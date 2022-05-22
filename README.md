@@ -117,6 +117,7 @@ wget https://www.dropbox.com/s/dnob0r8zzjbn28a/cat-pikachiu.pth
 wget https://www.dropbox.com/s/p74aaeusprbve1z/opts.log # flags used at opt time
 cd ../
 
+seqname=cat-pikachiu
 # render novel views
 bash scripts/render_nvs.sh 0 $seqname tmp/cat-pikachiu.pth 5 0
 # argv[1]: gpu id
@@ -125,7 +126,6 @@ bash scripts/render_nvs.sh 0 $seqname tmp/cat-pikachiu.pth 5 0
 # argv[4]: video id used for pose traj
 # argv[5]: video id used for root traj
 
-seqname=cat-pikachiu
 # Extract articulated meshes and render
 bash scripts/render_mgpu.sh 0 $seqname tmp/cat-pikachiu.pth \
         "0 5" 64

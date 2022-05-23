@@ -12,33 +12,33 @@ sample_grid3d=256
 add_args="--sample_grid3d ${sample_grid3d} --full_mesh \
   --nouse_corresp --nouse_embed --nouse_proj --render_size 2 --ndepth 2"
 
-## extrat meshes
-#CUDA_VISIBLE_DEVICES=$dev python extract.py --flagfile=$testdir/opts.log \
-#                  --seqname $seqname \
-#                  --model_path $model_path \
-#                  --test_frames {${rootid}","${vidid}} \
-#                  $add_args
+# extrat meshes
+CUDA_VISIBLE_DEVICES=$dev python extract.py --flagfile=$testdir/opts.log \
+                 --seqname $seqname \
+                 --model_path $model_path \
+                 --test_frames {${rootid}","${vidid}} \
+                 $add_args
 
 # re-render the trained sequence
 prefix=$testdir/$seqname-{$vidid}
 trgpath=$prefix-vgray
 
-## raw video
-#CUDA_VISIBLE_DEVICES=$dev python scripts/visualize/render_vis.py --testdir $testdir \
-#                     --outpath $trgpath-vid \
-#                     --seqname $seqname \
-#                     --test_frames {$vidid} \
-#                     --append_img yes \
-#                     --append_render no
-#
-## masks
-#CUDA_VISIBLE_DEVICES=$dev python scripts/visualize/render_vis.py --testdir $testdir \
-#                     --outpath $trgpath --vp 0 \
-#                     --seqname $seqname \
-#                     --test_frames {$vidid} \
-#                     --root_frames {$rootid} \
-#                     --gray_color
-#                     #--outpath $prefix-fgray --vp -1 \
+# raw video
+CUDA_VISIBLE_DEVICES=$dev python scripts/visualize/render_vis.py --testdir $testdir \
+                    --outpath $trgpath-vid \
+                    --seqname $seqname \
+                    --test_frames {$vidid} \
+                    --append_img yes \
+                    --append_render no
+
+# masks
+CUDA_VISIBLE_DEVICES=$dev python scripts/visualize/render_vis.py --testdir $testdir \
+                    --outpath $trgpath --vp 0 \
+                    --seqname $seqname \
+                    --test_frames {$vidid} \
+                    --root_frames {$rootid} \
+                    --gray_color
+                    #--outpath $prefix-fgray --vp -1 \
 # render
 rootdir=$trgpath-ctrajs-
 CUDA_VISIBLE_DEVICES=$dev python scripts/visualize/nvs.py --flagfile=$testdir/opts.log \

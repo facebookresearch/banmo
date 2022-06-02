@@ -621,9 +621,18 @@ class banmo(nn.Module):
             bones_rst,_ = correct_bones(self, bones_rst)
             mesh_rest = self.latest_vars['mesh_rest']
             if len(mesh_rest.vertices)>100: # not a degenerate mesh
-                mesh_rest = pytorch3d.structures.meshes.Meshes(
-                        verts=torch.Tensor(mesh_rest.vertices[None]),
-                        faces=torch.Tensor(mesh_rest.faces[None]))
+                # issue #4 the following causes error on certain archs for torch110+cu113
+                # seems to be a conflict between geomloss and pytorch3d
+                # mesh_rest = pytorch3d.structures.meshes.Meshes(
+                #         verts=torch.Tensor(mesh_rest.vertices[None]),
+                #         faces=torch.Tensor(mesh_rest.faces[None]))
+                # a ugly workaround 
+                mesh_verts = [torch.Tensor(mesh_rest.vertices)]
+                mesh_faces = [torch.Tensor(mesh_rest.faces).long()]
+                try:
+                    mesh_rest = pytorch3d.structures.meshes.Meshes(verts=mesh_verts, faces=mesh_faces)
+                except:
+                    mesh_rest = pytorch3d.structures.meshes.Meshes(verts=mesh_verts, faces=mesh_faces)
                 shape_samp = pytorch3d.ops.sample_points_from_meshes(mesh_rest,
                                         1000, return_normals=False)
                 shape_samp = shape_samp[0].to(self.device)

@@ -153,6 +153,7 @@ def main():
     model.eval()
     inx=0;jnx=dframe
     while True:
+        if jnx>=len(test_left_img):break
         print('%s/%s'%(test_left_img[inx],test_left_img[jnx]))
         if inx%dframe==0:
             imgL_o = cv2.imread(test_left_img[inx])[:,:,::-1]

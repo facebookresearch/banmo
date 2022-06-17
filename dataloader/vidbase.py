@@ -140,8 +140,8 @@ class BaseDataset(Dataset):
             rtk_path = self.rtklist[im0idx]
             rtk = np.loadtxt(rtk_path)
         except:
-            print('warning: loading empty camera')
-            print(rtk_path)
+            #print('warning: loading empty camera')
+            #print(rtk_path)
             rtk = np.zeros((4,4))
             rtk[:3,:3] = np.eye(3)
             rtk[:3, 3] = np.asarray([0,0,10])
@@ -391,8 +391,8 @@ class BaseDataset(Dataset):
             rtkn = np.loadtxt(rtkn_path)
             rtk = np.stack([rtk, rtkn])         
         except:
-            print('warning: loading empty camera')
-            print(rtk_path)
+            #print('warning: loading empty camera')
+            #print(rtk_path)
             rtk = np.zeros((4,4))
             rtk[:3,:3] = np.eye(3)
             rtk[:3, 3] = np.asarray([0,0,10])

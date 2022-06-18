@@ -226,25 +226,14 @@ def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
     # mahalanobis distance [(p-v)^TR^T]S[R(p-v)]
     # transform a vector to the local coordinate
     mdis = center.view(bs,1,B,3) - pts.view(bs,N,1,3) # bs,N,B,3
-    if True:#B<50:
-        mdis = axis_rotate(orient.view(bs,1,B,3,3), mdis[...,None])
-        #mdis = orient.view(bs,1,B,3,3).matmul(mdis[...,None]) # bs,N,B,3,1
-        mdis = mdis[...,0]
-        mdis = scale.view(bs,1,B,3) * mdis.pow(2)
-    else:
-        # for efficiency considerations
-        mdis = mdis.pow(2)
-    mdis = mdis*100*log_scale.exp() # TODO accound for scaled near-far plane
-    mdis = (-10 * mdis.sum(3)) # bs,N,B
+    mdis = axis_rotate(orient.view(bs,1,B,3,3), mdis[...,None])
+    mdis = mdis[...,0]
+    mdis = scale.view(bs,1,B,3) * mdis.pow(2)
+    mdis = (-1000 * mdis.sum(3)) # bs,N,B, make the weights more concentrated
 
     if dskin is not None:
         mdis = mdis+dskin
 
-    ## truncated softmax
-    #max_bone=min(B,3)
-    #topk, indices = mdis.topk(max_bone, 2, largest=True)
-    #mdis = torch.zeros_like(mdis).fill_(-np.inf)
-    #mdis = mdis.scatter(2, indices, topk)
     skin = mdis.softmax(2)
     return skin
     

@@ -229,7 +229,9 @@ def skinning_chunk(bones, pts, dskin=None, skin_aux=None):
     mdis = axis_rotate(orient.view(bs,1,B,3,3), mdis[...,None])
     mdis = mdis[...,0]
     mdis = scale.view(bs,1,B,3) * mdis.pow(2)
-    mdis = (-1000 * mdis.sum(3)) # bs,N,B, make the weights more concentrated
+    # multiply 1000 to make the weights more concentrated
+    # log_scale controls global temporature scaling
+    mdis = (-1000 * log_scale.exp() * mdis.sum(3)) # bs,N,B
 
     if dskin is not None:
         mdis = mdis+dskin

@@ -392,6 +392,7 @@ class banmo(nn.Module):
             self.dp_vis = self.dp_vis / self.dp_vmax
 
             # save colorvis
+            if not os.path.isdir('tmp'): os.mkdir('tmp')
             trimesh.Trimesh(self.dp_verts_unit.cpu().numpy(), 
                             dp['faces'], 
                             vertex_colors = self.dp_vis.cpu().numpy())\

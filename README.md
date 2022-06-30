@@ -157,7 +157,7 @@ bash scripts/template.sh 0,1 $seqname 10001 "no" "no"
 # args[5]: use_symm, pass "" to force x-symmetric shape
 
 # Extract articulated meshes and render
-bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
+bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft2/params_latest.pth \
         "0 1 2 3 4 5 6 7 8 9 10" 256
 # argv[1]: gpu id
 # argv[2]: sequence name
@@ -177,7 +177,7 @@ https://user-images.githubusercontent.com/13134872/154554031-332e2355-3303-43e3-
 seqname=adult7
 python preprocess/img2lines.py --seqname $seqname
 bash scripts/template.sh 0,1 $seqname 10001 "" ""
-bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
+bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft2/params_latest.pth \
         "0 1 2 3 4 5 6 7 8 9" 256
 ```
 
@@ -232,14 +232,14 @@ https://user-images.githubusercontent.com/13134872/154553652-c93834db-cce2-4158-
 
 Render novel views at the canonical camera coordinate
 ```
-bash scripts/render_nvs.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth 5 0
+bash scripts/render_nvs.sh 0 $seqname logdir/$seqname-e120-b256-ft2/params_latest.pth 5 0
 # argv[1]: gpu id
 # argv[2]: sequence name
 # argv[3]: path to the weights
 # argv[4]: video id used for pose traj
 # argv[5]: video id used for root traj
 ```
-Results will be saved at `logdir/$seqname-e120-b256-ft3/nvs*.mp4`.
+Results will be saved at `logdir/$seqname-e120-b256-ft2/nvs*.mp4`.
   
 https://user-images.githubusercontent.com/13134872/155441493-38bf7a02-a6ee-4f2f-9dc5-0cf98a4c7c45.mp4
 

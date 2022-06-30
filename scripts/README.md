@@ -120,7 +120,7 @@ python preprocess/img2lines.py --seqname $seqname
 # optimization
 bash scripts/template.sh 0,1 $seqname 10001 "" "no"
 # extract articulated meshes for two representative videos
-bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft3/params_latest.pth \
+bash scripts/render_mgpu.sh 0 $seqname logdir/$seqname-e120-b256-ft2/params_latest.pth \
         "0 8" 256
 ```
 

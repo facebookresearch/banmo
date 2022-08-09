@@ -22,5 +22,6 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --pose_cnn_path $pose_cnn_path \
   --warmup_shape_ep 5 --warmup_rootmlp \
   --lineload --batch_size $batch_size\
+  --eikonal_wt 0.001 --nsample 4 \
   --${use_symm}symm_shape \
   --${use_human}use_human

@@ -2,6 +2,7 @@
 [[Project page]](https://banmo-www.github.io/) [[Paper]](https://banmo-www.github.io/banmo-cvpr.pdf) [[Colab for NVS]](https://colab.research.google.com/drive/1dQJn1vsuz0DkyRZbOA1SulkVQ0V1kMUP?usp=sharing)
 
 ### Changelog
+- **08/09**: Fix eikonal loss that regularizes surface (resulting in smoother mesh).
 - **06/18**: Add a colab demo for novel view synthesis.
 - **04/11**: Replace matching loss with feature rendering loss; Fix bugs in LBS; Stablize optimization.
 - **03/20**: Add mesh color option (canonical mappihg vs radiance) during surface extraction. See `--ce_color` flag.

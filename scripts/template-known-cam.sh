@@ -20,6 +20,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --use_rtk_file \
   --warmup_shape_ep 5 --warmup_rootmlp \
   --lineload --batch_size $batch_size\
+  --eikonal_wt 0.001 --nsample 4 \
   --${use_symm}symm_shape \
   --${use_human}use_human
 
@@ -50,5 +51,6 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --warmup_steps 0 --nf_reset 0 --bound_reset 0 \
   --dskin_steps 0 --fine_steps 0 --noanneal_freq \
   --freeze_root --use_unc --img_wt 1 --reset_beta \
+  --eikonal_wt 0.1 --nsample 4 \
   --${use_symm}symm_shape \
   --${use_human}use_human

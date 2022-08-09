@@ -156,7 +156,7 @@ flags.DEFINE_float('flow_wt', 1, 'by default, multiple flow loss by 1')
 flags.DEFINE_float('cyc_wt', 1, 'by default, multiple cyc loss by 1')
 flags.DEFINE_bool('rig_loss', False,'whether to use globally rigid loss')
 flags.DEFINE_bool('root_sm', True, 'whether to use smooth loss for root pose')
-flags.DEFINE_bool('eikonal_loss', False, 'whether to use eikonal loss')
+flags.DEFINE_float('eikonal_wt', 0., 'weight of eikonal loss')
 flags.DEFINE_float('bone_loc_reg', 0.1, 'use bone location regularization')
 flags.DEFINE_bool('loss_flt', True, 'whether to use loss filter')
 flags.DEFINE_bool('rm_novp', True,'whether to remove loss on non-overlapping pxs')
@@ -610,9 +610,9 @@ class banmo(nn.Module):
             total_loss = total_loss + root_sm_loss
 
 
-        if opts.eikonal_loss:
-            ekl_loss = 1e-5*eikonal_loss(self.nerf_coarse, self.embedding_xyz, 
-                        rendered['pts_exp_vis'], self.latest_vars['obj_bound'])
+        if opts.eikonal_wt > 0:
+            ekl_loss = opts.eikonal_wt * eikonal_loss(self.nerf_coarse, self.embedding_xyz, 
+                        rendered['xyz_canonical_vis'], self.latest_vars['obj_bound'])
             aux_out['ekl_loss'] = ekl_loss
             total_loss = total_loss + ekl_loss
 

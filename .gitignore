@@ -1,8 +1,13 @@
+run.sh
+run_human.sh
+t1.txt
+t2.txt
 cam-files/
 trash/*
 raw
 mesh_material/geodists_smpl_27554.pkl
 mesh_material/geodists_sheep_5004.pkl
+mesh_material/posenet
 logdir
 tmp
 Manifold

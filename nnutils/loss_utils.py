@@ -40,28 +40,33 @@ def nerf_gradient(mlp, embed, pts, use_xyz=False,code=None, sigma_only=False):
     gradients = torch.cat(gradients,-1) # ...,input-dim, output-dim
     return gradients, sigmas
 
-def eikonal_loss(mlp, embed, pts_exp, bound):
+def eikonal_loss(mlp, embed, pts, bound):
     """
-    pts_exp: X* backward warped points
+    pts: X* backward warped points
     """
-    pts_exp = pts_exp.view(1,-1,3).detach()
-    nsample = pts_exp.shape[1]
+    # make it more efficient
+    bs = pts.shape[0]
+    sample_size = 1000
+    if bs>sample_size:
+        probs = torch.ones(bs)
+        rand_inds = torch.multinomial(probs, sample_size, replacement=False)
+        pts = pts[rand_inds]
+
+    pts = pts.view(-1,3).detach()
+    nsample = pts.shape[0]
     device = next(mlp.parameters()).device
+    bound = torch.Tensor(bound)[None].to(device)
 
-    # Sample points for the eikonal loss
-    bound = torch.Tensor(bound)[None,None]
-    pts = torch.rand(1,nsample,3)*2*bound-bound
-    pts= pts.to(device)
-    pts = torch.cat([pts,pts_exp],1)
+    inbound_idx = ((bound - pts.abs()) > 0).sum(-1) == 3
+    pts = pts[inbound_idx]
 
+    pts = pts[None]
     g,sigmas_unit = nerf_gradient(mlp, embed, pts, sigma_only=True)
     g = g[...,0]
-    #sigmas_unit = sigmas_unit[...,0].detach()
-    sigmas_unit = ((pts.abs() < bound.to(device)).float().sum(-1)==3).float()
 
-    #need to weight by occupancy score
-    eikonal_loss = (g.norm(2, dim=-1) - 1) ** 2
-    eikonal_loss = (sigmas_unit*eikonal_loss).sum() / sigmas_unit.sum()
+    grad_norm =  g.norm(2, dim=-1)
+    eikonal_loss = (grad_norm - 1) ** 2
+    eikonal_loss = eikonal_loss.mean()
     return eikonal_loss
 
 def elastic_loss(mlp, embed, xyz, time_embedded):

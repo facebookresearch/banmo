@@ -102,7 +102,8 @@ for i,path in enumerate(sorted(glob.glob('%s/*'%datadir))):
     mask_rszd                 = mask_rszd  [pad:-pad,pad:-pad]
     img_rszd                   = img_rszd  [pad:-pad,pad:-pad]
     outputs.pred_masks=outputs.pred_masks[:,pad:-pad,pad:-pad]
-    outputs.pred_boxes.tensor[:,:2] -= pad
+    outputs.pred_boxes.tensor[:,0:2] -= pad
+    outputs.pred_boxes.tensor[:,2:4] -= 2*pad
     mask_rszd = np.concatenate([mask_rszd[:,:,np.newaxis]* 128,
                                 np.zeros((h_rszd, w_rszd, 1)),
                                 np.zeros((h_rszd, w_rszd, 1))],-1)

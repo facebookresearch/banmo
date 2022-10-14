@@ -21,6 +21,7 @@ bash scripts/template-mgpu.sh $gpus $savename \
   --warmup_shape_ep 5 --warmup_rootmlp \
   --lineload --batch_size $batch_size\
   --eikonal_wt 0.001 --nsample 4 \
+  --freeze_root \
   --${use_symm}symm_shape \
   --${use_human}use_human
 

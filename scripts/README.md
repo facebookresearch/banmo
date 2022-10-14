@@ -175,12 +175,12 @@ python preprocess/img2lines.py --seqname $seqname
 # optimization
 bash scripts/template-known-cam.sh 0,1 $seqname 10001 "no" "no"
 # extract articulated meshes
-bash scripts/render_mgpu.sh 0 $seqname logdir/known-cam-$seqname-e120-b256/params_latest.pth \
+bash scripts/render_mgpu.sh 0 $seqname logdir/known-cam-$seqname-e120-b256-ft2/params_latest.pth \
         "0" 256
 ```
 To run optimization on hands, turn connected components off (`--nouse_cc`). See note on the main page.
 
 To evaluate eagle, modify the related lines in `scripts/eval/run_eval.sh` and run
 ```
-bash scripts/eval/run_eval.sh 0 logdir/known-cam$seqname-e120-b256/
+bash scripts/eval/run_eval.sh 0 logdir/known-cam-$seqname-e120-b256-ft2/
 ```

@@ -2,6 +2,7 @@
 [[Project page]](https://banmo-www.github.io/) [[Paper]](https://banmo-www.github.io/banmo-cvpr.pdf) [[Colab for NVS]](https://colab.research.google.com/drive/1dQJn1vsuz0DkyRZbOA1SulkVQ0V1kMUP?usp=sharing)
 
 ### Changelog
+- **11/21**: Remove eikonal loss to align with paper results, [#36](https://github.com/facebookresearch/banmo/issues/36)
 - **08/09**: Fix eikonal loss that regularizes surface (resulting in smoother mesh).
 - **06/18**: Add a colab demo for novel view synthesis.
 - **04/11**: Replace matching loss with feature rendering loss; Fix bugs in LBS; Stablize optimization.

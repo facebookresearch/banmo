@@ -273,7 +273,7 @@ https://user-images.githubusercontent.com/13134872/162283257-7636462b-c698-4411-
 * Q: pyrender reports `ImportError: Library "GLU" not found.`
     * install `sudo apt install freeglut3-dev`
 * Q: ffmpeg reports `libopenh264.so.5` not fund
-    * install ffmpeg `sudo apt-get install ffmpeg` and remove ~/anaconda/envs/banmo/bin/ffmpeg
+    * resinstall ffmpeg in conda `conda install -c conda-forge ffmpeg`
 </details>
 
 ### Note on arguments

@@ -302,6 +302,13 @@ Other external repos:
 ### License
 <details><summary>[expand]</summary>
 
-- [CC-BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/legalcode). 
+- code: [CC-BY-NC 4.0](https://creativecommons.org/licenses/by-nc/4.0/legalcode). 
 See the [LICENSE](LICENSE) file. 
+- dataset
+  - [CC0](https://creativecommons.org/share-your-work/public-domain/cc0/): cat-pikachiu, cat-coco, dog-tetres, human-cap
+  - [Pexels free license](https://www.pexels.com/license/): penguin
+  - [Turbosquid license](https://blog.turbosquid.com/turbosquid-3d-model-license/): [hands](https://www.turbosquid.com/3d-models/hand-hdri-shader-3d-model-1311775), [eagle](https://www.turbosquid.com/3d-models/eagle-rigged-fbx-free/1045001)
+    - the final dataset is modified from those 3D assets. 
+  - [AMA](https://people.csail.mit.edu/drdaniel/mesh_animation/) comes without a license
+  - We thank the artists for sharing theirs videos and 3D assets.
 </details>

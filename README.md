@@ -251,7 +251,7 @@ https://user-images.githubusercontent.com/13134872/155441493-38bf7a02-a6ee-4f2f-
 
 Render depth and color of the canonical view over optimization iterations
 ```
-bash scripts/nvs_iter.sh 0 logdir/$seqname-e120-b256-init/
+bash scripts/visualize/nvs_iter.sh 0 logdir/$seqname-e120-b256-init/
 # argv[1]: gpu id
 # argv[2]: path to the logdir
 ```
